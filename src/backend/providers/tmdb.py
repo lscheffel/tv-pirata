@@ -135,3 +135,28 @@ class TMDBProvider(BaseMetadataProvider):
             if should_close:
                 await client.aclose()
 
+    async def lookup_by_imdb(self, imdb_id: str) -> Optional[UnifiedShow]:
+        """Lookup show details using canonical IMDB ID via TMDB find API."""
+        clean_id = imdb_id.strip().lower()
+        if not clean_id.startswith("tt"):
+            clean_id = f"tt{clean_id}"
+
+        url = f"{self.base_url}/find/{clean_id}"
+        params = self._get_params({"external_source": "imdb_id"})
+        client = self._client or httpx.AsyncClient(timeout=10.0)
+        should_close = self._client is None
+        try:
+            response = await client.get(url, params=params, headers=self._get_headers())
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            data = response.json()
+            tv_results = data.get("tv_results", [])
+            if not tv_results:
+                return None
+            return self._map_show(tv_results[0])
+        except Exception:
+            return None
+        finally:
+            if should_close:
+                await client.aclose()

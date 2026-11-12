@@ -35,6 +35,11 @@ app.dependency_overrides[get_session] = override_get_session
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def setup_db():
+    app.dependency_overrides[get_session] = override_get_session
+
+
 @pytest.fixture
 def fixtures():
     fixtures_dir = Path(__file__).parent.parent / "fixtures"
@@ -52,6 +57,18 @@ def test_root_and_health_endpoints():
     res_health = client.get("/api/health")
     assert res_health.status_code == 200
     assert res_health.json()["status"] == "ok"
+
+
+def test_frontend_spa_serving():
+    """Verify that browser requests receive compiled SPA index.html and assets."""
+    res_html = client.get("/", headers={"accept": "text/html,application/xhtml+xml"})
+    assert res_html.status_code == 200
+    assert "text/html" in res_html.headers.get("content-type", "")
+    assert "TV Pirata" in res_html.text
+
+    res_app = client.get("/app")
+    assert res_app.status_code == 200
+    assert "text/html" in res_app.headers.get("content-type", "")
 
 
 def test_favicon_endpoints():

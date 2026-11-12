@@ -107,3 +107,23 @@ class TVMazeProvider(BaseMetadataProvider):
             if should_close:
                 await client.aclose()
 
+    async def lookup_by_imdb(self, imdb_id: str) -> Optional[UnifiedShow]:
+        """Lookup show details using canonical IMDB ID (e.g. tt0944947)."""
+        clean_id = imdb_id.strip().lower()
+        if not clean_id.startswith("tt"):
+            clean_id = f"tt{clean_id}"
+
+        url = f"{self.base_url}/lookup/shows"
+        client = self._client or httpx.AsyncClient(timeout=10.0, follow_redirects=True)
+        should_close = self._client is None
+        try:
+            response = await client.get(url, params={"imdb": clean_id})
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            return self._map_show(response.json())
+        except Exception:
+            return None
+        finally:
+            if should_close:
+                await client.aclose()

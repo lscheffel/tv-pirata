@@ -1,6 +1,6 @@
 [project]
 name = "tv-pirata"
-version = "0.1.0"
+version = "0.5.0"
 description = "Central web de descoberta, controle e administração de séries para rede doméstica"
 authors = [{ name = "TV Pirata Team" }]
 readme = "README.md"

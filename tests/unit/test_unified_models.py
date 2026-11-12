@@ -64,4 +64,3 @@ def test_unified_show_defaults():
     assert show.seasons[0].episode_count == 12
     assert len(show.seasons[0].episodes) == 1
     assert show.seasons[0].episodes[0].episode_number == 1
-

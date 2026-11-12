@@ -6,28 +6,36 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.backend.api import (
+    catalog_router,
     collections_router,
     discovery_router,
     library_router,
+    notifications_router,
     torrents_router,
     watches_router,
 )
 from src.backend.core.database import init_db
+from src.backend.services.scheduler import scheduler
 
 STATIC_DIR = Path(__file__).parent / "static"
+DIST_DIR = STATIC_DIR / "dist"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan managing database initialization and teardown."""
+    """Application lifespan managing database initialization, auto-sync and teardown."""
     init_db()
-    yield
+    scheduler.start()
+    try:
+        yield
+    finally:
+        await scheduler.stop(timeout=3.0)
 
 
 app = FastAPI(
@@ -48,14 +56,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files directory if present
+# Mount static files and compiled frontend assets if present
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+if (DIST_DIR / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
+
 # Register API routers under /api namespace
 app.include_router(discovery_router, prefix="/api")
+app.include_router(catalog_router, prefix="/api")
 app.include_router(library_router, prefix="/api")
 app.include_router(watches_router, prefix="/api")
+app.include_router(notifications_router, prefix="/api")
 app.include_router(torrents_router, prefix="/api")
 app.include_router(collections_router, prefix="/api")
 
@@ -76,14 +89,28 @@ def favicon_svg():
 
 
 @app.get("/")
-def root():
-    """Root status endpoint."""
+def root(request: Request):
+    """Serve SPA web application in browsers or JSON status for API clients."""
+    accept = request.headers.get("accept", "")
+    dist_index = DIST_DIR / "index.html"
+    if "text/html" in accept and dist_index.exists():
+        return FileResponse(dist_index)
     return {
         "app": "TV Pirata 🏴‍☠️",
         "tagline": "Seu Netflix pessoal para descoberta e controle",
         "version": "0.2.0",
         "docs": "/docs",
     }
+
+
+@app.get("/app", include_in_schema=False)
+@app.get("/web", include_in_schema=False)
+def app_view():
+    """Explicit endpoint for SPA web application."""
+    dist_index = DIST_DIR / "index.html"
+    if dist_index.exists():
+        return FileResponse(dist_index)
+    return {"detail": "Frontend assets not compiled yet. Run: make build-front"}
 
 
 @app.get("/api/health")

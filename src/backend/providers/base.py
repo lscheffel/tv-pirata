@@ -30,4 +30,3 @@ class BaseMetadataProvider(ABC):
     async def get_trending(self) -> list[UnifiedShow]:
         """Fetch currently trending shows."""
         ...
-

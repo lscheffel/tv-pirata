@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from typing import List, Optional
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -126,3 +127,77 @@ class LocalMediaRecord(SQLModel, table=True):
     last_seen_at: datetime = Field(default_factory=utc_now)
 
     episode: Optional[EpisodeRecord] = Relationship(back_populates="media")
+
+
+class CatalogShow(SQLModel, table=True):
+    """TV Show catalog entry aggregated from EZTV releases."""
+
+    imdb_id: str = Field(primary_key=True, index=True)  # Format: tt1234567
+    title: str = Field(index=True)
+    original_title: Optional[str] = None
+    overview: str = ""
+    poster_url: Optional[str] = None
+    backdrop_url: Optional[str] = None
+    rating: float = 0.0
+    genres: str = ""  # CSV format
+    first_air_date: Optional[str] = None
+    status: Optional[str] = None
+    total_torrents: int = Field(default=0, index=True)
+    max_seeds: int = Field(default=0, index=True)
+    latest_season: int = Field(default=0, index=True)
+    latest_episode: int = Field(default=0, index=True)
+    latest_release_date: Optional[datetime] = None
+    is_enriched: bool = Field(default=False, index=True)
+    last_synced_at: datetime = Field(default_factory=utc_now)
+
+    releases: List["CatalogRelease"] = Relationship(
+        back_populates="show",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+
+class CatalogRelease(SQLModel, table=True):
+    """Torrent release item indexed from EZTV."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    eztv_id: int = Field(unique=True, index=True)
+    hash: str = Field(index=True)
+    imdb_id: str = Field(foreign_key="catalogshow.imdb_id", index=True)
+    title: str = ""
+    filename: str = ""
+    season: int = Field(default=0, index=True)
+    episode: int = Field(default=0, index=True)
+    quality: str = Field(default="Unknown", index=True)
+    seeds: int = Field(default=0, index=True)
+    peers: int = 0
+    size_bytes: int = 0
+    magnet_url: str
+    torrent_url: Optional[str] = None
+    date_released_unix: int = 0
+    created_at: datetime = Field(default_factory=utc_now)
+
+    show: Optional[CatalogShow] = Relationship(back_populates="releases")
+
+
+class ReleaseNotificationRecord(SQLModel, table=True):
+    """Eventos de notificação para episódios recém-disponibilizados de séries salvas."""
+
+    __table_args__ = (
+        UniqueConstraint("show_id", "season", "episode", name="uq_notification_episode"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    show_id: int = Field(foreign_key="showrecord.id", index=True)
+    imdb_id: str = Field(index=True)
+    show_title: str = Field(default="")
+    season: int = Field(default=0, index=True)
+    episode: int = Field(default=0, index=True)
+    release_title: str = Field(default="")
+    quality: str = Field(default="Unknown")
+    seeds: int = Field(default=0)
+    magnet_url: str = Field(default="")
+    is_read: bool = Field(default=False, index=True)
+    is_dismissed: bool = Field(default=False, index=True)
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+    show: Optional[ShowRecord] = Relationship()

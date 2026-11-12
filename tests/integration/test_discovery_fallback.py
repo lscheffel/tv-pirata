@@ -34,7 +34,9 @@ async def test_fallback_when_tmdb_times_out(fixtures):
 
     with respx.mock(assert_all_called=False) as respx_mock:
         # TMDB times out
-        respx_mock.get("https://api.themoviedb.org/3/search/tv").mock(side_effect=slow_tmdb_response)
+        respx_mock.get("https://api.themoviedb.org/3/search/tv").mock(
+            side_effect=slow_tmdb_response
+        )
         # TVMaze responds successfully
         respx_mock.get("https://api.tvmaze.com/search/shows").respond(
             200, json=[{"score": 10.0, "show": tvmaze_data}]
@@ -91,4 +93,3 @@ async def test_primary_tmdb_success_avoids_fallback(fixtures):
         assert results[0].title == "Game of Thrones"
         # Ensure fallback route was NOT called
         assert not tvmaze_route.called
-

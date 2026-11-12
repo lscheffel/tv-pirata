@@ -39,15 +39,46 @@ class ResilientDiscoveryService:
                 query,
                 exc,
             )
-            return await self.fallback.search_shows(query)
+            try:
+                return await asyncio.wait_for(
+                    self.fallback.search_shows(query),
+                    timeout=self.timeout_seconds,
+                )
+            except Exception as fallback_exc:
+                logger.error(
+                    "Fallback provider (TVMaze) failed for search '%s': %s", query, fallback_exc
+                )
+                return []
 
     async def get_show_details(
         self,
         tmdb_id: Optional[int] = None,
         tvmaze_id: Optional[int] = None,
+        imdb_id: Optional[str] = None,
         query_fallback: Optional[str] = None,
     ) -> UnifiedShow:
         """Fetch show details using primary ID with seamless fallback."""
+        if imdb_id:
+            try:
+                enriched = await asyncio.wait_for(
+                    self.fallback.lookup_by_imdb(imdb_id),
+                    timeout=self.timeout_seconds,
+                )
+                if enriched:
+                    return enriched
+            except Exception as exc:
+                logger.warning("TVMaze lookup_by_imdb failed for %s: %s", imdb_id, exc)
+
+            try:
+                enriched_tmdb = await asyncio.wait_for(
+                    self.primary.lookup_by_imdb(imdb_id),
+                    timeout=self.timeout_seconds,
+                )
+                if enriched_tmdb:
+                    return enriched_tmdb
+            except Exception as exc:
+                logger.warning("TMDB lookup_by_imdb failed for %s: %s", imdb_id, exc)
+
         if tmdb_id:
             try:
                 return await asyncio.wait_for(
@@ -62,12 +93,21 @@ class ResilientDiscoveryService:
                 )
 
         if tvmaze_id:
-            return await self.fallback.get_show_details(tvmaze_id)
+            try:
+                return await asyncio.wait_for(
+                    self.fallback.get_show_details(tvmaze_id),
+                    timeout=self.timeout_seconds,
+                )
+            except Exception as exc:
+                logger.warning("TVMaze get_show_details failed for id=%s: %s", tvmaze_id, exc)
 
         if query_fallback:
-            results = await self.fallback.search_shows(query_fallback)
-            if results:
-                return results[0]
+            try:
+                results = await self.fallback.search_shows(query_fallback)
+                if results:
+                    return results[0]
+            except Exception:
+                pass
 
         raise ValueError("Cannot fetch show details: all providers exhausted without valid ID.")
 
@@ -83,5 +123,11 @@ class ResilientDiscoveryService:
                 "Primary provider (TMDB) failed for trending (%s). Falling back to TVMaze.",
                 exc,
             )
-            return await self.fallback.get_trending()
-
+            try:
+                return await asyncio.wait_for(
+                    self.fallback.get_trending(),
+                    timeout=self.timeout_seconds,
+                )
+            except Exception as fallback_exc:
+                logger.error("Fallback provider (TVMaze) failed for trending: %s", fallback_exc)
+                return []

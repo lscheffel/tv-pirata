@@ -9,6 +9,8 @@ from typing import Optional
 
 from sqlmodel import Session, SQLModel, create_engine
 
+import src.backend.models  # noqa: F401
+
 # Default SQLite database path
 DEFAULT_DB_PATH = Path("data/tv_pirata.db")
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
@@ -51,4 +53,3 @@ def get_session() -> Generator[Session, None, None]:
         except Exception:
             session.rollback()
             raise
-

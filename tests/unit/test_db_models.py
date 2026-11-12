@@ -129,9 +129,7 @@ def test_local_media_tracking(session: Session):
             UnifiedSeason(
                 season_number=1,
                 episode_count=1,
-                episodes=[
-                    UnifiedEpisode(id=1, episode_number=1, season_number=1, title="Secrets")
-                ],
+                episodes=[UnifiedEpisode(id=1, episode_number=1, season_number=1, title="Secrets")],
             )
         ],
     )

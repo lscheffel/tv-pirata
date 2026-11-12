@@ -20,19 +20,38 @@ uv pip install -e ".[dev]"
 
 ---
 
-## 2. 🚀 Executando o Servidor Web (FastAPI)
+## 2. 🚀 Executando o Servidor Web e Interface SPA
 
+### Execução Completa em Produção / Homelab
 ```bash
-# Iniciar o servidor com recarregamento automático (development)
-.venv/bin/python -m uvicorn src.backend.main:app --host 127.0.0.1 --port 8000 --reload
+# 1. (Opcional se já compilado) Compilar o frontend SPA
+make build-front
 
-# Acessar a documentação interativa Swagger
-# Abrir no navegador: http://127.0.0.1:8000/docs
+# 2. Iniciar o servidor integrado (FastAPI + SPA no mesmo processo)
+make run
+
+# 3. Acessar no navegador:
+# - Interface Web Cinemática: http://127.0.0.1:8000/
+# - Documentação OpenAPI:      http://127.0.0.1:8000/docs
+```
+
+### Desenvolvimento com Hot Reloading do Frontend
+```bash
+# Em um terminal: backend FastAPI
+make run
+
+# Em outro terminal: frontend Vite dev server (com proxy automático para :8000)
+make dev-front
+# Acesso: http://127.0.0.1:5173/
 ```
 
 ### Endpoints Disponíveis
 - `GET  /api/health` — Status de saúde do backend.
-- `GET  /api/discovery/trending` — Séries em alta na semana.
+- `GET  /api/catalog/shows` — Catálogo físico da EZTV ordenado por seeds/data.
+- `GET  /api/catalog/shows/{imdb_id}` — Metadados e todas as releases indexadas.
+- `GET  /api/catalog/stats` — Métricas do acervo (total de séries, releases, max seeds).
+- `POST /api/catalog/sync` — Sincronizar N páginas da EZTV em background.
+- `GET  /api/discovery/trending` — Séries em alta na semana via TMDB/TVMaze.
 - `GET  /api/discovery/search?q={termo}` — Busca com fallback automático TMDB -> TVMaze.
 - `GET  /api/discovery/shows/{tmdb_id}` — Metadados completos do show.
 - `GET  /api/library/shows` — Listagem de séries salvas na biblioteca pessoal.
@@ -41,6 +60,20 @@ uv pip install -e ".[dev]"
 - `GET  /api/watches/shows/{id}/progress` — Progresso e porcentagem assistida.
 - `GET  /api/torrents/shows/{imdb_id}` — Torrents e links magnet via EZTV.
 - `GET  /api/collections/smart` — Listar coleções inteligentes.
+
+---
+
+## 3. ⚡ Sincronização do Catálogo EZTV
+
+Para popular ou atualizar o catálogo local de torrents garantidos:
+
+```bash
+# Sincronizar as 5 primeiras páginas (500 releases mais recentes da EZTV)
+make sync-catalog
+
+# Ou executar com parâmetros customizados via script CLI:
+.venv/bin/python scripts/sync_catalog.py --pages 10 --start 1
+```
 
 ---
 

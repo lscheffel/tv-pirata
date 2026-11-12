@@ -83,4 +83,3 @@ def delete_show(
     if not success:
         raise HTTPException(status_code=404, detail="Show not found in library.")
     return {"message": "Show deleted successfully", "show_id": show_id}
-

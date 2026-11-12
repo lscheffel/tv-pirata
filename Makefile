@@ -13,7 +13,7 @@ PYTHON ?= $(shell if [ -f $(VENV_BIN)/python ]; then echo $(VENV_BIN)/python; el
 PYTEST ?= $(shell if [ -f $(VENV_BIN)/pytest ]; then echo $(VENV_BIN)/pytest; else which pytest 2>/dev/null || echo pytest; fi)
 RUFF   ?= $(shell if [ -f $(VENV_BIN)/ruff ]; then echo $(VENV_BIN)/ruff; else which ruff 2>/dev/null || echo ruff; fi)
 
-.PHONY: help bootstrap test lint format setup-hooks run spx-sync clean
+.PHONY: help bootstrap test lint format setup-hooks run spx-sync clean build-front dev-front sync-catalog
 
 help:
 	@echo "Comandos disponíveis no workspace:"
@@ -21,6 +21,9 @@ help:
 	@echo "  make test         - Executa suíte automatizada via pytest"
 	@echo "  make lint         - Executa verificação estática via ruff"
 	@echo "  make format       - Formata o código com ruff format"
+	@echo "  make build-front  - Compila a SPA React/Tailwind com Vite para static/dist"
+	@echo "  make dev-front    - Inicia o servidor Vite para desenvolvimento de UI"
+	@echo "  make sync-catalog - Ingestão e indexação do catálogo real da EZTV"
 	@echo "  make setup-hooks  - Ativa o Quality Gate pré-commit localmente"
 	@echo "  make run          - Inicia o servidor FastAPI localmente"
 	@echo "  make spx-sync     - Sincroniza e reindexa o repositório com SynPraxis RAG"
@@ -47,6 +50,17 @@ format:
 
 run:
 	$(PYTHON) -m uvicorn src.backend.main:app --host 127.0.0.1 --port 8000 --reload
+
+build-front:
+	@echo "[+] Compilando SPA Frontend com Vite..."
+	cd src/frontend && npm run build
+
+dev-front:
+	cd src/frontend && npm run dev
+
+sync-catalog:
+	@echo "[+] Executando sincronização do catálogo EZTV..."
+	$(PYTHON) scripts/sync_catalog.py --pages 5
 
 setup-hooks:
 	@mkdir -p .git/hooks

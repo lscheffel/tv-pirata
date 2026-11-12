@@ -58,4 +58,3 @@ async def test_tmdb_http_error():
 
         with pytest.raises(httpx.HTTPStatusError):
             await provider.get_show_details(9999)
-

@@ -1,10 +1,13 @@
 """Domain and database models for TV Pirata."""
 
 from src.backend.models.db import (
+    CatalogRelease,
+    CatalogShow,
     CollectionRecord,
     EpisodeRecord,
     EpisodeWatchRecord,
     LocalMediaRecord,
+    ReleaseNotificationRecord,
     SeasonRecord,
     ShowRecord,
     ShowTagLink,
@@ -18,10 +21,13 @@ from src.backend.models.unified import (
 )
 
 __all__ = [
+    "CatalogRelease",
+    "CatalogShow",
     "CollectionRecord",
     "EpisodeRecord",
     "EpisodeWatchRecord",
     "LocalMediaRecord",
+    "ReleaseNotificationRecord",
     "SeasonRecord",
     "ShowRecord",
     "ShowTagLink",
