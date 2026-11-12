@@ -1,0 +1,22 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2026-11-11",
+  "debts": [
+    {
+      "id": "TD-2026-001",
+      "title": "Ausência de cache em disco local para requisições de Trending",
+      "severity": "LOW",
+      "status": "OPEN",
+      "mitigating_adr": "ADR-002",
+      "created_at": "2026-11-11"
+    },
+    {
+      "id": "TD-2026-002",
+      "title": "Scanner heurístico de arquivos SMB (scene_parser.py) ainda pendente",
+      "severity": "MEDIUM",
+      "status": "OPEN",
+      "mitigating_adr": "ADR-002",
+      "created_at": "2026-11-11"
+    }
+  ]
+}

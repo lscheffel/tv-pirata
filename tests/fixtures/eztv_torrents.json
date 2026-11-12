@@ -1,0 +1,44 @@
+{
+  "imdb_id": "0944947",
+  "torrents_count": 2,
+  "limit": 10,
+  "page": 1,
+  "torrents": [
+    {
+      "id": 123456,
+      "hash": "abcdef1234567890abcdef1234567890abcdef12",
+      "filename": "Game.of.Thrones.S01E01.1080p.HDTV.x264-EZTV[eztv].mkv",
+      "episode_url": "https://eztvx.to/ep/123456/game-of-thrones-s01e01-1080p-hdtv-x264-eztv/",
+      "torrent_url": "https://zoink.ch/torrent/Game.of.Thrones.S01E01.1080p.HDTV.x264-EZTV[eztv].mkv.torrent",
+      "magnet_url": "magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12&dn=Game+of+Thrones+S01E01+1080p",
+      "title": "Game of Thrones S01E01 1080p HDTV x264-EZTV",
+      "imdb_id": "0944947",
+      "season": "1",
+      "episode": "1",
+      "small_screenshot": "",
+      "large_screenshot": "",
+      "seeds": 150,
+      "peers": 45,
+      "date_released_unix": 1303084800,
+      "size_bytes": "1572864000"
+    },
+    {
+      "id": 123457,
+      "hash": "123456abcdef7890123456abcdef7890123456ab",
+      "filename": "Game.of.Thrones.S01E01.720p.HDTV.x264-EZTV[eztv].mkv",
+      "episode_url": "https://eztvx.to/ep/123457/game-of-thrones-s01e01-720p-hdtv-x264-eztv/",
+      "torrent_url": "https://zoink.ch/torrent/Game.of.Thrones.S01E01.720p.HDTV.x264-EZTV[eztv].mkv.torrent",
+      "magnet_url": "magnet:?xt=urn:btih:123456abcdef7890123456abcdef7890123456ab&dn=Game+of+Thrones+S01E01+720p",
+      "title": "Game of Thrones S01E01 720p HDTV x264-EZTV",
+      "imdb_id": "0944947",
+      "season": "1",
+      "episode": "1",
+      "small_screenshot": "",
+      "large_screenshot": "",
+      "seeds": 85,
+      "peers": 12,
+      "date_released_unix": 1303084800,
+      "size_bytes": "943718400"
+    }
+  ]
+}

@@ -1,5 +1,11 @@
 # TV Pirata 🏴‍☠️
 
+[![Status](https://img.shields.io/badge/status-active-success.svg)](#)
+[![Python](https://img.shields.io/badge/python-3.14+-blue.svg)](#)
+[![Framework](https://img.shields.io/badge/framework-FastAPI-teal.svg)](#)
+[![Governance](https://img.shields.io/badge/governance-SynPraxis%20SOTA-purple.svg)](#)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](#)
+
 > **Seu "Netflix Pessoal" para Descoberta, Controle e Administração de Séries e Filmes.**  
 > *Painel web moderno com foco em descoberta online, tracking granular de progresso (assistido/não assistido), categorização rica e gestão de acervo distribuído via SMB na rede doméstica.*
 
@@ -7,83 +13,97 @@
 
 ## 1. 🎯 Visão Geral do Projeto
 
-O **TV Pirata** é uma central de mídia personalizada desenvolvida para quem consome séries e filmes obtidos via torrent ou downloads manuais e disponibilizados via compartilhamento de rede (**SMB**) para visualização em Smart TVs, TV Boxes, Kodi ou VLC.
+O **TV Pirata** é uma central de mídia personalizada desenvolvida para quem consome séries e filmes obtidos via torrent ou downloads manuais e disponibilizados via compartilhamento de rede (**SMB**) para reprodução em Smart TVs, TV Boxes, Kodi ou VLC.
 
 Diferente de media centers pesados voltados primariamente para transcodificação e streaming contínuo (Plex/Emby/Jellyfin), o foco central do **TV Pirata** é:
 - **Descoberta Visual e Ágil:** Interface cinematográfica estilo Netflix (carrosséis, trending, detalhes, trailers, pôsteres em alta definição).
-- **Provedores de Descoberta Online:** Agregação de APIs líderes de mercado (**TMDB**, **TVMaze**, **Trakt**).
+- **Provedores de Descoberta Online:** Agregação de APIs líderes de mercado (**TMDB**, **TVMaze**) com fallback automático transparente.
+- **Obtenção Desacoplada de Torrents:** Integração direta com a API pública da **EZTV** por `imdb_id` para expor magnets ordenados por saúde/seeds em 1 clique.
 - **Controle Total de Progresso:** Status de acompanhamento por série, temporada e episódio (Quero Ver, Assistindo, Assistido, Abandonado, Pausado).
-- **Categorização e Tags Personalizadas:** Gêneros, coleções temáticas, notas pessoais e filtros dinâmicos.
-- **Gestão e Mapeamento de Arquivos SMB:** Associação entre a série/filme e sua presença/caminho no servidor de arquivos local da casa.
+- **Categorização e Tags Personalizadas:** Gêneros, coleções inteligentes (`filter_criteria`), notas pessoais e filtros dinâmicos.
+- **Gestão e Mapeamento de Arquivos SMB:** Associação entre a série/filme e sua presença/caminho no servidor de arquivos local da casa com preservação estrita de histórico.
 
 ---
 
-## 2. 🏗️ Arquitetura e Stack Tecnológica
+## 2. 🏗️ Arquitetura e Fluxo de Dados
 
+```mermaid
+graph TD
+    User["Usuário / Navegador"] -->|"HTTP / REST"| WebAPI["TV Pirata FastAPI Server"]
+    WebAPI -->|"Fallback Resiliente (2.0s)"| Discovery["ResilientDiscoveryService"]
+    Discovery -->|"Primário (API v3)"| TMDB["The Movie Database (TMDB)"]
+    Discovery -->|"Fallback (Aberto)"| TVMaze["TVMaze API"]
+    WebAPI -->|"Lookup por IMDB ID"| EZTV["EZTV Public Torrents API"]
+    WebAPI -->|"Persistência Atômica"| SQLite[("SQLite DB (tv_pirata.db)")]
+    WebAPI -->|"Verificação de Arquivos"| SMBMount["Armazenamento SMB Montado (/mnt/storage/media)"]
 ```
+
+---
+
+## 3. 📁 Estrutura Canônica do Repositório
+
+```text
 tv-pirata/
 ├── src/                      # Código-fonte da aplicação
-│   ├── backend/              # API REST (FastAPI / Python)
-│   │   ├── api/              # Rotas HTTP (discovery, watchlist, media, library)
-│   │   ├── core/             # Configurações, segurança e conexão com banco
-│   │   ├── models/           # Modelos de dados (SQLModel / SQLAlchemy)
-│   │   ├── providers/        # Clientes de APIs externas (TMDB, TVMaze, Trakt)
-│   │   └── services/         # Regras de negócio e scanner de arquivos SMB
-│   └── frontend/             # Interface Web cinematográfica (Netflix-like UI)
-├── tests/                    # Suíte automatizada de testes
-├── docs/                     # Documentação viva e decisões arquiteturais
-│   └── adr/                  # Architecture Decision Records (ADRs)
-├── scripts/                  # Scripts operacionais e Quality Gate local
+│   ├── __init__.py
+│   └── backend/              # API REST assíncrona (FastAPI)
+│       ├── __init__.py
+│       ├── models/           # Contratos unificados de domínio (Pydantic v2)
+│       │   ├── __init__.py
+│       │   └── unified.py    # UnifiedShow, UnifiedSeason, TorrentRelease
+│       └── providers/        # Clientes de APIs de descoberta e distribuição
+│           ├── __init__.py
+│           ├── base.py       # BaseMetadataProvider (Protocolo abstrato)
+│           ├── tmdb.py       # Provedor The Movie Database (TMDB)
+│           ├── tvmaze.py     # Provedor TVMaze (Fallback público)
+│           ├── eztv.py       # Provedor EZTV (Magnets e sementes)
+│           └── discovery_service.py # ResilientDiscoveryService
+├── tests/                    # Suíte automatizada de testes herméticos
+│   ├── fixtures/             # Payloads estáticos reais (TMDB, TVMaze, EZTV)
+│   ├── unit/                 # Testes unitários com respx e Pydantic
+│   └── integration/          # Testes de integração de fallback e contratos
+├── docs/                     # Documentação viva e governança
+│   ├── adr/                  # Architecture Decision Records
+│   │   ├── ADR-INDEX.md      # Ledger e índice canônico de ADRs
+│   │   ├── ADR-001.md        # Arquitetura Fundamental do TV Pirata
+│   │   ├── ADR-002.md        # Provedores de Descoberta, Fallback e Mídia
+│   │   ├── ADR-003.md        # Implementação do Contrato Unificado e EZTV
+│   │   └── elevation-ADR-002/ # Relatórios de elevação adversarial
+│   └── governance/           # Registros de débito técnico e governança
+├── scripts/                  # Utilitários de qualidade e automação
+│   └── quality_gate.sh       # Pre-commit Quality Gate local
 ├── AGENTS.md                 # Single Source of Truth para IA e AgentOps
+├── GEMINI.md                 # Proxy determinístico referenciando AGENTS.md
 ├── Makefile                  # Comandos e automações cross-platform
+├── pyproject.toml            # Declaração de dependências e configuração de testes
 └── .env.example              # Template seguro de variáveis de ambiente
 ```
 
-- **Backend:** FastAPI (Python 3.14+) assíncrono com suporte nativo a tipagem estrita e documentação automática OpenAPI/Swagger.
-- **Banco de Dados:** SQLite (zero-config, local e atômico em `data/tv_pirata.db`) com migração transparente para PostgreSQL se necessário.
-- **Provedores de Metadados:** Integração modular com **TMDB API v3/v4** e **TVMaze API**.
-- **Frontend:** Painel web responsivo com estética Netflix (Dark Cinematic UI, carrosséis horizontais, drawer/modal de detalhes com episódios e checklists).
-
 ---
 
-## 3. 🚀 Primeiros Passos
+## 4. 🚀 Primeiros Passos
 
 ### Pré-requisitos
-- Python 3.10+ (ou gerenciador `uv`)
-- Node.js 18+ (opcional, dependendo do bundle de frontend)
+- Python 3.10+ (preferencialmente Python 3.14 provisionado via `uv`)
 - Make (opcional)
 
 ### Configuração Inicial
 ```bash
-# 1. Copiar o arquivo de variáveis de ambiente e preencher suas chaves (ex: TMDB)
+# 1. Copiar o arquivo de variáveis de ambiente
 cp .env.example .env
 
-# 2. Inicializar o ambiente virtual e dependências
-make bootstrap
+# 2. Inicializar dependências do ambiente virtual
+uv pip install -e ".[dev]"
 ```
 
-### Comandos Úteis
+### Comandos de Verificação
 ```bash
-# Executar a suíte de testes
+# Executar a suíte completa de testes (100% offline via respx)
 make test
 
-# Executar checagem estática de código (linter)
+# Executar o linter estático
 make lint
-
-# Formatar o código
-make format
 
 # Ativar o Quality Gate pré-commit local
 make setup-hooks
 ```
-
----
-
-## 4. 📋 Roadmap de Funcionalidades
-
-- [x] **Bootstrap e Governança:** Estrutura canônica de repositório, Makefile, AGENTS.md, scripts de CI/CD local.
-- [ ] **Provedores de Descoberta:** Cliente assíncrono para TMDB e TVMaze com cache inteligente.
-- [ ] **Modelo de Dados & Migrations:** Tabelas de séries, episódios, watchlist e histórico de visualizações.
-- [ ] **API de Watchlist & Status:** Endpoints para marcar séries/temporadas/episódios como assistidos.
-- [ ] **Mapeamento SMB / Armazenamento:** Leitura de diretórios locais/SMB para identificar arquivos disponíveis na rede.
-- [ ] **Frontend Netflix-like:** Layout escuro com carrosséis, banner hero de destaque, busca em tempo real e checklist de episódios.
