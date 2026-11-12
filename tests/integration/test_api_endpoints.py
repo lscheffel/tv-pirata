@@ -54,6 +54,16 @@ def test_root_and_health_endpoints():
     assert res_health.json()["status"] == "ok"
 
 
+def test_favicon_endpoints():
+    res_ico = client.get("/favicon.ico")
+    assert res_ico.status_code == 200
+    assert len(res_ico.content) > 0
+
+    res_svg = client.get("/favicon.svg")
+    assert res_svg.status_code == 200
+    assert "svg" in res_svg.headers.get("content-type", "")
+
+
 def test_discovery_endpoints_with_mocked_network(fixtures):
     tmdb_data, _, _ = fixtures
 

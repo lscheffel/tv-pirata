@@ -75,3 +75,4 @@ def query_smart_collection_items(
     if shows is None:
         raise HTTPException(status_code=404, detail="Collection not found.")
     return shows
+

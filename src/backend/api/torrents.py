@@ -19,3 +19,4 @@ async def get_show_torrents(
     """Fetch available torrent releases from EZTV using IMDB ID."""
     provider = EZTVProvider()
     return await provider.get_torrents_by_imdb(imdb_id=imdb_id, limit=limit, page=page)
+

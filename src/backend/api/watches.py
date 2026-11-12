@@ -60,3 +60,4 @@ def get_progress(
     """Calculate aggregated progress percentage and watched counts for a show."""
     repo = LibraryRepository(session)
     return repo.get_show_progress(show_id)
+

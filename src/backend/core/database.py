@@ -51,3 +51,4 @@ def get_session() -> Generator[Session, None, None]:
         except Exception:
             session.rollback()
             raise
+

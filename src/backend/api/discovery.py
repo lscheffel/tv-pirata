@@ -50,3 +50,4 @@ async def get_show_details(
         return await service.get_show_details(tmdb_id=show_id, tvmaze_id=tvmaze_id)
     except Exception as exc:
         raise HTTPException(status_code=404, detail=f"Show not found: {exc}") from exc
+
