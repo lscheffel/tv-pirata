@@ -15,3 +15,4 @@ Separar modelos SQLAlchemy imperativos e esquemas Pydantic independentes.
 
 ## 2. Veredito do Desafio
 A **Alternativa A (SQLModel)** é a solução ideal: elimina duplicações entre validação e persistência e garante integridade referencial relacional estrita.
+

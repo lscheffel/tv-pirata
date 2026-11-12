@@ -9,3 +9,4 @@ A ADR-004 consolida o próximo salto evolutivo do **TV Pirata**, materializando 
    - Injeção de sessão transacional no FastAPI com rollback automático em falhas.
    - Upsert inteligente que preserva flags de assistido ao atualizar dados da série.
 3. **Certificação:** Quadra ADR-004 validada e pronta para implementação física.
+

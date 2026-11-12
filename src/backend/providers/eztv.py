@@ -55,3 +55,4 @@ class EZTVProvider:
         finally:
             if should_close:
                 await client.aclose()
+

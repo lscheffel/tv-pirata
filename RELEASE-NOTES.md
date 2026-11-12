@@ -22,3 +22,4 @@ O lançamento **v0.1.0** estabelece a infraestrutura fundamental do **TV Pirata*
 - `ADR-001`: Separação estrita entre descoberta/gestão e reprodução física de vídeo via SMB.
 - `ADR-002`: Definição de fallback dinâmico TMDB -> TVMaze, integração EZTV e controle relacional de visualizações.
 - `ADR-003`: Implementação física dos modelos unificados e clientes assíncronos.
+

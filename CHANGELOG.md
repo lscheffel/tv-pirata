@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.0] - 2026-11-11
+
+### Added
+- **Relational Persistence Layer with SQLModel (ADR-004):**
+  - Implemented database entities `ShowRecord`, `SeasonRecord`, `EpisodeRecord`, `EpisodeWatchRecord`, `LocalMediaRecord`, `TagRecord`, `ShowTagLink`, and `CollectionRecord` in `src/backend/models/db.py`.
+  - Configured atomic SQLite engine with timezone-aware datetime validation in `src/backend/core/database.py`.
+  - Implemented `LibraryRepository` in `src/backend/repositories/library.py` providing transactional upsert, episode watch toggling, season watch-all, and dynamic smart collection execution.
+- **FastAPI REST Application & Routers:**
+  - Configured `src/backend/main.py` with lifespan database initialization, CORS middleware, and `/api/health`.
+  - Implemented `/api/discovery` endpoints for trending, search, and show details.
+  - Implemented `/api/library` endpoints for CRUD operations on the user's personal show collection.
+  - Implemented `/api/watches` endpoints for episode toggles and show progress aggregation.
+  - Implemented `/api/torrents` endpoints querying EZTV releases by IMDB ID.
+  - Implemented `/api/collections` endpoints for tags and smart collections.
+- **Expanded Test Suite:**
+  - Added in-memory unit tests in `tests/unit/test_db_models.py` and comprehensive API integration tests in `tests/integration/test_api_endpoints.py` bringing total passing tests to 22.
+
+---
+
 ## [0.1.0] - 2026-11-11
 
 ### Added

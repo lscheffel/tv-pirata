@@ -91,3 +91,4 @@ async def test_primary_tmdb_success_avoids_fallback(fixtures):
         assert results[0].title == "Game of Thrones"
         # Ensure fallback route was NOT called
         assert not tvmaze_route.called
+

@@ -8,3 +8,4 @@ O TV Pirata possui modelos canônicos e provedores externos funcionais, mas oper
 - **Invariante 2 (Independência de Mídia Física):** A ausência ou desmontagem temporária do compartilhamento SMB altera `is_available = false`, mas é expressamente proibida de apagar a série ou seu histórico de visualizações.
 - **Invariante 3 (Contrato REST Estável):** Todas as rotas devem responder com esquemas Pydantic v2 rigorosamente tipados.
 - **Invariante 4 (Testabilidade Hermética):** A camada de persistência deve ser testável em memória (`sqlite:///:memory:`) sem deixar arquivos órfãos no disco.
+

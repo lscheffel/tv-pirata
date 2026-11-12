@@ -48,3 +48,4 @@ async def test_tvmaze_search_shows_success(tvmaze_fixture):
 
         assert len(results) == 1
         assert results[0].title == "Game of Thrones"
+

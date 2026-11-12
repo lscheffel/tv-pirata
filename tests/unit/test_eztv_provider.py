@@ -44,3 +44,4 @@ async def test_eztv_handles_network_failure():
         torrents = await provider.get_torrents_by_imdb("tt9999999")
         # Should gracefully return empty list on failure
         assert torrents == []
+

@@ -134,3 +134,4 @@ class TMDBProvider(BaseMetadataProvider):
         finally:
             if should_close:
                 await client.aclose()
+

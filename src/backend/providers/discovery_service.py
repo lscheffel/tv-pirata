@@ -84,3 +84,4 @@ class ResilientDiscoveryService:
                 exc,
             )
             return await self.fallback.get_trending()
+

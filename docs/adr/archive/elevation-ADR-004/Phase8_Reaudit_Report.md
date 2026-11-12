@@ -5,3 +5,4 @@
 - **Blast Radius Calculado:**
   $$BR = (N_{\text{dependents}} \times 1.5) + (R_{\text{data}} \times 2.0) + (H_{\text{rollback}} \times 0.5) = (3 \times 1.5) + (1 \times 2.0) + (0.5 \times 0.5) = 6.75$$
   *Classificação:* Risco Padrão Controlado ($BR < 7.0$).
+

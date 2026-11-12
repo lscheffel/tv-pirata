@@ -8,3 +8,4 @@
 ## 2. Classificação de Achados
 - [OBSERVAÇÃO]: Índices devem ser configurados em `tmdb_id`, `imdb_id` e chaves estrangeiras para garantir consultas de $P_{95} < 10\text{ms}$ no SQLite.
 - [OBSERVAÇÃO]: Triggers ou métodos agregadores Python devem calcular o progresso da temporada sob demanda para evitar campos calculados desatualizados.
+

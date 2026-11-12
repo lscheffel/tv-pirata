@@ -10,3 +10,4 @@
    - Tradutor leve em Python que transforma o JSON `filter_criteria` (ex: `{"user_status": "watching", "has_media": true}`) diretamente em expressões de filtro do SQLModel (`col(ShowRecord.user_status) == "watching"`).
 4. **Tratamento de CORS e Healthcheck:**
    - Endpoint `/api/health` para monitoramento de integridade e middleware `CORSMiddleware` parametrizado por `.env`.
+

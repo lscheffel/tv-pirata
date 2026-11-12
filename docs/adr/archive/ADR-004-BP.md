@@ -110,3 +110,4 @@ erDiagram
     ├── POST /smart                      # Criar Smart Collection com filter_criteria JSON
     └── GET  /smart/{id}/items           # Executar consulta dinâmica da Smart Collection
 ```
+

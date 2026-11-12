@@ -13,7 +13,7 @@ PYTHON ?= $(shell if [ -f $(VENV_BIN)/python ]; then echo $(VENV_BIN)/python; el
 PYTEST ?= $(shell if [ -f $(VENV_BIN)/pytest ]; then echo $(VENV_BIN)/pytest; else which pytest 2>/dev/null || echo pytest; fi)
 RUFF   ?= $(shell if [ -f $(VENV_BIN)/ruff ]; then echo $(VENV_BIN)/ruff; else which ruff 2>/dev/null || echo ruff; fi)
 
-.PHONY: help bootstrap test lint format setup-hooks spx-sync clean
+.PHONY: help bootstrap test lint format setup-hooks run spx-sync clean
 
 help:
 	@echo "Comandos disponíveis no workspace:"
@@ -22,6 +22,7 @@ help:
 	@echo "  make lint         - Executa verificação estática via ruff"
 	@echo "  make format       - Formata o código com ruff format"
 	@echo "  make setup-hooks  - Ativa o Quality Gate pré-commit localmente"
+	@echo "  make run          - Inicia o servidor FastAPI localmente"
 	@echo "  make spx-sync     - Sincroniza e reindexa o repositório com SynPraxis RAG"
 	@echo "  make clean        - Remove caches, builds e artefatos transitórios"
 
@@ -38,12 +39,14 @@ test-e2e:
 test-all:
 	$(PYTEST) tests/ -o addopts=""
 
-
 lint:
 	$(RUFF) check src/ tests/
 
 format:
 	$(RUFF) format src/ tests/
+
+run:
+	$(PYTHON) -m uvicorn src.backend.main:app --host 127.0.0.1 --port 8000 --reload
 
 setup-hooks:
 	@mkdir -p .git/hooks

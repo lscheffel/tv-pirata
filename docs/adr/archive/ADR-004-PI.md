@@ -25,3 +25,4 @@ status: PENDENTE
 - Configuração de `main.py` com `FastAPI`, documentação automática `/docs` (Swagger) e middleware de CORS.
 - Implementação de suíte de testes com `TestClient` simulando requisições HTTP reais contra SQLite em memória.
 - Validação com `make lint` e `make test`.
+

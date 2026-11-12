@@ -130,3 +130,4 @@ class UnifiedShow(BaseModel):
             return ""
         clean = re.sub(r"<[^>]+>", "", text)
         return clean.strip()
+
