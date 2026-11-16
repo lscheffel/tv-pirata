@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { Search, Film, Bookmark, Layers, X, Menu, Zap } from "lucide-react";
+import { Search, Film, Bookmark, Layers, X, Menu, Zap, Compass } from "lucide-react";
 
 interface NavbarProps {
-  activeTab: "discover" | "catalog" | "library" | "collections";
-  onTabChange: (tab: "discover" | "catalog" | "library" | "collections") => void;
+  activeTab: "discover" | "explore" | "catalog" | "library" | "collections";
+  onTabChange: (tab: "discover" | "explore" | "catalog" | "library" | "collections") => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   unreadCount?: number;
@@ -62,6 +62,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Film className="w-4 h-4 text-brand-red" />
               Descobrir
+            </button>
+            <button
+              onClick={() => onTabChange("explore")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                activeTab === "explore"
+                  ? "bg-white/10 text-white shadow-inner font-semibold"
+                  : "text-slate-300 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <Compass className="w-4 h-4 text-cyan-400" />
+              Explorar Universo
             </button>
             <button
               onClick={() => onTabChange("catalog")}
@@ -156,6 +167,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <Film className="w-5 h-5 text-brand-red" />
             Descobrir
+          </button>
+          <button
+            onClick={() => {
+              onTabChange("explore");
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${
+              activeTab === "explore" ? "bg-brand-red/20 text-white font-semibold" : "text-slate-300"
+            }`}
+          >
+            <Compass className="w-5 h-5 text-cyan-400" />
+            Explorar Universo
           </button>
           <button
             onClick={() => {

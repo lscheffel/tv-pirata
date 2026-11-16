@@ -8,9 +8,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, delete
 
-from src.backend.core.database import get_session
+from src.backend.core.database import get_eztv_session, get_session
 from src.backend.main import app
 from src.backend.models.db import CatalogRelease, CatalogShow
+from src.backend.models.eztv_db import EZTVEpisodeCatalog, EZTVShow, eztv_metadata
 
 test_engine = create_engine(
     "sqlite:///:memory:",
@@ -18,6 +19,13 @@ test_engine = create_engine(
     poolclass=StaticPool,
 )
 SQLModel.metadata.create_all(test_engine)
+
+eztv_test_engine = create_engine(
+    "sqlite:///:memory:",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+eztv_metadata.create_all(eztv_test_engine)
 
 
 def override_get_session():
@@ -30,13 +38,25 @@ def override_get_session():
             raise
 
 
+def override_get_eztv_session():
+    with Session(eztv_test_engine) as session:
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+
+
 app.dependency_overrides[get_session] = override_get_session
+app.dependency_overrides[get_eztv_session] = override_get_eztv_session
 client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
 def seed_catalog():
     app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_eztv_session] = override_get_eztv_session
     with Session(test_engine) as session:
         # Clear existing
         session.exec(delete(CatalogRelease))
@@ -85,6 +105,47 @@ def seed_catalog():
         )
         session.add(rel1)
         session.commit()
+
+    with Session(eztv_test_engine) as eztv_session:
+        eztv_session.exec(delete(EZTVEpisodeCatalog))
+        eztv_session.exec(delete(EZTVShow))
+        eztv_session.commit()
+
+        ez1 = EZTVShow(
+            id=944947,
+            slug="game-of-thrones",
+            name="Game of Thrones",
+            status="Ended",
+            rating_score=9.3,
+            imdb_id="tt0944947",
+            synopsis="Epic fantasy saga.",
+            genres="Drama, Action",
+            poster_url="https://example.com/got.jpg",
+        )
+        ez2 = EZTVShow(
+            id=903747,
+            slug="breaking-bad",
+            name="Breaking Bad",
+            status="Ended",
+            rating_score=9.5,
+            imdb_id="tt0903747",
+            synopsis="Chemistry teacher turns meth kingpin.",
+            genres="Crime, Drama",
+            poster_url="https://example.com/bb.jpg",
+        )
+        eztv_session.add(ez1)
+        eztv_session.add(ez2)
+        eztv_session.add(
+            EZTVEpisodeCatalog(
+                show_id=944947,
+                season=8,
+                episode=6,
+                title="The Iron Throne",
+                airdate="2019-05-19",
+                source="tvmaze",
+            )
+        )
+        eztv_session.commit()
 
 
 def test_list_catalog_shows():

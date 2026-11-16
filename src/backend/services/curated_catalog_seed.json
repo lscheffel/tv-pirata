@@ -1,0 +1,2177 @@
+{
+  "works": [
+    {
+      "work_type": "movie",
+      "title": "Duna: Parte Dois",
+      "original_title": "Dune: Part Two",
+      "overview": "Paul Atreides une-se a Chani e aos Fremen em uma jornada de vingança contra os conspiradores que destruíram sua família, enfrentando a escolha entre o amor de sua vida e o destino do universo conhecido.",
+      "tagline": "Vida longa aos guerreiros.",
+      "release_date": "2024-02-29",
+      "release_year": 2024,
+      "runtime_minutes": 166,
+      "status": "Released",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/8b8R8l88Qje9dn9OE8PY05Nxl1X.jpg",
+      "backdrop_url": "https://image.tmdb.org/t/p/original/xOMo8BRK7PfcJv9JCnx7s5hj0PX.jpg",
+      "rating": 8.5,
+      "rating_source": "imdb",
+      "vote_count": 580000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.5,
+          "votes": 580000
+        },
+        "tmdb": {
+          "rating": 8.3,
+          "votes": 6400
+        }
+      },
+      "popularity_score": 96.5,
+      "network_or_studio": "Legendary Pictures / Warner Bros.",
+      "collection_name": "Saga Duna",
+      "imdb_id": "tt15239678",
+      "tmdb_id": 693134,
+      "wikidata_id": "Q109753096",
+      "genres": [
+        "Ficção Científica",
+        "Aventura",
+        "Drama"
+      ],
+      "credits": [
+        {
+          "name": "Denis Villeneuve",
+          "role_type": "director",
+          "country": "CA"
+        },
+        {
+          "name": "Denis Villeneuve",
+          "role_type": "writer",
+          "country": "CA"
+        },
+        {
+          "name": "Timothée Chalamet",
+          "role_type": "actor",
+          "character_name": "Paul Atreides",
+          "billing_order": 1
+        },
+        {
+          "name": "Zendaya",
+          "role_type": "actor",
+          "character_name": "Chani",
+          "billing_order": 2
+        },
+        {
+          "name": "Rebecca Ferguson",
+          "role_type": "actor",
+          "character_name": "Lady Jessica",
+          "billing_order": 3
+        },
+        {
+          "name": "Javier Bardem",
+          "role_type": "actor",
+          "character_name": "Stilgar",
+          "billing_order": 4
+        },
+        {
+          "name": "Stellan Skarsgård",
+          "role_type": "actor",
+          "character_name": "Barão Harkonnen",
+          "billing_order": 5
+        },
+        {
+          "name": "Florence Pugh",
+          "role_type": "actor",
+          "character_name": "Princesa Irulan",
+          "billing_order": 6
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Max",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        },
+        {
+          "provider_name": "Prime Video",
+          "territory": "BR",
+          "monetization_type": "rent"
+        },
+        {
+          "provider_name": "Apple TV+",
+          "territory": "BR",
+          "monetization_type": "buy"
+        }
+      ]
+    },
+    {
+      "work_type": "movie",
+      "title": "Duna",
+      "original_title": "Dune",
+      "overview": "O brilhante jovem Paul Atreides deve viajar para o planeta mais perigoso do universo para garantir o futuro de sua família e de seu povo.",
+      "release_date": "2021-10-21",
+      "release_year": 2021,
+      "runtime_minutes": 155,
+      "status": "Released",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/d5NXSklXo0qyIYkgV94XAgMIckC.jpg",
+      "backdrop_url": "https://image.tmdb.org/t/p/original/jYEW5xZkZk2WTrdbMGAPFuBqbDc.jpg",
+      "rating": 8.0,
+      "rating_source": "imdb",
+      "vote_count": 890000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.0,
+          "votes": 890000
+        },
+        "tmdb": {
+          "rating": 7.8,
+          "votes": 11200
+        }
+      },
+      "popularity_score": 91.0,
+      "network_or_studio": "Legendary Pictures / Warner Bros.",
+      "collection_name": "Saga Duna",
+      "imdb_id": "tt1160419",
+      "tmdb_id": 438631,
+      "wikidata_id": "Q60834962",
+      "genres": [
+        "Ficção Científica",
+        "Aventura",
+        "Drama"
+      ],
+      "credits": [
+        {
+          "name": "Denis Villeneuve",
+          "role_type": "director",
+          "country": "CA"
+        },
+        {
+          "name": "Timothée Chalamet",
+          "role_type": "actor",
+          "character_name": "Paul Atreides",
+          "billing_order": 1
+        },
+        {
+          "name": "Rebecca Ferguson",
+          "role_type": "actor",
+          "character_name": "Lady Jessica",
+          "billing_order": 2
+        },
+        {
+          "name": "Zendaya",
+          "role_type": "actor",
+          "character_name": "Chani",
+          "billing_order": 3
+        },
+        {
+          "name": "Javier Bardem",
+          "role_type": "actor",
+          "character_name": "Stilgar",
+          "billing_order": 4
+        },
+        {
+          "name": "Stellan Skarsgård",
+          "role_type": "actor",
+          "character_name": "Barão Harkonnen",
+          "billing_order": 5
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Max",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        },
+        {
+          "provider_name": "Netflix",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "movie",
+      "title": "Duna (1984)",
+      "original_title": "Dune",
+      "overview": "Adaptação clássica de David Lynch na qual o filho de um duque lidera guerreiros do deserto contra o imperador galáctico e o inimigo mortal de seu pai.",
+      "release_date": "1984-12-14",
+      "release_year": 1984,
+      "runtime_minutes": 137,
+      "status": "Released",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/9jJc2w2bH4T1cQ3z7N9e7K2x9Z1.jpg",
+      "rating": 6.3,
+      "rating_source": "imdb",
+      "vote_count": 182000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 6.3,
+          "votes": 182000
+        },
+        "tmdb": {
+          "rating": 6.2,
+          "votes": 2900
+        }
+      },
+      "popularity_score": 68.0,
+      "network_or_studio": "Dino De Laurentiis / Universal",
+      "collection_name": "Saga Duna",
+      "imdb_id": "tt0087182",
+      "tmdb_id": 841,
+      "wikidata_id": "Q114243",
+      "genres": [
+        "Ficção Científica",
+        "Aventura"
+      ],
+      "credits": [
+        {
+          "name": "David Lynch",
+          "role_type": "director",
+          "country": "US"
+        },
+        {
+          "name": "Kyle MacLachlan",
+          "role_type": "actor",
+          "character_name": "Paul Atreides",
+          "billing_order": 1
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Prime Video",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "movie",
+      "title": "Duna: Messias",
+      "original_title": "Dune: Messiah",
+      "overview": "Conclusão da trilogia de Paul Atreides sob direção de Denis Villeneuve, explorando as consequências da Guerra Santa Fremen doze anos após sua ascensão ao trono imperial.",
+      "release_date": "2026-12-18",
+      "release_year": 2026,
+      "runtime_minutes": 165,
+      "status": "In Production",
+      "origin_country": "US",
+      "original_language": "en",
+      "rating": 0.0,
+      "rating_source": "tmdb",
+      "popularity_score": 94.0,
+      "network_or_studio": "Legendary Pictures / Warner Bros.",
+      "collection_name": "Saga Duna",
+      "imdb_id": "tt31314290",
+      "tmdb_id": 1143210,
+      "wikidata_id": "Q125390211",
+      "genres": [
+        "Ficção Científica",
+        "Drama",
+        "Aventura"
+      ],
+      "credits": [
+        {
+          "name": "Denis Villeneuve",
+          "role_type": "director",
+          "country": "CA"
+        },
+        {
+          "name": "Timothée Chalamet",
+          "role_type": "actor",
+          "character_name": "Paul Atreides",
+          "billing_order": 1
+        },
+        {
+          "name": "Zendaya",
+          "role_type": "actor",
+          "character_name": "Chani",
+          "billing_order": 2
+        },
+        {
+          "name": "Florence Pugh",
+          "role_type": "actor",
+          "character_name": "Princesa Irulan",
+          "billing_order": 3
+        },
+        {
+          "name": "Anya Taylor-Joy",
+          "role_type": "actor",
+          "character_name": "Alia Atreides",
+          "billing_order": 4
+        }
+      ],
+      "calendar_events": [
+        {
+          "event_type": "theatrical_premiere",
+          "event_date": "2026-12-18",
+          "confidence_level": "confirmed",
+          "territory": "GLOBAL",
+          "platform_or_network": "Cinemas IMAX",
+          "event_title": "Estreia Mundial nos Cinemas — Duna: Messias"
+        }
+      ]
+    },
+    {
+      "work_type": "movie",
+      "title": "A Chegada",
+      "original_title": "Arrival",
+      "overview": "Quando doze naves misteriosas pousam ao redor da Terra, a linguista Louise Banks é recrutada pelas forças armadas para decifrar a linguagem alienígena antes que a tensão global desencadeie uma guerra.",
+      "release_date": "2016-11-11",
+      "release_year": 2016,
+      "runtime_minutes": 116,
+      "status": "Released",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/x2FJsf1ElAgr63Y3PNPtJrcmpoe.jpg",
+      "backdrop_url": "https://image.tmdb.org/t/p/original/yIZ1xendyqKvY3FGeeUYUd5X9Mm.jpg",
+      "rating": 7.9,
+      "rating_source": "imdb",
+      "vote_count": 795000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 7.9,
+          "votes": 795000
+        },
+        "tmdb": {
+          "rating": 7.6,
+          "votes": 17500
+        }
+      },
+      "popularity_score": 88.5,
+      "network_or_studio": "Paramount Pictures / FilmNation",
+      "imdb_id": "tt2543164",
+      "tmdb_id": 329865,
+      "wikidata_id": "Q19824505",
+      "genres": [
+        "Ficção Científica",
+        "Drama",
+        "Suspense"
+      ],
+      "credits": [
+        {
+          "name": "Denis Villeneuve",
+          "role_type": "director",
+          "country": "CA"
+        },
+        {
+          "name": "Amy Adams",
+          "role_type": "actor",
+          "character_name": "Louise Banks",
+          "billing_order": 1
+        },
+        {
+          "name": "Jeremy Renner",
+          "role_type": "actor",
+          "character_name": "Ian Donnelly",
+          "billing_order": 2
+        },
+        {
+          "name": "Forest Whitaker",
+          "role_type": "actor",
+          "character_name": "Coronel Weber",
+          "billing_order": 3
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Netflix",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        },
+        {
+          "provider_name": "Paramount+",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "movie",
+      "title": "Blade Runner 2049",
+      "original_title": "Blade Runner 2049",
+      "overview": "Trinta anos após os eventos do primeiro filme, um novo blade runner, o oficial K da polícia de Los Angeles, desenterra um segredo há muito enterrado que tem o potencial de mergulhar o que resta da sociedade no caos.",
+      "release_date": "2017-10-05",
+      "release_year": 2017,
+      "runtime_minutes": 164,
+      "status": "Released",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/gajva2L0rPYkEWjzgFlBXCAVBE5.jpg",
+      "backdrop_url": "https://image.tmdb.org/t/p/original/ilRyazdMJwN05exqhwK4tMKBYZs.jpg",
+      "rating": 8.0,
+      "rating_source": "imdb",
+      "vote_count": 685000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.0,
+          "votes": 685000
+        },
+        "tmdb": {
+          "rating": 7.6,
+          "votes": 13400
+        }
+      },
+      "popularity_score": 89.2,
+      "network_or_studio": "Alcon Entertainment / Warner Bros.",
+      "collection_name": "Universo Blade Runner",
+      "imdb_id": "tt1856101",
+      "tmdb_id": 335984,
+      "wikidata_id": "Q21500755",
+      "genres": [
+        "Ficção Científica",
+        "Suspense",
+        "Mistério"
+      ],
+      "credits": [
+        {
+          "name": "Denis Villeneuve",
+          "role_type": "director",
+          "country": "CA"
+        },
+        {
+          "name": "Ryan Gosling",
+          "role_type": "actor",
+          "character_name": "K",
+          "billing_order": 1
+        },
+        {
+          "name": "Harrison Ford",
+          "role_type": "actor",
+          "character_name": "Rick Deckard",
+          "billing_order": 2
+        },
+        {
+          "name": "Ana de Armas",
+          "role_type": "actor",
+          "character_name": "Joi",
+          "billing_order": 3
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Netflix",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        },
+        {
+          "provider_name": "Prime Video",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "movie",
+      "title": "Os Suspeitos",
+      "original_title": "Prisoners",
+      "overview": "Quando a filha pequena de Keller Dover e sua amiga desaparecem, ele decide fazer justiça com as próprias mãos enquanto o detetive Loki segue múltiplas pistas sob pressão.",
+      "release_date": "2013-09-20",
+      "release_year": 2013,
+      "runtime_minutes": 153,
+      "status": "Released",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/uhviyknTT5cEQXbn6vWIqfM4vGm.jpg",
+      "rating": 8.2,
+      "rating_source": "imdb",
+      "vote_count": 830000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.2,
+          "votes": 830000
+        },
+        "tmdb": {
+          "rating": 8.1,
+          "votes": 11500
+        }
+      },
+      "popularity_score": 87.0,
+      "network_or_studio": "Alcon Entertainment",
+      "imdb_id": "tt1392214",
+      "tmdb_id": 146233,
+      "wikidata_id": "Q3404003",
+      "genres": [
+        "Suspense",
+        "Crime & Investigação",
+        "Drama"
+      ],
+      "credits": [
+        {
+          "name": "Denis Villeneuve",
+          "role_type": "director",
+          "country": "CA"
+        },
+        {
+          "name": "Hugh Jackman",
+          "role_type": "actor",
+          "character_name": "Keller Dover",
+          "billing_order": 1
+        },
+        {
+          "name": "Jake Gyllenhaal",
+          "role_type": "actor",
+          "character_name": "Detetive Loki",
+          "billing_order": 2
+        },
+        {
+          "name": "Paul Dano",
+          "role_type": "actor",
+          "character_name": "Alex Jones",
+          "billing_order": 3
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Prime Video",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        },
+        {
+          "provider_name": "Max",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "movie",
+      "title": "Interestelar",
+      "original_title": "Interstellar",
+      "overview": "Uma equipe de exploradores viaja através de um buraco de minhoca no espaço em uma tentativa de garantir a sobrevivência da humanidade diante do colapso ambiental da Terra.",
+      "release_date": "2014-11-06",
+      "release_year": 2014,
+      "runtime_minutes": 169,
+      "status": "Released",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg",
+      "backdrop_url": "https://image.tmdb.org/t/p/original/xJHokMbljvjADYdit5fK5VQsXEG.jpg",
+      "rating": 8.7,
+      "rating_source": "imdb",
+      "vote_count": 2150000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.7,
+          "votes": 2150000
+        },
+        "tmdb": {
+          "rating": 8.4,
+          "votes": 35200
+        }
+      },
+      "popularity_score": 98.0,
+      "network_or_studio": "Paramount Pictures / Warner Bros.",
+      "imdb_id": "tt0816692",
+      "tmdb_id": 157336,
+      "wikidata_id": "Q13417189",
+      "genres": [
+        "Ficção Científica",
+        "Drama",
+        "Aventura"
+      ],
+      "credits": [
+        {
+          "name": "Christopher Nolan",
+          "role_type": "director",
+          "country": "GB"
+        },
+        {
+          "name": "Christopher Nolan",
+          "role_type": "writer",
+          "country": "GB"
+        },
+        {
+          "name": "Matthew McConaughey",
+          "role_type": "actor",
+          "character_name": "Cooper",
+          "billing_order": 1
+        },
+        {
+          "name": "Anne Hathaway",
+          "role_type": "actor",
+          "character_name": "Brand",
+          "billing_order": 2
+        },
+        {
+          "name": "Jessica Chastain",
+          "role_type": "actor",
+          "character_name": "Murph",
+          "billing_order": 3
+        },
+        {
+          "name": "Matt Damon",
+          "role_type": "actor",
+          "character_name": "Dr. Mann",
+          "billing_order": 4
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Max",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        },
+        {
+          "provider_name": "Prime Video",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "movie",
+      "title": "Oppenheimer",
+      "original_title": "Oppenheimer",
+      "overview": "A história do físico americano J. Robert Oppenheimer, seu papel no Projeto Manhattan e no desenvolvimento da bomba atômica durante a Segunda Guerra Mundial.",
+      "release_date": "2023-07-20",
+      "release_year": 2023,
+      "runtime_minutes": 180,
+      "status": "Released",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/8Gxv8gSFCU0XGDykEGv7zR1n2ua.jpg",
+      "backdrop_url": "https://image.tmdb.org/t/p/original/fm6KqXpk3M2HVveHwCrBSSBaO0V.jpg",
+      "rating": 8.3,
+      "rating_source": "imdb",
+      "vote_count": 820000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.3,
+          "votes": 820000
+        },
+        "tmdb": {
+          "rating": 8.1,
+          "votes": 9100
+        }
+      },
+      "popularity_score": 94.5,
+      "network_or_studio": "Universal Pictures / Syncopy",
+      "imdb_id": "tt15398776",
+      "tmdb_id": 872585,
+      "wikidata_id": "Q108839994",
+      "genres": [
+        "Drama",
+        "História",
+        "Biografia"
+      ],
+      "credits": [
+        {
+          "name": "Christopher Nolan",
+          "role_type": "director",
+          "country": "GB"
+        },
+        {
+          "name": "Cillian Murphy",
+          "role_type": "actor",
+          "character_name": "J. Robert Oppenheimer",
+          "billing_order": 1
+        },
+        {
+          "name": "Emily Blunt",
+          "role_type": "actor",
+          "character_name": "Kitty Oppenheimer",
+          "billing_order": 2
+        },
+        {
+          "name": "Matt Damon",
+          "role_type": "actor",
+          "character_name": "Leslie Groves",
+          "billing_order": 3
+        },
+        {
+          "name": "Robert Downey Jr.",
+          "role_type": "actor",
+          "character_name": "Lewis Strauss",
+          "billing_order": 4
+        },
+        {
+          "name": "Florence Pugh",
+          "role_type": "actor",
+          "character_name": "Jean Tatlock",
+          "billing_order": 5
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Prime Video",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        },
+        {
+          "provider_name": "Apple TV+",
+          "territory": "BR",
+          "monetization_type": "rent"
+        }
+      ]
+    },
+    {
+      "work_type": "movie",
+      "title": "A Origem",
+      "original_title": "Inception",
+      "overview": "Um ladrão que rouba segredos corporativos por meio do uso da tecnologia de compartilhamento de sonhos recebe a tarefa inversa de plantar uma ideia na mente de um CEO.",
+      "release_date": "2010-07-16",
+      "release_year": 2010,
+      "runtime_minutes": 148,
+      "status": "Released",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg",
+      "rating": 8.8,
+      "rating_source": "imdb",
+      "vote_count": 2590000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.8,
+          "votes": 2590000
+        },
+        "tmdb": {
+          "rating": 8.4,
+          "votes": 36100
+        }
+      },
+      "popularity_score": 95.8,
+      "network_or_studio": "Warner Bros. / Syncopy",
+      "imdb_id": "tt1375666",
+      "tmdb_id": 27205,
+      "wikidata_id": "Q25188",
+      "genres": [
+        "Ficção Científica",
+        "Ação",
+        "Suspense"
+      ],
+      "credits": [
+        {
+          "name": "Christopher Nolan",
+          "role_type": "director",
+          "country": "GB"
+        },
+        {
+          "name": "Leonardo DiCaprio",
+          "role_type": "actor",
+          "character_name": "Dom Cobb",
+          "billing_order": 1
+        },
+        {
+          "name": "Cillian Murphy",
+          "role_type": "actor",
+          "character_name": "Robert Fischer",
+          "billing_order": 2
+        },
+        {
+          "name": "Tom Hardy",
+          "role_type": "actor",
+          "character_name": "Eames",
+          "billing_order": 3
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Max",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "movie",
+      "title": "A Odisseia",
+      "original_title": "The Odyssey",
+      "overview": "Épico cinematográfico dirigido por Christopher Nolan adaptando o poema homérico de Odisseu e sua perigosa jornada de volta para Ítaca após a Guerra de Troia.",
+      "release_date": "2026-07-17",
+      "release_year": 2026,
+      "runtime_minutes": 175,
+      "status": "In Production",
+      "origin_country": "US",
+      "original_language": "en",
+      "rating": 0.0,
+      "rating_source": "tmdb",
+      "popularity_score": 97.2,
+      "network_or_studio": "Universal Pictures / Syncopy",
+      "imdb_id": "tt33764258",
+      "tmdb_id": 1368294,
+      "genres": [
+        "Aventura",
+        "Drama",
+        "Fantasia",
+        "História"
+      ],
+      "credits": [
+        {
+          "name": "Christopher Nolan",
+          "role_type": "director",
+          "country": "GB"
+        },
+        {
+          "name": "Matt Damon",
+          "role_type": "actor",
+          "character_name": "Odisseu",
+          "billing_order": 1
+        },
+        {
+          "name": "Anne Hathaway",
+          "role_type": "actor",
+          "character_name": "Penélope",
+          "billing_order": 2
+        },
+        {
+          "name": "Zendaya",
+          "role_type": "actor",
+          "character_name": "Atena",
+          "billing_order": 3
+        },
+        {
+          "name": "Tom Holland",
+          "role_type": "actor",
+          "character_name": "Telêmaco",
+          "billing_order": 4
+        }
+      ],
+      "calendar_events": [
+        {
+          "event_type": "theatrical_premiere",
+          "event_date": "2026-07-17",
+          "confidence_level": "confirmed",
+          "territory": "GLOBAL",
+          "platform_or_network": "Cinemas IMAX 70mm",
+          "event_title": "Estreia Global em IMAX — A Odisseia (Christopher Nolan)"
+        }
+      ]
+    },
+    {
+      "work_type": "movie",
+      "title": "Guerra Civil",
+      "original_title": "Civil War",
+      "overview": "Em um futuro próximo onde os Estados Unidos estão mergulhados em uma guerra civil brutal, uma equipe de fotojornalistas embarca em uma jornada arriscada até Washington D.C. antes que as forças rebeldes tomem a Casa Branca.",
+      "release_date": "2024-04-12",
+      "release_year": 2024,
+      "runtime_minutes": 109,
+      "status": "Released",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/sh7Rg8Er3tFcN9BpKIPOMvALgZd.jpg",
+      "rating": 7.0,
+      "rating_source": "imdb",
+      "vote_count": 215000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 7.0,
+          "votes": 215000
+        },
+        "tmdb": {
+          "rating": 7.0,
+          "votes": 2900
+        }
+      },
+      "popularity_score": 84.0,
+      "network_or_studio": "A24",
+      "imdb_id": "tt17279496",
+      "tmdb_id": 929590,
+      "wikidata_id": "Q110968635",
+      "genres": [
+        "Ação",
+        "Suspense",
+        "Drama",
+        "Guerra & Política"
+      ],
+      "credits": [
+        {
+          "name": "Alex Garland",
+          "role_type": "director",
+          "country": "GB"
+        },
+        {
+          "name": "Kirsten Dunst",
+          "role_type": "actor",
+          "character_name": "Lee Smith",
+          "billing_order": 1
+        },
+        {
+          "name": "Wagner Moura",
+          "role_type": "actor",
+          "character_name": "Joel",
+          "billing_order": 2
+        },
+        {
+          "name": "Cailee Spaeny",
+          "role_type": "actor",
+          "character_name": "Jessie",
+          "billing_order": 3
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Prime Video",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        },
+        {
+          "provider_name": "Max",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "movie",
+      "title": "Ex Machina: Instinto Artificial",
+      "original_title": "Ex Machina",
+      "overview": "Um jovem programador é selecionado para participar de um experimento inovador em inteligência sintética, avaliando as qualidades humanas de uma androide altamente avançada.",
+      "release_date": "2015-01-21",
+      "release_year": 2015,
+      "runtime_minutes": 108,
+      "status": "Released",
+      "origin_country": "GB",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/dmJW8IAKHKxFNiUnoDR7JfsK7Rp.jpg",
+      "rating": 7.7,
+      "rating_source": "imdb",
+      "vote_count": 610000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 7.7,
+          "votes": 610000
+        },
+        "tmdb": {
+          "rating": 7.6,
+          "votes": 13100
+        }
+      },
+      "popularity_score": 85.0,
+      "network_or_studio": "A24 / DNA Films",
+      "imdb_id": "tt0470752",
+      "tmdb_id": 264660,
+      "wikidata_id": "Q16635326",
+      "genres": [
+        "Ficção Científica",
+        "Suspense",
+        "Drama"
+      ],
+      "credits": [
+        {
+          "name": "Alex Garland",
+          "role_type": "director",
+          "country": "GB"
+        },
+        {
+          "name": "Alicia Vikander",
+          "role_type": "actor",
+          "character_name": "Ava",
+          "billing_order": 1
+        },
+        {
+          "name": "Oscar Isaac",
+          "role_type": "actor",
+          "character_name": "Nathan",
+          "billing_order": 2
+        },
+        {
+          "name": "Domhnall Gleeson",
+          "role_type": "actor",
+          "character_name": "Caleb",
+          "billing_order": 3
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Prime Video",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "movie",
+      "title": "Zodíaco",
+      "original_title": "Zodiac",
+      "overview": "No final dos anos 1960 e 1970, um cartunista de São Francisco torna-se obcecado em descobrir a identidade do Assassino do Zodíaco, um serial killer que provoca a polícia por meio de cartas criptografadas.",
+      "release_date": "2007-03-02",
+      "release_year": 2007,
+      "runtime_minutes": 157,
+      "status": "Released",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/6YmeO4pB7XTh8P8F960O1uA14JO.jpg",
+      "rating": 7.7,
+      "rating_source": "imdb",
+      "vote_count": 615000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 7.7,
+          "votes": 615000
+        },
+        "tmdb": {
+          "rating": 7.5,
+          "votes": 10400
+        }
+      },
+      "popularity_score": 86.0,
+      "network_or_studio": "Paramount Pictures / Warner Bros.",
+      "imdb_id": "tt0443706",
+      "tmdb_id": 1949,
+      "wikidata_id": "Q218172",
+      "genres": [
+        "Crime & Investigação",
+        "Mistério",
+        "Suspense",
+        "Drama"
+      ],
+      "credits": [
+        {
+          "name": "David Fincher",
+          "role_type": "director",
+          "country": "US"
+        },
+        {
+          "name": "Jake Gyllenhaal",
+          "role_type": "actor",
+          "character_name": "Robert Graysmith",
+          "billing_order": 1
+        },
+        {
+          "name": "Robert Downey Jr.",
+          "role_type": "actor",
+          "character_name": "Paul Avery",
+          "billing_order": 2
+        },
+        {
+          "name": "Mark Ruffalo",
+          "role_type": "actor",
+          "character_name": "Dave Toschi",
+          "billing_order": 3
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Max",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        },
+        {
+          "provider_name": "Prime Video",
+          "territory": "BR",
+          "monetization_type": "rent"
+        }
+      ]
+    },
+    {
+      "work_type": "movie",
+      "title": "Parasita",
+      "original_title": "Gisaengchung",
+      "overview": "Toda a família de Ki-taek está desempregada, vivendo em um porão sujo e apertado. Uma obra do acaso faz com que ele comece a dar aulas de inglês para a filha de uma família rica, iniciando uma simbiose imprevisível.",
+      "release_date": "2019-05-30",
+      "release_year": 2019,
+      "runtime_minutes": 132,
+      "status": "Released",
+      "origin_country": "KR",
+      "original_language": "ko",
+      "poster_url": "https://image.tmdb.org/t/p/w500/7IiTTgloJzvGI1TAYymCfbfl3vT.jpg",
+      "rating": 8.5,
+      "rating_source": "imdb",
+      "vote_count": 1010000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.5,
+          "votes": 1010000
+        },
+        "tmdb": {
+          "rating": 8.5,
+          "votes": 18200
+        }
+      },
+      "popularity_score": 93.4,
+      "network_or_studio": "CJ Entertainment / Barunson E&A",
+      "imdb_id": "tt6751668",
+      "tmdb_id": 496243,
+      "wikidata_id": "Q61448040",
+      "genres": [
+        "Suspense",
+        "Drama",
+        "Comédia"
+      ],
+      "credits": [
+        {
+          "name": "Bong Joon-ho",
+          "role_type": "director",
+          "country": "KR"
+        },
+        {
+          "name": "Song Kang-ho",
+          "role_type": "actor",
+          "character_name": "Kim Ki-taek",
+          "billing_order": 1
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Max",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        },
+        {
+          "provider_name": "MUBI",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        },
+        {
+          "provider_name": "Globoplay",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "movie",
+      "title": "Memórias de um Assassino",
+      "original_title": "Salinui chueok",
+      "overview": "Em 1986, na província sul-coreana de Gyunggi, dois detetives locais com métodos rudimentares e um inspetor de Seul investigam uma série de brutais assassinatos.",
+      "release_date": "2003-05-02",
+      "release_year": 2003,
+      "runtime_minutes": 131,
+      "status": "Released",
+      "origin_country": "KR",
+      "original_language": "ko",
+      "rating": 8.1,
+      "rating_source": "imdb",
+      "vote_count": 230000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.1,
+          "votes": 230000
+        },
+        "tmdb": {
+          "rating": 8.1,
+          "votes": 3800
+        }
+      },
+      "popularity_score": 84.5,
+      "network_or_studio": "CJ Entertainment",
+      "imdb_id": "tt0353969",
+      "tmdb_id": 11423,
+      "wikidata_id": "Q483941",
+      "genres": [
+        "Crime & Investigação",
+        "Drama",
+        "Mistério",
+        "Suspense"
+      ],
+      "credits": [
+        {
+          "name": "Bong Joon-ho",
+          "role_type": "director",
+          "country": "KR"
+        },
+        {
+          "name": "Song Kang-ho",
+          "role_type": "actor",
+          "character_name": "Detetive Park Doo-man",
+          "billing_order": 1
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "MUBI",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "tv_show",
+      "title": "Ruptura",
+      "original_title": "Severance",
+      "overview": "Mark lidera uma equipe de funcionários de escritório cujas memórias foram cirurgicamente divididas entre a vida profissional e a vida pessoal.",
+      "release_date": "2022-02-18",
+      "release_year": 2022,
+      "runtime_minutes": 52,
+      "status": "Returning Series",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/pPHpeI2X1qEd1CS1SeyrdhZ4qnT.jpg",
+      "backdrop_url": "https://image.tmdb.org/t/p/original/ixgFmf1X59PUZam2qbAfskx2gQr.jpg",
+      "rating": 8.7,
+      "rating_source": "imdb",
+      "vote_count": 265000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.7,
+          "votes": 265000
+        },
+        "tmdb": {
+          "rating": 8.4,
+          "votes": 1450
+        },
+        "tvmaze": {
+          "rating": 8.6,
+          "votes": 900
+        }
+      },
+      "popularity_score": 97.5,
+      "seasons_count": 2,
+      "episodes_count": 19,
+      "network_or_studio": "Apple TV+",
+      "imdb_id": "tt11280740",
+      "tmdb_id": 95396,
+      "tvmaze_id": 44933,
+      "wikidata_id": "Q104843038",
+      "genres": [
+        "Ficção Científica",
+        "Mistério",
+        "Suspense",
+        "Drama"
+      ],
+      "credits": [
+        {
+          "name": "Dan Erickson",
+          "role_type": "creator",
+          "country": "US"
+        },
+        {
+          "name": "Ben Stiller",
+          "role_type": "director",
+          "country": "US"
+        },
+        {
+          "name": "Adam Scott",
+          "role_type": "actor",
+          "character_name": "Mark Scout",
+          "billing_order": 1
+        },
+        {
+          "name": "Britt Lower",
+          "role_type": "actor",
+          "character_name": "Helly R.",
+          "billing_order": 2
+        },
+        {
+          "name": "John Turturro",
+          "role_type": "actor",
+          "character_name": "Irving Bailiff",
+          "billing_order": 3
+        },
+        {
+          "name": "Christopher Walken",
+          "role_type": "actor",
+          "character_name": "Burt Goodman",
+          "billing_order": 4
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Apple TV+",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        },
+        {
+          "provider_name": "Apple TV+",
+          "territory": "US",
+          "monetization_type": "flatrate"
+        }
+      ],
+      "calendar_events": [
+        {
+          "event_type": "new_season",
+          "event_date": "2026-11-20",
+          "confidence_level": "announced",
+          "territory": "GLOBAL",
+          "platform_or_network": "Apple TV+",
+          "season_number": 3,
+          "event_title": "Produção da 3ª Temporada de Ruptura (Severance)"
+        }
+      ]
+    },
+    {
+      "work_type": "tv_show",
+      "title": "Silo",
+      "original_title": "Silo",
+      "overview": "Em um futuro arruinado e tóxico, uma comunidade de dez mil pessoas vive em um gigantesco silo subterrâneo que se estende por 144 andares sob a superfície.",
+      "release_date": "2023-05-05",
+      "release_year": 2023,
+      "runtime_minutes": 50,
+      "status": "Returning Series",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/tlliQuCupf8fpTH7RAor3aKMGy.jpg",
+      "rating": 8.1,
+      "rating_source": "imdb",
+      "vote_count": 160000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.1,
+          "votes": 160000
+        },
+        "tmdb": {
+          "rating": 8.2,
+          "votes": 1300
+        },
+        "tvmaze": {
+          "rating": 8.0,
+          "votes": 620
+        }
+      },
+      "popularity_score": 92.8,
+      "seasons_count": 2,
+      "episodes_count": 20,
+      "network_or_studio": "Apple TV+",
+      "imdb_id": "tt14688458",
+      "tmdb_id": 125988,
+      "tvmaze_id": 55342,
+      "wikidata_id": "Q111942622",
+      "genres": [
+        "Ficção Científica",
+        "Drama",
+        "Mistério"
+      ],
+      "credits": [
+        {
+          "name": "Graham Yost",
+          "role_type": "creator",
+          "country": "CA"
+        },
+        {
+          "name": "Rebecca Ferguson",
+          "role_type": "actor",
+          "character_name": "Juliette Nichols",
+          "billing_order": 1
+        },
+        {
+          "name": "Tim Robbins",
+          "role_type": "actor",
+          "character_name": "Bernard Holland",
+          "billing_order": 2
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Apple TV+",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ],
+      "calendar_events": [
+        {
+          "event_type": "new_season",
+          "event_date": "2026-11-28",
+          "confidence_level": "estimated",
+          "territory": "GLOBAL",
+          "platform_or_network": "Apple TV+",
+          "season_number": 3,
+          "event_title": "Estreia da 3ª Temporada de Silo"
+        }
+      ]
+    },
+    {
+      "work_type": "tv_show",
+      "title": "Andor",
+      "original_title": "Andor",
+      "overview": "Em uma era cheia de perigos, enganos e intrigas, Cassian Andor embarca no caminho que está destinado a transformá-lo em um herói rebelde contra o Império Galáctico.",
+      "release_date": "2022-09-21",
+      "release_year": 2022,
+      "runtime_minutes": 48,
+      "status": "Ended",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/59SVNwLfoMnZPPB6ukW6dlPxAdI.jpg",
+      "rating": 8.4,
+      "rating_source": "imdb",
+      "vote_count": 180000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.4,
+          "votes": 180000
+        },
+        "tmdb": {
+          "rating": 8.2,
+          "votes": 1280
+        }
+      },
+      "popularity_score": 91.5,
+      "seasons_count": 2,
+      "episodes_count": 24,
+      "network_or_studio": "Disney+ / Lucasfilm",
+      "collection_name": "Star Wars",
+      "imdb_id": "tt9253284",
+      "tmdb_id": 83867,
+      "tvmaze_id": 39562,
+      "wikidata_id": "Q60462338",
+      "genres": [
+        "Ficção Científica",
+        "Ação",
+        "Drama",
+        "Guerra & Política"
+      ],
+      "credits": [
+        {
+          "name": "Tony Gilroy",
+          "role_type": "creator",
+          "country": "US"
+        },
+        {
+          "name": "Diego Luna",
+          "role_type": "actor",
+          "character_name": "Cassian Andor",
+          "billing_order": 1
+        },
+        {
+          "name": "Stellan Skarsgård",
+          "role_type": "actor",
+          "character_name": "Luthen Rael",
+          "billing_order": 2
+        },
+        {
+          "name": "Genevieve O'Reilly",
+          "role_type": "actor",
+          "character_name": "Mon Mothma",
+          "billing_order": 3
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Disney+",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "tv_show",
+      "title": "Breaking Bad: A Química do Mal",
+      "original_title": "Breaking Bad",
+      "overview": "Um professor de química do ensino médio diagnosticado com câncer de pulmão inoperável passa a fabricar e vender metanfetamina com um ex-aluno para garantir o futuro financeiro de sua família.",
+      "release_date": "2008-01-20",
+      "end_date": "2013-09-29",
+      "release_year": 2008,
+      "runtime_minutes": 47,
+      "status": "Ended",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/ztkUQFLlC19CCMYHW9o1zWhJRNq.jpg",
+      "backdrop_url": "https://image.tmdb.org/t/p/original/tsRy63Mu5cu8etL1X7ZLyf7UP1M.jpg",
+      "rating": 9.5,
+      "rating_source": "imdb",
+      "vote_count": 2250000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 9.5,
+          "votes": 2250000
+        },
+        "tmdb": {
+          "rating": 8.9,
+          "votes": 14500
+        },
+        "tvmaze": {
+          "rating": 9.2,
+          "votes": 4200
+        }
+      },
+      "popularity_score": 99.2,
+      "seasons_count": 5,
+      "episodes_count": 62,
+      "network_or_studio": "AMC",
+      "collection_name": "Universo Breaking Bad",
+      "imdb_id": "tt0903747",
+      "tmdb_id": 1396,
+      "tvmaze_id": 169,
+      "wikidata_id": "Q1079",
+      "genres": [
+        "Crime & Investigação",
+        "Drama",
+        "Suspense"
+      ],
+      "credits": [
+        {
+          "name": "Vince Gilligan",
+          "role_type": "creator",
+          "country": "US"
+        },
+        {
+          "name": "Bryan Cranston",
+          "role_type": "actor",
+          "character_name": "Walter White",
+          "billing_order": 1
+        },
+        {
+          "name": "Aaron Paul",
+          "role_type": "actor",
+          "character_name": "Jesse Pinkman",
+          "billing_order": 2
+        },
+        {
+          "name": "Bob Odenkirk",
+          "role_type": "actor",
+          "character_name": "Saul Goodman",
+          "billing_order": 3
+        },
+        {
+          "name": "Giancarlo Esposito",
+          "role_type": "actor",
+          "character_name": "Gus Fring",
+          "billing_order": 4
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Netflix",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "tv_show",
+      "title": "Better Call Saul",
+      "original_title": "Better Call Saul",
+      "overview": "Os julgamentos e tribulações do advogado criminalista Jimmy McGill nos anos que antecederam o estabelecimento de seu escritório de advocacia em Albuquerque como Saul Goodman.",
+      "release_date": "2015-02-08",
+      "end_date": "2022-08-15",
+      "release_year": 2015,
+      "runtime_minutes": 46,
+      "status": "Ended",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/fC2HDm5t0kHl7mTm7jxMR31b7by.jpg",
+      "rating": 9.0,
+      "rating_source": "imdb",
+      "vote_count": 695000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 9.0,
+          "votes": 695000
+        },
+        "tmdb": {
+          "rating": 8.7,
+          "votes": 5300
+        },
+        "tvmaze": {
+          "rating": 8.8,
+          "votes": 2100
+        }
+      },
+      "popularity_score": 94.8,
+      "seasons_count": 6,
+      "episodes_count": 63,
+      "network_or_studio": "AMC",
+      "collection_name": "Universo Breaking Bad",
+      "imdb_id": "tt3032476",
+      "tmdb_id": 60059,
+      "tvmaze_id": 618,
+      "wikidata_id": "Q15956708",
+      "genres": [
+        "Crime & Investigação",
+        "Drama"
+      ],
+      "credits": [
+        {
+          "name": "Vince Gilligan",
+          "role_type": "creator",
+          "country": "US"
+        },
+        {
+          "name": "Peter Gould",
+          "role_type": "creator",
+          "country": "US"
+        },
+        {
+          "name": "Bob Odenkirk",
+          "role_type": "actor",
+          "character_name": "Jimmy McGill / Saul Goodman",
+          "billing_order": 1
+        },
+        {
+          "name": "Rhea Seehorn",
+          "role_type": "actor",
+          "character_name": "Kim Wexler",
+          "billing_order": 2
+        },
+        {
+          "name": "Giancarlo Esposito",
+          "role_type": "actor",
+          "character_name": "Gus Fring",
+          "billing_order": 3
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Netflix",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "tv_show",
+      "title": "Pluribus (Wycaro 339)",
+      "original_title": "Pluribus",
+      "overview": "Nova série dramática de ficção científica criada por Vince Gilligan e estrelada por Rhea Seehorn, ambientada em Albuquerque após um fenômeno súbito transformar a condição humana.",
+      "release_date": "2026-11-15",
+      "release_year": 2026,
+      "runtime_minutes": 55,
+      "status": "Upcoming",
+      "origin_country": "US",
+      "original_language": "en",
+      "rating": 8.6,
+      "rating_source": "tmdb",
+      "popularity_score": 93.0,
+      "seasons_count": 2,
+      "episodes_count": 10,
+      "network_or_studio": "Apple TV+",
+      "imdb_id": "tt22202452",
+      "tmdb_id": 210879,
+      "genres": [
+        "Ficção Científica",
+        "Drama",
+        "Mistério"
+      ],
+      "credits": [
+        {
+          "name": "Vince Gilligan",
+          "role_type": "creator",
+          "country": "US"
+        },
+        {
+          "name": "Vince Gilligan",
+          "role_type": "director",
+          "country": "US"
+        },
+        {
+          "name": "Rhea Seehorn",
+          "role_type": "actor",
+          "character_name": "Carol",
+          "billing_order": 1
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Apple TV+",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ],
+      "calendar_events": [
+        {
+          "event_type": "streaming_premiere",
+          "event_date": "2026-11-15",
+          "confidence_level": "confirmed",
+          "territory": "GLOBAL",
+          "platform_or_network": "Apple TV+",
+          "season_number": 1,
+          "episode_number": 1,
+          "event_title": "Estreia Global da Série de Vince Gilligan — Pluribus"
+        }
+      ]
+    },
+    {
+      "work_type": "tv_show",
+      "title": "Mindhunter",
+      "original_title": "Mindhunter",
+      "overview": "No final da década de 1970, dois agentes do FBI expandem a ciência criminal ao investigar a psicologia por trás de assassinatos e entrevistar serial killers encarcerados.",
+      "release_date": "2017-10-13",
+      "end_date": "2019-08-16",
+      "release_year": 2017,
+      "runtime_minutes": 54,
+      "status": "Ended",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/fbKE87mojpIETWepSbD5Qt741fp.jpg",
+      "rating": 8.6,
+      "rating_source": "imdb",
+      "vote_count": 355000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.6,
+          "votes": 355000
+        },
+        "tmdb": {
+          "rating": 8.1,
+          "votes": 2400
+        }
+      },
+      "popularity_score": 89.5,
+      "seasons_count": 2,
+      "episodes_count": 19,
+      "network_or_studio": "Netflix",
+      "imdb_id": "tt5290382",
+      "tmdb_id": 67744,
+      "tvmaze_id": 13085,
+      "wikidata_id": "Q25340057",
+      "genres": [
+        "Crime & Investigação",
+        "Suspense",
+        "Drama"
+      ],
+      "credits": [
+        {
+          "name": "David Fincher",
+          "role_type": "director",
+          "country": "US"
+        },
+        {
+          "name": "Jonathan Groff",
+          "role_type": "actor",
+          "character_name": "Holden Ford",
+          "billing_order": 1
+        },
+        {
+          "name": "Holt McCallany",
+          "role_type": "actor",
+          "character_name": "Bill Tench",
+          "billing_order": 2
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Netflix",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "mini_series",
+      "title": "Chernobyl",
+      "original_title": "Chernobyl",
+      "overview": "Minissérie dramática em cinco partes que retrata o desastre nuclear de Chernobyl em abril de 1986 e os esforços sem precedentes para conter a catástrofe.",
+      "release_date": "2019-05-06",
+      "end_date": "2019-06-03",
+      "release_year": 2019,
+      "runtime_minutes": 65,
+      "status": "Ended",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/hlLXt2tOPT6RRnjiUmoxyG1LTFi.jpg",
+      "rating": 9.3,
+      "rating_source": "imdb",
+      "vote_count": 910000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 9.3,
+          "votes": 910000
+        },
+        "tmdb": {
+          "rating": 8.7,
+          "votes": 6300
+        }
+      },
+      "popularity_score": 96.0,
+      "seasons_count": 1,
+      "episodes_count": 5,
+      "network_or_studio": "HBO",
+      "imdb_id": "tt7366338",
+      "tmdb_id": 87108,
+      "tvmaze_id": 30770,
+      "wikidata_id": "Q48741246",
+      "genres": [
+        "Drama",
+        "História",
+        "Suspense"
+      ],
+      "credits": [
+        {
+          "name": "Craig Mazin",
+          "role_type": "creator",
+          "country": "US"
+        },
+        {
+          "name": "Jared Harris",
+          "role_type": "actor",
+          "character_name": "Valery Legasov",
+          "billing_order": 1
+        },
+        {
+          "name": "Stellan Skarsgård",
+          "role_type": "actor",
+          "character_name": "Boris Shcherbina",
+          "billing_order": 2
+        },
+        {
+          "name": "Emily Watson",
+          "role_type": "actor",
+          "character_name": "Ulana Khomyuk",
+          "billing_order": 3
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Max",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "tv_show",
+      "title": "The Last of Us",
+      "original_title": "The Last of Us",
+      "overview": "Vinte anos após a destruição da civilização moderna por um fungo pandêmico, Joel é contratado para contrabandear Ellie para fora de uma zona de quarentena opressiva.",
+      "release_date": "2023-01-15",
+      "release_year": 2023,
+      "runtime_minutes": 58,
+      "status": "Returning Series",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/uKvVjHNqB5VmOrdxqAt2F7J78ED.jpg",
+      "rating": 8.7,
+      "rating_source": "imdb",
+      "vote_count": 590000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.7,
+          "votes": 590000
+        },
+        "tmdb": {
+          "rating": 8.6,
+          "votes": 5100
+        }
+      },
+      "popularity_score": 95.4,
+      "seasons_count": 2,
+      "episodes_count": 16,
+      "network_or_studio": "HBO",
+      "imdb_id": "tt3581920",
+      "tmdb_id": 100088,
+      "tvmaze_id": 46562,
+      "wikidata_id": "Q87131973",
+      "genres": [
+        "Drama",
+        "Ficção Científica",
+        "Ação",
+        "Aventura"
+      ],
+      "credits": [
+        {
+          "name": "Craig Mazin",
+          "role_type": "creator",
+          "country": "US"
+        },
+        {
+          "name": "Neil Druckmann",
+          "role_type": "creator",
+          "country": "US"
+        },
+        {
+          "name": "Pedro Pascal",
+          "role_type": "actor",
+          "character_name": "Joel Miller",
+          "billing_order": 1
+        },
+        {
+          "name": "Bella Ramsey",
+          "role_type": "actor",
+          "character_name": "Ellie",
+          "billing_order": 2
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Max",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "tv_show",
+      "title": "Dark",
+      "original_title": "Dark",
+      "overview": "O desaparecimento de duas crianças na pequena cidade alemã de Winden expõe as vidas duplas e as relações fraturadas entre quatro famílias ao longo de três gerações interligadas no tempo.",
+      "release_date": "2017-12-01",
+      "end_date": "2020-06-27",
+      "release_year": 2017,
+      "runtime_minutes": 56,
+      "status": "Ended",
+      "origin_country": "DE",
+      "original_language": "de",
+      "poster_url": "https://image.tmdb.org/t/p/w500/apbrbWs8M9lyOpJYU5WXrpFbk1Z.jpg",
+      "rating": 8.7,
+      "rating_source": "imdb",
+      "vote_count": 470000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.7,
+          "votes": 470000
+        },
+        "tmdb": {
+          "rating": 8.4,
+          "votes": 6800
+        }
+      },
+      "popularity_score": 92.0,
+      "seasons_count": 3,
+      "episodes_count": 26,
+      "network_or_studio": "Netflix",
+      "imdb_id": "tt5753856",
+      "tmdb_id": 70523,
+      "tvmaze_id": 17861,
+      "wikidata_id": "Q28497865",
+      "genres": [
+        "Ficção Científica",
+        "Mistério",
+        "Suspense",
+        "Drama"
+      ],
+      "credits": [
+        {
+          "name": "Baran bo Odar",
+          "role_type": "creator",
+          "country": "DE"
+        },
+        {
+          "name": "Jantje Friese",
+          "role_type": "creator",
+          "country": "DE"
+        },
+        {
+          "name": "Louis Hofmann",
+          "role_type": "actor",
+          "character_name": "Jonas Kahnwald",
+          "billing_order": 1
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Netflix",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "tv_show",
+      "title": "True Detective",
+      "original_title": "True Detective",
+      "overview": "Série antológica em que investigações policiais expõem segredos sombrios pessoais e institucionais daqueles dentro e fora da lei.",
+      "release_date": "2014-01-12",
+      "release_year": 2014,
+      "runtime_minutes": 58,
+      "status": "Returning Series",
+      "origin_country": "US",
+      "original_language": "en",
+      "poster_url": "https://image.tmdb.org/t/p/w500/cuV2O5ZyDLHSOWzg3nLVljp1ubw.jpg",
+      "rating": 8.9,
+      "rating_source": "imdb",
+      "vote_count": 680000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.9,
+          "votes": 680000
+        },
+        "tmdb": {
+          "rating": 8.3,
+          "votes": 3400
+        }
+      },
+      "popularity_score": 93.1,
+      "seasons_count": 4,
+      "episodes_count": 30,
+      "network_or_studio": "HBO",
+      "imdb_id": "tt2356777",
+      "tmdb_id": 46648,
+      "tvmaze_id": 5,
+      "wikidata_id": "Q13582819",
+      "genres": [
+        "Crime & Investigação",
+        "Mistério",
+        "Drama",
+        "Suspense"
+      ],
+      "credits": [
+        {
+          "name": "Nic Pizzolatto",
+          "role_type": "creator",
+          "country": "US"
+        },
+        {
+          "name": "Matthew McConaughey",
+          "role_type": "actor",
+          "character_name": "Rust Cohle",
+          "billing_order": 1
+        },
+        {
+          "name": "Woody Harrelson",
+          "role_type": "actor",
+          "character_name": "Marty Hart",
+          "billing_order": 2
+        },
+        {
+          "name": "Jodie Foster",
+          "role_type": "actor",
+          "character_name": "Liz Danvers",
+          "billing_order": 3
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Max",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "animation",
+      "title": "Planeta dos Abutres",
+      "original_title": "Scavengers Reign",
+      "overview": "A tripulação sobrevivente de uma nave cargueira espacial danificada fica presa em Vesta, um planeta alienígena belo, implacável e biologicamente complexo.",
+      "release_date": "2023-10-19",
+      "release_year": 2023,
+      "runtime_minutes": 25,
+      "status": "Ended",
+      "origin_country": "US",
+      "original_language": "en",
+      "rating": 8.6,
+      "rating_source": "imdb",
+      "vote_count": 32000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.6,
+          "votes": 32000
+        },
+        "tmdb": {
+          "rating": 8.5,
+          "votes": 420
+        }
+      },
+      "popularity_score": 85.4,
+      "seasons_count": 1,
+      "episodes_count": 12,
+      "network_or_studio": "Max / Titmouse",
+      "imdb_id": "tt21056886",
+      "tmdb_id": 204284,
+      "genres": [
+        "Animação",
+        "Ficção Científica",
+        "Drama",
+        "Aventura"
+      ],
+      "credits": [
+        {
+          "name": "Joseph Bennett",
+          "role_type": "creator",
+          "country": "US"
+        },
+        {
+          "name": "Charles Huettner",
+          "role_type": "creator",
+          "country": "US"
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "Max",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        },
+        {
+          "provider_name": "Netflix",
+          "territory": "US",
+          "monetization_type": "flatrate"
+        }
+      ]
+    },
+    {
+      "work_type": "documentary",
+      "title": "Duna de Jodorowsky",
+      "original_title": "Jodorowsky's Dune",
+      "overview": "A história da tentativa lendária e ambiciosa do cineasta cult Alejandro Jodorowsky de adaptar o romance de ficção científica Duna em meados da década de 1970.",
+      "release_date": "2013-08-30",
+      "release_year": 2013,
+      "runtime_minutes": 90,
+      "status": "Released",
+      "origin_country": "US",
+      "original_language": "en",
+      "rating": 8.0,
+      "rating_source": "imdb",
+      "vote_count": 42000,
+      "ratings_breakdown": {
+        "imdb": {
+          "rating": 8.0,
+          "votes": 42000
+        },
+        "tmdb": {
+          "rating": 7.9,
+          "votes": 780
+        }
+      },
+      "popularity_score": 78.0,
+      "network_or_studio": "Sony Pictures Classics",
+      "collection_name": "Saga Duna",
+      "imdb_id": "tt1935156",
+      "tmdb_id": 191720,
+      "genres": [
+        "Documentário",
+        "Ficção Científica",
+        "História"
+      ],
+      "credits": [
+        {
+          "name": "Frank Pavich",
+          "role_type": "director",
+          "country": "US"
+        },
+        {
+          "name": "Alejandro Jodorowsky",
+          "role_type": "actor",
+          "character_name": "Ele mesmo",
+          "billing_order": 1
+        },
+        {
+          "name": "Denis Villeneuve",
+          "role_type": "actor",
+          "character_name": "Convidado / Arquivo",
+          "billing_order": 2
+        }
+      ],
+      "availabilities": [
+        {
+          "provider_name": "MUBI",
+          "territory": "BR",
+          "monetization_type": "flatrate"
+        },
+        {
+          "provider_name": "Prime Video",
+          "territory": "BR",
+          "monetization_type": "rent"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    [
+      "tt1160419",
+      "tt15239678",
+      "sequel",
+      "Continuação direta de Duna (2021)"
+    ],
+    [
+      "tt15239678",
+      "tt1160419",
+      "prequel",
+      "Primeira parte da adaptação de Denis Villeneuve"
+    ],
+    [
+      "tt15239678",
+      "tt31314290",
+      "sequel",
+      "Conclusão da trilogia com Duna: Messias (2026)"
+    ],
+    [
+      "tt1160419",
+      "tt0087182",
+      "remake",
+      "Nova adaptação do romance de Frank Herbert"
+    ],
+    [
+      "tt0903747",
+      "tt3032476",
+      "spinoff",
+      "Prequela e spin-off focado em Jimmy McGill / Saul Goodman"
+    ],
+    [
+      "tt3032476",
+      "tt0903747",
+      "sequel",
+      "Série matriz do universo Breaking Bad"
+    ]
+  ]
+}

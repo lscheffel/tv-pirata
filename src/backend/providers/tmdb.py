@@ -74,6 +74,8 @@ class TMDBProvider(BaseMetadataProvider):
                     )
                 )
 
+        networks = [n.get("name") for n in (data.get("networks") or []) if n.get("name")]
+
         return UnifiedShow(
             id=data["id"],
             tmdb_id=data["id"],
@@ -87,6 +89,8 @@ class TMDBProvider(BaseMetadataProvider):
             genres=genres,
             first_air_date=data.get("first_air_date"),
             status=data.get("status"),
+            network=networks[0] if networks else None,
+            streaming_providers=networks,
             source_provider="tmdb",
             seasons=seasons,
         )

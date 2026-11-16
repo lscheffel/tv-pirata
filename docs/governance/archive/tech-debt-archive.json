@@ -1,0 +1,78 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2026-11-15",
+  "archived_debts": [
+    {
+      "id": "TD-2026-001",
+      "title": "Ausência de cache em disco local para requisições de Trending",
+      "severity": "LOW",
+      "status": "RESOLVED",
+      "mitigating_adr": "ADR-004",
+      "created_at": "2026-11-11",
+      "resolved_at": "2026-11-11"
+    },
+    {
+      "id": "TD-2026-002",
+      "title": "Scanner heurístico de arquivos SMB e tabela local_media pendentes",
+      "severity": "MEDIUM",
+      "status": "RESOLVED",
+      "mitigating_adr": "ADR-004",
+      "created_at": "2026-11-11",
+      "resolved_at": "2026-11-11"
+    },
+    {
+      "id": "TD-2026-003",
+      "title": "Ausência de persistência relacional física para biblioteca pessoal e histórico de assistidos",
+      "severity": "HIGH",
+      "status": "RESOLVED",
+      "mitigating_adr": "ADR-004",
+      "created_at": "2026-11-11",
+      "resolved_at": "2026-11-11"
+    },
+    {
+      "id": "TD-2026-004",
+      "title": "Ausência de servidor web FastAPI com rotas REST expostas para o frontend",
+      "severity": "HIGH",
+      "status": "RESOLVED",
+      "mitigating_adr": "ADR-004",
+      "created_at": "2026-11-11",
+      "resolved_at": "2026-11-11"
+    },
+    {
+      "id": "TD-2026-005",
+      "title": "Ausência de frontend web cinematográfico SPA (React + Tailwind OLED-Safe) para homelab",
+      "severity": "HIGH",
+      "status": "RESOLVED",
+      "mitigating_adr": "ADR-005",
+      "created_at": "2026-11-11",
+      "resolved_at": "2026-11-12"
+    },
+    {
+      "id": "TD-2026-006",
+      "title": "Descoberta abstrata desprovida de catálogo persistente local e garantia física de sementes P2P",
+      "severity": "HIGH",
+      "status": "RESOLVED",
+      "mitigating_adr": "ADR-006",
+      "created_at": "2026-11-12",
+      "resolved_at": "2026-11-12"
+    },
+    {
+      "id": "TD-2026-007",
+      "title": "Ausência de reconciliação assíncrona periódica em segundo plano e notificações de novos episódios",
+      "severity": "MEDIUM",
+      "status": "RESOLVED",
+      "mitigating_adr": "ADR-007",
+      "created_at": "2026-11-12",
+      "resolved_at": "2026-11-12"
+    },
+    {
+      "id": "TD-2026-008",
+      "title": "Domínio restrito a séries e acoplado a torrents, sem catálogo multi-formato, procedência por atributo ou filtragem booleana",
+      "severity": "HIGH",
+      "status": "RESOLVED",
+      "mitigating_adr": "ADR-008",
+      "created_at": "2026-11-12",
+      "resolved_at": "2026-11-12"
+    }
+  ]
+}

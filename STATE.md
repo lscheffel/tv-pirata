@@ -1,48 +1,60 @@
 # Estado Atual do Workspace (STATE.md)
 
-> **Persistent Agent Memory & Repository State**  
-> Última auditoria e reconciliação: 2026-11-12
+> **Persistent Agent Memory & Repository State (SSOT)**  
+> Última auditoria e reconciliação completa (6 Pilares SOTA): 2026-11-15
 
 ---
 
 ## 1. 📍 Contexto e Fase Ativa
 
-- **Branch Atual:** `main`
-- **Fase de Ciclo de Vida:** Catálogo Físico EZTV + Background Auto-Sync & Notificador Concluídos (v0.5.0)
-- **Status do Build / Quality Gate:** PASSING (47/47 testes aprovados, Ruff aprovado, Vite build aprovado)
+- **Versão Atual:** `v0.6.0`
+- **Branch Ativa:** `main` / `develop` (Sincronizadas para Release `v0.6.0`)
+- **Posicionamento Arquitetural:** **Audiovisual Discovery Platform & Personal Media Ecosystem (Discovery-First)** estruturada em 3 camadas e persistência Dual-SQLite de alta performance:
+  - **Camada 1 — Audiovisual Discovery Core (`data/tv_pirata.db`):** Domínio canônico multi-formato (`MediaWork`), resolução de identidade multi-fonte (`EntityResolutionService`), procedência por atributo (`DataProvenance`), filtragem booleana (`AND`/`OR`/`NOT`), facetas dinâmicas, descoberta por filmografia/colaborações, similaridade objetiva, calendário de estreias e cruzamento de disponibilidade com o catálogo EZTV (`/api/explore` + `ExplorerView.tsx`).
+  - **Camada 2 — Personal Media Ecosystem (`data/tv_pirata.db` + `data/eztv_metadata.db`):** Separação física entre a base principal e a base dedicada EZTV (`EZTVShow`, `EZTVEpisodeCatalog`, `shows_fts`), `EngineScopedCache` com fingerprint, estatísticas de episódios materializadas (`episodes_count`, `max_season`, `max_episode`), badges universais (`StatusBadge`, `ProviderBadge`, `EztvBadge`), biblioteca pessoal (`ShowRecord`), progresso de episódios (`EpisodeWatchRecord`), disponibilidade SMB (`LocalMediaRecord`) e agendador assíncrono com notificações de novos episódios (`BackgroundSyncService`, `ReleaseNotificationRecord`).
+  - **Camada 3 — Personalization & Intelligence:** Motor de similaridade multi-critério sem N+1 queries com justificativa explícita, coleções inteligentes (`CollectionRecord`) e exclusão de títulos já assistidos.
+- **Status do Build / Quality Gate:** **PASSING** (`63/63` testes aprovados, `ruff check` 100% limpo, bundle SPA Vite compilado em `src/backend/static/dist/`).
 
 ---
 
-## 2. 🏛️ Ledger Consolidado de ADRs
+## 2. 🏛️ Ledger Consolidado de ADRs (`docs/adr/ADR-INDEX.md`)
 
-| ID | Título | Status | Tarefas | Implementação | Registrado |
-|:---|:---|:---:|:---:|:---:|:---:|
-| **ADR-001** | [Arquitetura Fundamental do TV Pirata](./docs/adr/archive/ADR-001.md) | ACCEPTED | 6/6 (100%) | CONSOLIDADA | 2026-11-11 |
-| **ADR-002** | [Provedores de Descoberta, Fallback Resiliente e Gestão de Mídia](./docs/adr/archive/ADR-002.md) | ACCEPTED | 7/7 (100%) | CONSOLIDADA | 2026-11-11 |
-| **ADR-003** | [Implementação do Contrato Unificado e EZTV](./docs/adr/archive/ADR-003.md) | ACCEPTED | 10/10 (100%) | CONSOLIDADA | 2026-11-11 |
-| **ADR-004** | [Persistência Relacional SQLModel, Gestão de Biblioteca e Servidor Web FastAPI](./docs/adr/archive/ADR-004.md) | ACCEPTED | 11/11 (100%) | CONSOLIDADA | 2026-11-11 |
-| **ADR-005** | [Frontend Cinemático SPA (Vite + React + Tailwind), Design System OLED-Safe](./docs/adr/ADR-005.md) | ACCEPTED | 12/12 (100%) | CONSOLIDADA | 2026-11-12 |
-| **ADR-006** | [Catálogo Local Persistente da EZTV e Motor de Ingestão P2P](./docs/adr/ADR-006.md) | ACCEPTED | 12/12 (100%) | CONSOLIDADA | 2026-11-12 |
-| **ADR-007** | [Background Auto-Sync e Notificador de Novos Lançamentos](./docs/adr/ADR-007.md) | ACCEPTED | 12/12 (100%) | CONSOLIDADA | 2026-11-12 |
-
----
-
-## 3. 💳 Registro de Débitos Técnicos (Tech Debt Registry)
-
-| ID | Título | Severidade | Status | ADR Mitigadora |
-|:---|:---|:---:|:---:|:---:|
-| `TD-2026-001` | Ausência de cache em disco local para requisições de Trending | Baixa | RESOLVIDO | ADR-004 |
-| `TD-2026-002` | Scanner heurístico de arquivos SMB e tabela local_media pendentes | Média | RESOLVIDO | ADR-004 |
-| `TD-2026-003` | Ausência de persistência relacional física para biblioteca pessoal e histórico de assistidos | Alta | RESOLVIDO | ADR-004 |
-| `TD-2026-004` | Ausência de servidor web FastAPI com rotas REST expostas para o frontend | Alta | RESOLVIDO | ADR-004 |
-| `TD-2026-005` | Ausência de frontend web cinematográfico para homelab | Alta | RESOLVIDO | ADR-005 |
-| `TD-2026-006` | Descoberta abstrata desprovida de garantia física de sementes P2P | Alta | RESOLVIDO | ADR-006 |
-| `TD-2026-007` | Ausência de reconciliação assíncrona periódica em segundo plano | Média | RESOLVIDO | ADR-007 |
+| ID | Título | Arquivada | Progresso | Implementação | Janitor Status |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| **ADR-001** | [Arquitetura Fundamental do TV Pirata (Descoberta, Controle e SMB)](./docs/adr/ADR-001-ER.md) | Sim | 6/6 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
+| **ADR-002** | [Provedores de Descoberta, Fallback Resiliente e Gestão de Mídia (Schema v1)](./docs/adr/ADR-002-ER.md) | Sim | 7/7 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
+| **ADR-003** | [Implementação do Contrato Unificado, Provedores com Fallback e EZTV](./docs/adr/ADR-003-ER.md) | Sim | 10/10 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
+| **ADR-004** | [Persistência Relacional SQLModel, Gestão de Biblioteca e Servidor Web FastAPI](./docs/adr/ADR-004-ER.md) | Sim | 11/11 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
+| **ADR-005** | [Frontend Cinemático SPA (Vite + React + Tailwind), Design System OLED-Safe](./docs/adr/ADR-005-ER.md) | Sim | 12/12 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
+| **ADR-006** | [Catálogo Local Persistente da EZTV e Motor de Ingestão P2P](./docs/adr/ADR-006-ER.md) | Sim | 12/12 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
+| **ADR-007** | [Background Auto-Sync, Agendamento Assíncrono e Notificador de Novos Lançamentos](./docs/adr/ADR-007-ER.md) | Sim | 12/12 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
+| **ADR-008** | [Fundação do Audiovisual Discovery Core (Camada 1): Domínio Canônico, Procedência e Motor de Descoberta](./docs/adr/ADR-008-ER.md) | Sim | 10/10 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
+| **ADR-009** | [Separação de Bases (tv_pirata.db vs eztv_metadata.db) + Entrelaçamento EZTV](./docs/adr/ADR-009-ER.md) | Sim | 7/7 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
+| **ADR-010** | [Otimização de Desempenho de Leitura Dual-SQLite, Estatísticas Materializadas, Cache Escopado por Engine e FTS5](./docs/adr/ADR-010-ER.md) | Sim | 21/21 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
 
 ---
 
-## 4. 🧭 Próximos Passos Imediatos
+## 3. 💳 Registro de Débitos Técnicos (`docs/governance/tech-debt-registry.json`)
 
-1. Arquivar ADR-005, ADR-006 e ADR-007 via skill `adr-archive`.
-2. Integrador qBittorrent / Transmission Web API para disparo direto de downloads a partir da UI.
-3. Scanner heurístico e mapeamento de arquivos em disco / SMB (`LocalMediaRecord`).
+- **Débitos Ativos:** `0` (Nenhum débito técnico aberto).
+- **Débitos Resolvidos e Arquivados (`docs/governance/archive/tech-debt-archive.json`):** `8/8` (`TD-2026-001` a `TD-2026-008` — 100% mitigados e podados pelo `adr-archive`).
+
+---
+
+## 4. 📜 Histórico Recente de Sessões
+
+- **2026-11-11 (`v0.1.0` $\rightarrow$ `v0.2.0`):** Bootstrap do repositório (`ADR-001`), modelos unificados e provedores com fallback TMDB/TVMaze + EZTV (`ADR-002`, `ADR-003`), persistência relacional SQLModel e servidor FastAPI (`ADR-004`).
+- **2026-11-12 (`v0.3.0` $\rightarrow$ `v0.5.0`):** Implementação do Frontend Cinemático SPA React 19 OLED-Safe (`ADR-005`), Catálogo Persistente P2P EZTV (`ADR-006`) e Background Auto-Sync + Release Notifier (`ADR-007`).
+- **2026-11-12 a 2026-11-15 (`v0.6.0`):**
+  - Implementada `ADR-008` (Camada 1: Domínio Canônico Multi-Formato, `EntityResolutionService`, `FederatedCatalogService`, `DiscoveryEngineRepository`, `/api/explore` e `ExplorerView.tsx`).
+  - Implementada `ADR-009` (Isolamento Dual-Database `data/tv_pirata.db` vs `data/eztv_metadata.db`, cruzamento de disponibilidade EZTV, sistema de badges permanentes `StatusBadge`, `ProviderBadge` e `EztvBadge`, e contorno Cloudflare `403` com enriquecimento multi-provedor em `scripts/eztv-metadata-catalog.py`).
+  - Implementada `ADR-010` (Tuning `PRAGMA`s SQLite WAL/mmap, estatísticas de episódios materializadas em `shows`, índice virtual `FTS5` `shows_fts`, `EngineScopedCache` com fingerprint e pipeline single-pass de seções curadas, reduzindo a latência de leitura em mais de 98%).
+  - Executado ciclo completo `adr-archive` (`ADR-005` a `ADR-010` arquivadas com `ER.md` e poda de débitos) e reconciliação dos 6 Pilares SOTA.
+
+---
+
+## 5. 🧭 Próximos Passos Evolutivos Recomendados
+
+1. **Conectores Adicionais da Camada 1 (Trakt / Wikidata / JustWatch):** Expandir conectores externos de disponibilidade regional de streaming e listas editoriais públicas.
+2. **Camada 3 — Radar Pessoal de Descoberta:** Alertas proativos baseados em diretores, criadores e atores favoritos do usuário quando novas obras entram no calendário de lançamentos.
+3. **Player/Streamer Web Integrado para Mídia Local SMB:** Transcodificação leve sob demanda ou reprodução direta de arquivos mapeados em `LocalMediaRecord`.

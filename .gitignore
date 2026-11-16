@@ -68,6 +68,8 @@ out/
 .tern-port
 
 # Databases & Local Vector Stores
+data/
+.local/
 *.db
 *.sqlite
 *.sqlite3

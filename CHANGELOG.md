@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.0] - 2026-11-15
+
+### Added
+- **Dual-Database Separation & EZTV Cross-Referencing (ADR-009):**
+  - Implemented isolated SQLModel persistence for `data/eztv_metadata.db` (`EZTVShow`, `EZTVEpisodeCatalog` on `eztv_metadata = MetaData()`) in `src/backend/models/eztv_db.py` and `get_eztv_session()` / `init_eztv_db()` in `src/backend/core/database.py`.
+  - Refactored `CatalogRepository` (`src/backend/repositories/catalog.py`) and `/api/catalog` (`src/backend/api/catalog.py`) to serve shows, curated sections, episode guides, and genres directly from `data/eztv_metadata.db`, overlaid with P2P seed telemetry from `data/tv_pirata.db` and `/api/catalog/enrich-pending` gap filling.
+  - Cross-referenced `DiscoveryEngineRepository` (`src/backend/repositories/discovery_engine.py`) and `/api/discovery` (`src/backend/api/discovery.py`) against `data/eztv_metadata.db` via normalized IMDb ID (`ttXXXXXXX`) and deterministic title/slug fallback, exposing `eztv_available`, `eztv_show_id`, `status`, `network`, and `streaming_providers`.
+  - Created custom vector badge components `EztvBadge.tsx` (`src/frontend/src/components/EztvBadge.tsx`) and `ShowBadges.tsx` (`StatusBadge` & `ProviderBadge` in `src/frontend/src/components/ShowBadges.tsx`) integrated across all channels (`ShowCard.tsx`, `ExplorerView.tsx`, `CatalogView.tsx`).
+  - Upgraded `scripts/eztv-metadata-catalog.py` with Cloudflare challenge detection (`is_cloudflare_challenge`), automatic fallback to EZTV's official JSON API (`/api/get-torrents`), TVMaze name-search fallback (`fetch_tvmaze_by_name`), and TMDB enrichment (`fetch_tmdb_enrichment`).
+- **Dual-SQLite High-Performance Read Pipeline, Materialized Stats & FTS5 (ADR-010):**
+  - Added SQLAlchemy `@event.listens_for(Engine, "connect")` hook in `src/backend/core/database.py` configuring `PRAGMA journal_mode=WAL`, `synchronous=NORMAL`, `temp_store=MEMORY`, `cache_size=-64000` (64 MB), `mmap_size=268435456` (256 MB), and `busy_timeout=5000`.
+  - Added materialized episode statistics (`episodes_count`, `max_season`, `max_episode`) to `EZTVShow` with idempotent SQL backfill and `shows_fts` (`FTS5` virtual table + `AFTER INSERT/DELETE/UPDATE` triggers).
+  - Implemented thread-safe `EngineScopedCache` in `src/backend/core/cache.py` partitioned by `(id(engine), table_fingerprint)`, single-pass `get_curated_sections`, and `_SEEDED_ENGINES` guard in `FederatedCatalogService`, cutting `list_shows` latency by **98.4%** (`965.61 ms` $\rightarrow$ `15.19 ms`) and `get_curated_sections` by **99.3%** (`692.07 ms` $\rightarrow$ `4.74 ms`).
+- **Audiovisual Discovery Core — Layer 1 Foundation (ADR-008):**
+  - Implemented multi-format canonical domain model in `src/backend/models/catalog_domain.py` (`MediaWork`, `ExternalIdentifier`, `DataProvenance`, `PersonRecord`, `WorkCredit`, `GenreRecord`, `WorkGenreLink`, `StreamingAvailability`, `WorkRelation`, `ReleaseCalendarEvent`) supporting Movies, TV Series, Mini-series, Documentaries, Animations, and Specials independently of local files or P2P torrents.
+  - Implemented `EntityResolutionService` in `src/backend/services/entity_resolution.py` with confidence-tiered matching (`deterministic`, `high`), anti-collision remake protection, per-source rating preservation (`ratings_breakdown`), and field-level `DataProvenance` tracking.
+  - Implemented `FederatedCatalogService` in `src/backend/services/federated_catalog.py` combining curated multi-source works (`curated_catalog_seed.json`), automatic bridging with existing `CatalogShow` and `ShowRecord` entities, and complementary live connector ingestion.
+  - Implemented `DiscoveryEngineRepository` in `src/backend/repositories/discovery_engine.py` featuring an Advanced Filtering Engine (`AND`/`OR`/`NOT` genres, format, year range, rating, runtime, director/actor/creator, streaming platform, country, language, watched exclusion), dynamic facet aggregation, Relationship Discovery (filmographies and shared 2-person collaborations), Objective Similarity Engine, and Unified Release Calendar.
+  - Exposed `/api/explore` REST router in `src/backend/api/explore.py` (`/works`, `/works/{id}`, `/people`, `/people/{id}`, `/people/collaborations`, `/calendar`, `/rankings`, `/federate`).
+  - Integrated cinematic **`ExplorerView.tsx`** ("Explorar Universo") in the React 19 SPA with interactive boolean filters, dynamic facet counters, canonical work dossiers with provenance and streaming availability, filmography/collaboration explorer, and release calendar.
+  - Added unit and integration tests (`test_entity_resolution.py`, `test_discovery_engine.py`, `test_explore_api.py`, `test_dual_db_eztv.py`, `test_db_performance.py`), expanding the automated test suite to **63 passing tests**.
+
+### Changed
+- Aligned package and runtime version metadata to `0.6.0` across `pyproject.toml`, `src/frontend/package.json`, and `src/backend/main.py`.
+- Archived completed Decision Sets `ADR-005` through `ADR-010` via `spx adr archive` with algorithmic Evidence Records (`ADR-005-ER.md` to `ADR-010-ER.md`) and pruned resolved technical debts to `docs/governance/archive/tech-debt-archive.json`.
+- Reconciled all 6 canonical documentation pillars (`README.md`, `CHANGELOG.md`, `USAGE.md`, `RELEASE-NOTES.md`, `STATE.md`, `AGENTS.md`/`GEMINI.md`) and `docs/DOCUMENTATION_AUDIT_REPORT.md`.
+
+---
+
 ## [0.5.0] - 2026-11-12
 
 ### Added

@@ -120,6 +120,9 @@ class UnifiedShow(BaseModel):
     genres: list[str] = Field(default_factory=list)
     first_air_date: Optional[str] = None
     status: Optional[str] = None
+    network: Optional[str] = None
+    streaming_providers: list[str] = Field(default_factory=list)
+    eztv_available: bool = False
     source_provider: str = "tmdb"
     seasons: list[UnifiedSeason] = Field(default_factory=list)
 
