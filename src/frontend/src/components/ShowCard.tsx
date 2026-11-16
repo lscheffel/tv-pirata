@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { Star, Download, Bookmark, Check, Film } from "lucide-react";
 import { UnifiedShow } from "../types";
+import { EztvBadge } from "./EztvBadge";
+import { ProviderBadge, StatusBadge } from "./ShowBadges";
 
 interface ShowCardProps {
   show: UnifiedShow;
@@ -42,6 +44,13 @@ export const ShowCard: React.FC<ShowCardProps> = ({
           </div>
         )}
 
+        {/* Top-left: EZTV Badge (only when available on EZTV) */}
+        {(show.source_provider === "eztv-catalog" || show.eztv_available) && (
+          <div className="absolute top-2 left-2 z-10">
+            <EztvBadge compact />
+          </div>
+        )}
+
         {/* Rating Badge */}
         {show.rating > 0 && (
           <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-yellow-400 text-xs font-bold border border-yellow-500/20">
@@ -55,15 +64,23 @@ export const ShowCard: React.FC<ShowCardProps> = ({
 
         {/* Hover Action Overlay */}
         <div className="absolute inset-x-0 bottom-0 p-3 flex flex-col justify-end transform translate-y-2 group-hover:translate-y-0 transition-transform">
+          {/* Permanent Catalog Badges: Status & Service Provider */}
+          {(show.status || show.network || (show.streaming_providers && show.streaming_providers.length > 0)) && (
+            <div className="flex flex-wrap items-center gap-1 mb-1.5">
+              <StatusBadge status={show.status} compact />
+              <ProviderBadge
+                provider={show.streaming_providers?.[0] || show.network}
+                compact
+              />
+            </div>
+          )}
+
           <h3 className="text-sm font-bold text-white line-clamp-1 group-hover:text-brand-red transition-colors">
             {show.title}
           </h3>
 
           <div className="flex items-center justify-between mt-1 text-xs text-slate-400">
             <span>{year || "Série"}</span>
-            <span className="text-slate-500 uppercase text-[10px] tracking-wider font-semibold">
-              {show.source_provider}
-            </span>
           </div>
 
           {/* Quick Action Buttons (Show on hover) */}

@@ -50,6 +50,10 @@ class TVMazeProvider(BaseMetadataProvider):
                 )
             )
 
+        web_channel = (data.get("webChannel") or {}).get("name")
+        tv_network = (data.get("network") or {}).get("name")
+        providers = list(dict.fromkeys(p for p in (web_channel, tv_network) if p))
+
         return UnifiedShow(
             id=data["id"],
             tvmaze_id=data["id"],
@@ -61,6 +65,8 @@ class TVMazeProvider(BaseMetadataProvider):
             genres=data.get("genres", []),
             first_air_date=data.get("premiered"),
             status=data.get("status"),
+            network=web_channel or tv_network,
+            streaming_providers=providers,
             source_provider="tvmaze",
             seasons=seasons,
         )

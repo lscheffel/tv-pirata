@@ -17,6 +17,8 @@ import {
 import { CatalogGenreCount, CatalogShow, CatalogStats, UnifiedShow } from "../types";
 import { api } from "../services/api";
 import { useToast } from "../context/ToastContext";
+import { EztvBadge } from "./EztvBadge";
+import { ProviderBadge, StatusBadge } from "./ShowBadges";
 
 interface CatalogViewProps {
   onOpenDetails: (show: UnifiedShow) => void;
@@ -137,6 +139,9 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
       genres: cat.genres ? cat.genres.split(",").map((g) => g.trim()) : [],
       first_air_date: cat.first_air_date || undefined,
       status: cat.status || undefined,
+      network: cat.network || undefined,
+      streaming_providers: cat.streaming_providers || (cat.network ? [cat.network] : []),
+      eztv_available: true,
       source_provider: "eztv-catalog",
       seasons: [],
     };
@@ -166,7 +171,10 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           {stats && (
             <div className="hidden sm:flex items-center gap-2 text-xs bg-surface border border-white/10 rounded-xl px-3 py-2 text-slate-300">
               <span className="font-bold text-white">{stats.total_shows}</span> séries |
-              <span className="font-bold text-emerald-400">{stats.total_releases}</span> releases |
+              <span className="font-bold text-cyan-400">
+                {stats.total_episodes ?? stats.total_releases}
+              </span>{" "}
+              episódios |
               <span className="text-yellow-400 font-bold">{stats.max_seeds_in_catalog}</span> max seeds
             </div>
           )}
@@ -316,7 +324,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
             return (
               <div
-                key={show.imdb_id}
+                key={`${show.eztv_show_id ?? show.imdb_id}`}
                 onClick={() => onOpenDetails(unified)}
                 className="group relative flex flex-col rounded-xl overflow-hidden bg-surface border border-white/5 hover:border-white/15 cursor-pointer transition-all duration-300 hover:scale-[1.03] hover:z-20 shadow-xl"
               >
@@ -336,10 +344,15 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                     </div>
                   )}
 
-                  {/* Seeds Pill */}
-                  <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md text-emerald-400 text-xs font-extrabold border border-emerald-500/30">
-                    <Users className="w-3 h-3 text-emerald-400" />
-                    {show.max_seeds}
+                  {/* Top-left: EZTV Badge + Seeds Pill */}
+                  <div className="absolute top-2 left-2 flex items-center gap-1.5 z-10">
+                    <EztvBadge compact />
+                    {show.max_seeds > 0 && (
+                      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/80 backdrop-blur-md text-emerald-400 text-[10px] font-extrabold border border-emerald-500/30">
+                        <Users className="w-2.5 h-2.5 text-emerald-400" />
+                        {show.max_seeds}
+                      </div>
+                    )}
                   </div>
 
                   {/* Rating Badge */}
@@ -352,14 +365,25 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
                   <div className="absolute inset-0 bg-gradient-to-t from-canvas via-transparent to-transparent opacity-80 group-hover:opacity-90 transition-opacity" />
 
-                  {/* Bottom overlay with torrent action */}
+                  {/* Bottom overlay with permanent badges and torrent action */}
                   <div className="absolute inset-x-0 bottom-0 p-3">
+                    {(show.status || show.network || (show.streaming_providers && show.streaming_providers.length > 0)) && (
+                      <div className="flex flex-wrap items-center gap-1 mb-1.5">
+                        <StatusBadge status={show.status} compact />
+                        <ProviderBadge
+                          provider={show.streaming_providers?.[0] || show.network}
+                          compact
+                        />
+                      </div>
+                    )}
                     <h3 className="text-sm font-bold text-white line-clamp-1 group-hover:text-cyan-300 transition-colors">
                       {show.title}
                     </h3>
                     <div className="flex items-center justify-between mt-1 text-[11px] text-slate-400">
                       <span className="font-semibold text-slate-300">
-                        {show.total_torrents} {show.total_torrents === 1 ? "release" : "releases"}
+                        {show.episodes_count && show.episodes_count > 0
+                          ? `${show.episodes_count} eps`
+                          : `${show.total_torrents} ${show.total_torrents === 1 ? "release" : "releases"}`}
                       </span>
                       {show.latest_season > 0 && (
                         <span className="font-mono text-cyan-300">

@@ -8,6 +8,9 @@
 | ADR-002 | Provedores de Descoberta, Fallback Resiliente e Gestão de Mídia (Schema v1) | Sim | 7/7 | CONSOLIDADA | - | ARCHIVED_OK |
 | ADR-003 | Implementação do Contrato Unificado, Provedores com Fallback e EZTV | Sim | 10/10 | CONSOLIDADA | - | ARCHIVED_OK |
 | ADR-004 | Persistência Relacional SQLModel, Gestão de Biblioteca e Servidor Web FastAPI | Sim | 11/11 | CONSOLIDADA | - | ARCHIVED_OK |
-| ADR-005 | Frontend Cinemático SPA (Vite + React + Tailwind), Design System OLED-Safe | Não | 12/12 | CONSOLIDADA | ADR-004 | PENDING_ARCHIVE |
-| ADR-006 | Catálogo Local Persistente da EZTV e Motor de Ingestão P2P | Não | 12/12 | CONSOLIDADA | ADR-005 | PENDING_ARCHIVE |
-| ADR-007 | Background Auto-Sync, Agendamento Assíncrono e Notificador de Novos Lançamentos | Não | 12/12 | CONSOLIDADA | ADR-006 | ACTIVE |
+| ADR-005 | Frontend Cinemático SPA (Vite + React + Tailwind), Design System OLED-Safe e Experiência de Streaming | Sim | 12/12 | CONSOLIDADA | - | ARCHIVED_OK |
+| ADR-006 | Catálogo Local Persistente da EZTV, Motor de Ingestão/Indexação P2P e Descoberta Baseada em Mídia Real | Sim | 12/12 | CONSOLIDADA | - | ARCHIVED_OK |
+| ADR-007 | Background Auto-Sync, Agendamento Assíncrono Periódico e Notificador de Novos Lançamentos para Séries da Biblioteca | Sim | 12/12 | CONSOLIDADA | - | ARCHIVED_OK |
+| ADR-008 | Fundação do Audiovisual Discovery Core (Camada 1): Domínio Canônico Multi-Formato, Resolução de Identidade com Procedência, Federação de Fontes e Motor de Descoberta Avançada | Sim | 10/10 | CONSOLIDADA | - | ARCHIVED_OK |
+| ADR-009 | Separação de Bases (tv_pirata.db vs eztv_metadata.db) + Entrelaçamento EZTV | Sim | 7/7 | CONSOLIDADA | - | ARCHIVED_OK |
+| ADR-010 | ADR-010: Otimização de Desempenho de Leitura Dual-SQLite, Estatísticas Materializadas, Cache Escopado por Engine e FTS5 | Sim | 21/21 | CONSOLIDADA | - | ARCHIVED_OK |

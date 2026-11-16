@@ -10,17 +10,20 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlmodel import Session
 
 from src.backend.api import (
     catalog_router,
     collections_router,
     discovery_router,
+    explore_router,
     library_router,
     notifications_router,
     torrents_router,
     watches_router,
 )
-from src.backend.core.database import init_db
+from src.backend.core.database import engine, init_db, init_eztv_db
+from src.backend.services.federated_catalog import FederatedCatalogService
 from src.backend.services.scheduler import scheduler
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -31,6 +34,9 @@ DIST_DIR = STATIC_DIR / "dist"
 async def lifespan(app: FastAPI):
     """Application lifespan managing database initialization, auto-sync and teardown."""
     init_db()
+    init_eztv_db()
+    with Session(engine) as session:
+        FederatedCatalogService().ensure_federated_catalog_seeded(session)
     scheduler.start()
     try:
         yield
@@ -40,8 +46,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="TV Pirata 🏴‍☠️",
-    description="Central de Descoberta, Controle e Administração de Séries para Rede Doméstica",
-    version="0.2.0",
+    description="Audiovisual Discovery Platform & Personal Media Ecosystem",
+    version="0.6.0",
     lifespan=lifespan,
 )
 
@@ -64,6 +70,7 @@ if (DIST_DIR / "assets").exists():
     app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
 
 # Register API routers under /api namespace
+app.include_router(explore_router, prefix="/api")
 app.include_router(discovery_router, prefix="/api")
 app.include_router(catalog_router, prefix="/api")
 app.include_router(library_router, prefix="/api")
@@ -97,8 +104,8 @@ def root(request: Request):
         return FileResponse(dist_index)
     return {
         "app": "TV Pirata 🏴‍☠️",
-        "tagline": "Seu Netflix pessoal para descoberta e controle",
-        "version": "0.2.0",
+        "tagline": "Audiovisual Discovery Platform & Personal Media Ecosystem",
+        "version": "0.6.0",
         "docs": "/docs",
     }
 

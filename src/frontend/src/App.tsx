@@ -21,11 +21,14 @@ import { TorrentModal } from "./components/TorrentModal";
 import { LibraryView } from "./components/LibraryView";
 import { CollectionsView } from "./components/CollectionsView";
 import { CatalogView } from "./components/CatalogView";
+import { ExplorerView } from "./components/ExplorerView";
 import { useToast } from "./context/ToastContext";
 
 export function App() {
   const { showToast } = useToast();
-  const [activeTab, setActiveTab] = useState<"discover" | "catalog" | "library" | "collections">("discover");
+  const [activeTab, setActiveTab] = useState<
+    "discover" | "explore" | "catalog" | "library" | "collections"
+  >("discover");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<UnifiedShow[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -62,6 +65,9 @@ export function App() {
       genres: cat.genres ? cat.genres.split(",").map((g: string) => g.trim()) : [],
       first_air_date: cat.first_air_date || undefined,
       status: cat.status || undefined,
+      network: cat.network || undefined,
+      streaming_providers: cat.streaming_providers || (cat.network ? [cat.network] : []),
+      eztv_available: true,
       source_provider: "eztv-catalog",
       seasons: [],
     };
@@ -335,6 +341,13 @@ export function App() {
               )}
             </div>
           </div>
+        ) : activeTab === "explore" ? (
+          /* Layer 1 Audiovisual Discovery Core Tab */
+          <ExplorerView
+            onOpenTorrents={setSelectedTorrentShow}
+            onSaveToLibrary={handleSaveToLibrary}
+            savedShowIds={savedShowIds}
+          />
         ) : activeTab === "catalog" ? (
           /* Real EZTV Physical Catalog Tab */
           <CatalogView

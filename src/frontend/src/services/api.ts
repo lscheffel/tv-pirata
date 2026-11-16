@@ -1,12 +1,19 @@
 import {
+  CalendarEventItem,
+  CatalogEpisode,
   CatalogGenreCount,
   CatalogPaginatedResponse,
   CatalogSection,
   CatalogShow,
   CatalogStats,
   CollectionRecord,
+  ExploreWorksResponse,
+  MediaWorkDossier,
+  PersonDossier,
+  PersonSummary,
   ReleaseNotification,
   SchedulerTelemetry,
+  SharedCollaborationResponse,
   ShowProgress,
   ShowRecord,
   TagRecord,
@@ -36,6 +43,85 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 }
 
 export const api = {
+  explore: {
+    getWorks: (
+      params: {
+        q?: string;
+        work_types?: string;
+        genres_any?: string;
+        genres_all?: string;
+        genres_not?: string;
+        year_from?: number;
+        year_to?: number;
+        min_rating?: number;
+        max_rating?: number;
+        min_runtime?: number;
+        max_runtime?: number;
+        status?: string;
+        streaming_providers?: string;
+        territory?: string;
+        country?: string;
+        language?: string;
+        person_query?: string;
+        role_type?: string;
+        min_seasons?: number;
+        exclude_watched?: boolean;
+        only_with_p2p?: boolean;
+        sort_by?: string;
+        page?: number;
+        page_size?: number;
+      } = {}
+    ) => {
+      const query = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== "") {
+          query.append(k, String(v));
+        }
+      });
+      return request<ExploreWorksResponse>(`/explore/works?${query.toString()}`);
+    },
+    getWorkDossier: (workId: number) =>
+      request<MediaWorkDossier>(`/explore/works/${workId}`),
+    getPeople: (q?: string, department?: string) => {
+      const query = new URLSearchParams();
+      if (q) query.append("q", q);
+      if (department) query.append("department", department);
+      return request<PersonSummary[]>(`/explore/people?${query.toString()}`);
+    },
+    getPersonDossier: (personId: number) =>
+      request<PersonDossier>(`/explore/people/${personId}`),
+    getCollaborations: (personA: string, personB: string) => {
+      const query = new URLSearchParams({
+        person_a: personA,
+        person_b: personB,
+      });
+      return request<SharedCollaborationResponse>(
+        `/explore/people/collaborations?${query.toString()}`
+      );
+    },
+    getCalendar: (
+      params: {
+        work_type?: string;
+        event_type?: string;
+        confidence_level?: string;
+        platform?: string;
+      } = {}
+    ) => {
+      const query = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v) query.append(k, v);
+      });
+      return request<CalendarEventItem[]>(`/explore/calendar?${query.toString()}`);
+    },
+    federate: (q?: string) => {
+      const query = q ? `?q=${encodeURIComponent(q)}` : "";
+      return request<{ status: string; seed_telemetry: any; live_ingested: number }>(
+        `/explore/federate${query}`,
+        { method: "POST" }
+      );
+    },
+  },
+
   discovery: {
     getTrending: () => request<UnifiedShow[]>("/discovery/trending"),
     search: (q: string) => request<UnifiedShow[]>(`/discovery/search?q=${encodeURIComponent(q)}`),
@@ -53,12 +139,13 @@ export const api = {
     saveShow: (show: UnifiedShow) =>
       request<ShowRecord>("/library/shows", {
         method: "POST",
-        body: JSON.stringify(show),
+        body: JSON.stringify({ show, user_status: "plan_to_watch" }),
       }),
     getShow: (id: number) => request<ShowRecord>(`/library/shows/${id}`),
     updateStatus: (id: number, status: string) =>
-      request<ShowRecord>(`/library/shows/${id}/status?new_status=${encodeURIComponent(status)}`, {
+      request<ShowRecord>(`/library/shows/${id}/status`, {
         method: "PATCH",
+        body: JSON.stringify({ user_status: status }),
       }),
     deleteShow: (id: number) =>
       request<{ status: string; id: number }>(`/library/shows/${id}`, {
@@ -122,7 +209,7 @@ export const api = {
       return request<CatalogPaginatedResponse>(`/catalog/shows?${query.toString()}`);
     },
     getShow: (imdbId: string) =>
-      request<{ show: CatalogShow; releases: TorrentRelease[] }>(
+      request<{ show: CatalogShow; episodes: CatalogEpisode[]; releases: TorrentRelease[] }>(
         `/catalog/shows/${encodeURIComponent(imdbId)}`
       ),
     getStats: () => request<CatalogStats>("/catalog/stats"),
@@ -155,4 +242,3 @@ export const api = {
       }),
   },
 };
-

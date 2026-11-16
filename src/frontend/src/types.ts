@@ -34,6 +34,9 @@ export interface UnifiedShow {
   genres: string[];
   first_air_date?: string;
   status?: string;
+  network?: string | null;
+  streaming_providers?: string[];
+  eztv_available?: boolean;
   source_provider: string;
   seasons: UnifiedSeason[];
 }
@@ -94,8 +97,23 @@ export interface ShowProgress {
   progress_percentage: number;
 }
 
+export interface CatalogEpisode {
+  id: number;
+  show_id: number;
+  season: number;
+  episode: number;
+  title?: string | null;
+  airdate?: string | null;
+  runtime?: number | null;
+  rating?: number | null;
+  summary?: string | null;
+  source: string;
+}
+
 export interface CatalogShow {
+  eztv_show_id?: number;
   imdb_id: string;
+  slug?: string | null;
   title: string;
   original_title?: string | null;
   overview: string;
@@ -105,6 +123,11 @@ export interface CatalogShow {
   genres: string;
   first_air_date?: string | null;
   status?: string | null;
+  network?: string | null;
+  streaming_providers?: string[];
+  air_day_time?: string | null;
+  tvmaze_id?: number | null;
+  episodes_count?: number;
   total_torrents: number;
   max_seeds: number;
   latest_season: number;
@@ -115,6 +138,7 @@ export interface CatalogShow {
 
 export interface CatalogStats {
   total_shows: number;
+  total_episodes?: number;
   total_releases: number;
   max_seeds_in_catalog: number;
   latest_release_date?: string | null;
@@ -171,3 +195,210 @@ export interface SchedulerTelemetry {
   last_notifications_created: number;
 }
 
+// --- ADR-008: Layer 1 Audiovisual Discovery Core Types ---
+
+export interface RatingSourceEntry {
+  rating: number;
+  votes: number;
+}
+
+export interface MediaWorkSummary {
+  id: number;
+  work_type: "movie" | "tv_show" | "mini_series" | "documentary" | "animation" | "special" | string;
+  title: string;
+  original_title?: string | null;
+  overview: string;
+  tagline?: string | null;
+  release_date?: string | null;
+  release_year?: number | null;
+  runtime_minutes?: number | null;
+  status: string;
+  origin_country: string;
+  original_language: string;
+  poster_url?: string | null;
+  backdrop_url?: string | null;
+  canonical_rating: number;
+  rating_source: string;
+  ratings_breakdown: Record<string, RatingSourceEntry>;
+  popularity_score: number;
+  vote_count: number;
+  seasons_count: number;
+  episodes_count: number;
+  network_or_studio?: string | null;
+  collection_name?: string | null;
+  genres: string[];
+  directors: string[];
+  top_cast: string[];
+  streaming_providers: string[];
+  imdb_id?: string | null;
+  tmdb_id?: number | null;
+  tvmaze_id?: number | null;
+  wikidata_id?: string | null;
+  user_library_status?: string | null;
+  p2p_max_seeds: number;
+  eztv_available?: boolean;
+  eztv_show_id?: number | null;
+}
+
+export interface FacetBucket {
+  key: string;
+  count: number;
+}
+
+export interface DiscoveryFacets {
+  work_types: FacetBucket[];
+  genres: FacetBucket[];
+  streaming_providers: FacetBucket[];
+  decades: FacetBucket[];
+  statuses: FacetBucket[];
+  countries: FacetBucket[];
+}
+
+export interface ExploreWorksResponse {
+  items: MediaWorkSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  facets: DiscoveryFacets;
+}
+
+export interface ExternalIdEntry {
+  provider: string;
+  external_id: string;
+  confidence: string;
+}
+
+export interface DataProvenanceEntry {
+  source_provider: string;
+  external_id: string;
+  field_name: string;
+  field_value: string;
+  selection_reason: string;
+  fetched_at: string;
+}
+
+export interface WorkCreditEntry {
+  person_id: number;
+  name: string;
+  role_type: string;
+  character_name?: string | null;
+  department: string;
+  country?: string | null;
+}
+
+export interface StreamingAvailabilityEntry {
+  provider_name: string;
+  territory: string;
+  monetization_type: string;
+  source_provider: string;
+}
+
+export interface ExplicitRelationEntry {
+  work_id: number;
+  title: string;
+  work_type: string;
+  release_year?: number | null;
+  poster_url?: string | null;
+  canonical_rating: number;
+  relation_type: string;
+  notes?: string | null;
+}
+
+export interface SimilarWorkEntry {
+  id: number;
+  title: string;
+  original_title?: string | null;
+  work_type: string;
+  release_year?: number | null;
+  poster_url?: string | null;
+  canonical_rating: number;
+  genres: string[];
+  similarity_score: number;
+  similarity_reasons: string[];
+}
+
+export interface CalendarEventItem {
+  id: number;
+  work_id?: number;
+  work_title?: string;
+  work_type?: string;
+  poster_url?: string | null;
+  genres?: string[];
+  event_type: string;
+  event_date: string;
+  confidence_level: "confirmed" | "estimated" | "announced" | string;
+  territory: string;
+  platform_or_network?: string | null;
+  season_number?: number | null;
+  episode_number?: number | null;
+  event_title: string;
+  source_provider?: string;
+}
+
+export interface MediaWorkDossier extends MediaWorkSummary {
+  external_identifiers: ExternalIdEntry[];
+  provenance: DataProvenanceEntry[];
+  credits: WorkCreditEntry[];
+  availabilities: StreamingAvailabilityEntry[];
+  explicit_relations: ExplicitRelationEntry[];
+  similar_works: SimilarWorkEntry[];
+  calendar_events: CalendarEventItem[];
+}
+
+export interface PersonSummary {
+  id: number;
+  name: string;
+  known_for_department: string;
+  country?: string | null;
+  roles: string[];
+  works_count: number;
+  average_rating: number;
+  notable_works: string[];
+}
+
+export interface PersonFilmographyItem {
+  work_id: number;
+  title: string;
+  original_title?: string | null;
+  work_type: string;
+  release_year?: number | null;
+  canonical_rating: number;
+  poster_url?: string | null;
+  status: string;
+  roles: string[];
+  character_name?: string | null;
+  genres: string[];
+}
+
+export interface FrequentCollaboratorItem {
+  person_id: number;
+  name: string;
+  department: string;
+  shared_works_count: number;
+  shared_titles: string[];
+}
+
+export interface PersonDossier {
+  id: number;
+  name: string;
+  known_for_department: string;
+  country?: string | null;
+  filmography: PersonFilmographyItem[];
+  frequent_collaborators: FrequentCollaboratorItem[];
+}
+
+export interface SharedCollaborationResponse {
+  person_a: string;
+  person_b: string;
+  shared_works: {
+    id: number;
+    title: string;
+    work_type: string;
+    release_year?: number | null;
+    canonical_rating: number;
+    poster_url?: string | null;
+    person_a_role: string;
+    person_b_role: string;
+  }[];
+}
