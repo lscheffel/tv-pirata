@@ -84,7 +84,14 @@ async def get_trending_shows(
     session: Session = Depends(get_session),
     eztv_session: Session = Depends(get_eztv_session),
 ) -> list[UnifiedShow]:
-    """Fetch currently trending TV shows across discovery providers with local catalog fallback."""
+    """Fetch trending titles from canonical mainstream.db or online discovery providers."""
+    if DiscoveryEngineRepository._has_imdb_catalog(session):
+        local_trending = DiscoveryEngineRepository.get_trending_unified_shows(
+            session, eztv_session, limit=24
+        )
+        if local_trending:
+            return local_trending
+
     service = get_discovery_service()
     results = await service.get_trending()
     if results:
@@ -106,11 +113,37 @@ async def search_shows(
     session: Session = Depends(get_session),
     eztv_session: Session = Depends(get_eztv_session),
 ) -> list[UnifiedShow]:
-    """Search shows by title with automatic fallback to local catalog."""
+    """Bilingual (PT-BR & EN-US) relevance-ranked search across mainstream.db and sources.db."""
+    if DiscoveryEngineRepository._has_imdb_catalog(session):
+        mainstream_hits = DiscoveryEngineRepository.search_unified_shows(
+            session=session,
+            eztv_session=eztv_session,
+            q=q,
+            limit=40,
+        )
+        if mainstream_hits:
+            return mainstream_hits
+
     service = get_discovery_service()
     results = await service.search_shows(q)
     if results:
-        return _mark_eztv_availability(results, eztv_session)
+        marked = _mark_eztv_availability(results, eztv_session)
+        q_norm = DiscoveryEngineRepository._normalize_search_text(q)
+        q_core = DiscoveryEngineRepository._strip_leading_article(q_norm)
+        q_tokens = [t for t in q_norm.split() if len(t) >= 2]
+        marked.sort(
+            key=lambda s: DiscoveryEngineRepository.score_title_pair_relevance(
+                q_norm=q_norm,
+                q_core=q_core,
+                q_tokens=q_tokens,
+                titles=[s.title, s.original_title],
+                credit_blob="",
+                votes=1000,
+                rating=float(s.rating or 0.0),
+            ),
+            reverse=True,
+        )
+        return marked
 
     shows, _ = CatalogRepository.list_shows(
         eztv_session=eztv_session,
@@ -124,13 +157,25 @@ async def search_shows(
 @router.get("/shows/{show_id}", response_model=UnifiedShow)
 async def get_show_details(
     show_id: int,
-    provider: str = Query("tmdb", description="Source provider (tmdb, tvmaze, or eztv-catalog)"),
+    provider: str = Query(
+        "tmdb", description="Source provider (imdb, tmdb, tvmaze, or eztv-catalog)"
+    ),
     tvmaze_id: Optional[int] = None,
     imdb_id: Optional[str] = Query(None, description="Optional IMDB identifier"),
     session: Session = Depends(get_session),
     eztv_session: Session = Depends(get_eztv_session),
 ) -> UnifiedShow:
-    """Fetch complete show metadata including seasons and episodes."""
+    """Fetch complete show metadata with seasons and episodes from mainstream.db or providers."""
+    if provider == "imdb" or DiscoveryEngineRepository._has_imdb_catalog(session):
+        mainstream_show = DiscoveryEngineRepository.get_unified_show_from_mainstream(
+            session=session,
+            eztv_session=eztv_session,
+            show_id=show_id,
+            imdb_id=imdb_id,
+        )
+        if mainstream_show is not None:
+            return mainstream_show
+
     service = get_discovery_service()
 
     effective_imdb = imdb_id

@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.0] - 2026-11-17
+
+### Added
+- **Dual-SSOT Consolidation (`data/mainstream.db` + `data/sources.db`) & SQL Pushdown Engine (ADR-011):**
+  - Unified universal IMDb backbone (`279,362` canonical titles in `shows`, `4,529,748` episodes in `episodes_catalog`), TMDB/TVMaze metadata, `MediaWork`, and personal library tables into `data/mainstream.db` (`IMDbCatalogShow`, `IMDbEpisodeCatalog` isolated on `imdb_metadata`), while isolating all EZTV & P2P external resources (`860` series, `140,571` episodes, `CatalogShow`, `CatalogRelease`) in `data/sources.db`.
+  - Cross-linked and upserted 100% of `sources.db` records into `mainstream.db` (`has_eztv = 1`, `878` badged titles) via `scripts/sync-eztv-bade.py` and `scripts/sync_canonical_facets_and_providers.py`.
+  - Refactored `DiscoveryEngineRepository` (`src/backend/repositories/discovery_engine.py`) with 100% SQL Pushdown pagination, boolean filters, covering B-tree indexes (`idx_shows_filter_cover`, `idx_shows_score_cover`, `idx_shows_facets_cover`), and `GLOBAL_FACETS_V2` precomputed snapshot in `sync_state`, cutting filtered query latency from `1,675.97 ms` to `5.80 ms`.
+- **Bilingual (PT-BR & EN-US) FTS5 Search & Exact/Similarity Relevance Ranking:**
+  - Added accent-insensitive `shows_fts` (`tokenize='unicode61 remove_diacritics 2'`) with automatic `INSERT`/`DELETE`/`UPDATE` triggers in `data/mainstream.db`.
+  - Implemented 3-stage FTS5 retrieval and multi-tier relevance/similarity scoring (`score_title_pair_relevance`, `score_imdb_show_relevance`) across `/api/discovery/search` and `/api/explore/works`, supporting accentless Portuguese and English queries with exact matches ranked first.
+- **Canonical Taxonomy, Real BR/US Streaming Availability & Filter Overhaul:**
+  - Created `src/backend/core/canonical_taxonomy.py` as Single Source of Truth defining **31 canonical PT-BR categories**, **25 normalized streaming providers/networks**, **8 audiovisual formats** (including genre-backed `documentary`, `animation`, `special`, `short`), and **8 data sources** (`eztv`, `p2p_active`, `imdb`, `tmdb`, `ptbr`, `youtube_trailer`, `tvmaze`, `personal_library`).
+  - Created `scripts/sync_canonical_facets_and_providers.py` to harvest real streaming availability from TMDB `/3/discover/movie` & `/3/discover/tv` (`12,373` titles mapped) and normalize `175,397` rows across `data/mainstream.db`.
+  - Upgraded `scripts/imdb-metadata-catalog.py` to request `watch/providers` and store canonicalized genres and streaming providers on `--resume` and `--update`.
+  - Implemented exact CSV token matching (`_csv_token_in`) preventing substring collisions (`Ação` vs `Animação`, `Music` vs `Musical`, `Max` vs `Cinemax`), `data_sources` intersection filtering, and `role_type` pushdown in `/api/explore/works`.
+- **Dual-SSOT UI Update Controls & Filter Reset Controls:**
+  - Added `GET /api/explore/mainstream-stats` and `POST /api/explore/update-mainstream` (`delta`, `badges`, `hydrate`) in `src/backend/api/explore.py`, plus automatic badge propagation on `POST /api/catalog/sync`.
+  - Redesigned the Filter Panel in `ExplorerView.tsx` with Dual-SSOT database update bars, prominent filter reset/clear buttons (`Limpar / Resetar Filtros`), `data_sources` pills, status filter selector, all 31 canonical genres, all 25 streaming providers, and locale-formatted counters (`formatFacetCount`).
+  - Added `tests/integration/test_mainstream_sources_ssot.py`, bringing the hermetic test suite to **64 passing tests**.
+
+### Changed
+- Aligned package and runtime version metadata to `0.7.0` across `pyproject.toml`, `src/frontend/package.json`, and `src/backend/main.py`.
+- Archived `ADR-011` (`16/16` tasks complete) with algorithmic Evidence Record (`docs/adr/ADR-011-ER.md`) via `spx adr archive ADR-011`.
+- Reconciled all 6 canonical documentation pillars (`README.md`, `CHANGELOG.md`, `USAGE.md`, `RELEASE-NOTES.md`, `STATE.md`, `AGENTS.md`).
+
+---
+
 ## [0.6.0] - 2026-11-15
 
 ### Added

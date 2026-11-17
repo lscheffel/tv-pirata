@@ -70,6 +70,7 @@ out/
 # Databases & Local Vector Stores
 data/
 .local/
+.imdb_cache/
 *.db
 *.sqlite
 *.sqlite3

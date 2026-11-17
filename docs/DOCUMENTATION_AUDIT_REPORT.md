@@ -1,9 +1,9 @@
-# Relatório de Auditoria e Reconciliação Documental SOTA (`v0.6.0`)
+# Relatório de Auditoria e Reconciliação Documental SOTA (`v0.7.0`)
 
-**Data da Auditoria:** 2026-11-15  
-**Versão Alvo:** `v0.6.0` (Consolidação `ADR-008`, `ADR-009` e `ADR-010`)  
+**Data da Auditoria:** 2026-11-17  
+**Versão Alvo:** `v0.7.0` (Consolidação `ADR-011` Dual-SSOT, Busca Bilíngue FTS5 e Taxonomia Canônica)  
 **Skill Executora:** `technical-documentation` (v2.1.0 — 6-Pillar SSOT Reconciliation)  
-**Compliance Score Global:** **100% (6/6 Pilares + 10/10 ADRs Arquivadas com ER.md + Registro de Débitos Podado)**
+**Compliance Score Global:** **100% (6/6 Pilares + 11/11 ADRs Arquivadas com ER.md + Registro de Débitos Podado)**
 
 ---
 
@@ -11,18 +11,18 @@
 
 | Pilar | Arquivo Alvo | Status Anterior | Ação Executada | Estado Final e Evidências |
 | :--- | :--- | :---: | :---: | :--- |
-| **1. Overview** | `README.md` | `UPDATE_PARCIAL` (57 testes / sem ADR-009 e ADR-010) | **UPDATED** | Sincronizado com a arquitetura Dual-SQLite (`data/tv_pirata.db` + `data/eztv_metadata.db`), `eztv_db.py`, `cache.py`, `EztvBadge.tsx`, `ShowBadges.tsx`, métricas de performance (`ADR-010`), badge de `63 passing tests` e todas as 10 ADRs consolidadas/arquivadas. |
-| **2. Changelog** | `CHANGELOG.md` | `UPDATE_PARCIAL` | **UPDATED** | Sincronizado no padrão *Keep a Changelog* documentando integralmente as entregas das `ADR-008`, `ADR-009` e `ADR-010` na versão `[0.6.0] - 2026-11-15`. |
-| **3. Usage** | `USAGE.md` | `UPDATE_PARCIAL` | **UPDATED** | Adicionada variável `EZTV_DATABASE_URL`, novos comandos do crawler resiliente a Cloudflare (`--source`, `--api-pages`, `--refresh-stale`) e comandos da suíte de 63 testes (`test_dual_db_eztv.py`, `test_db_performance.py`). |
-| **4. Release Notes** | `RELEASE-NOTES.md` | `UPDATE_PARCIAL` | **UPDATED** | Notas executivas consolidadas para `v0.6.0` englobando `ADR-008` (Discovery Core), `ADR-009` (Dual-DB + Badges) e `ADR-010` (Performance Dual-SQLite + FTS5 + Cache Escopado) com benchmarks reais antes/depois. |
-| **5. Agent State** | `STATE.md` | `UPDATE_PARCIAL` | **UPDATED** | Sincronizado com `docs/adr/ADR-INDEX.md` (`ADR-001` a `ADR-010` — 100% `ARCHIVED_OK` com `ER.md`) e `docs/governance/tech-debt-registry.json` (`0` débitos ativos após poda para `tech-debt-archive.json`). |
-| **6. Governance** | `AGENTS.md` / `GEMINI.md` | `UPDATE_PARCIAL` | **UPDATED** | Atualizado em EN-US refletindo os invariantes de `ADR-008`, `ADR-009` e `ADR-010` (`EngineScopedCache`, isolamento `eztv_metadata.db`, e suíte de 63 testes). |
+| **1. Overview** | `README.md` | `UPDATE_DEFASADO` (`v0.6.0` / 63 testes) | **UPDATED** | Atualizado para `v0.7.0` com arquitetura Dual-SSOT (`data/mainstream.db` + `data/sources.db`), `canonical_taxonomy.py`, busca bilíngue `FTS5`, badge de `64 passing tests`, scripts CLI e `ADR-011`. |
+| **2. Changelog** | `CHANGELOG.md` | `UPDATE_DEFASADO` | **UPDATED** | Adicionada seção `[0.7.0] - 2026-11-17` no padrão *Keep a Changelog* documentando `ADR-011`, busca bilíngue PT-BR/EN-US, taxonomia canônica (`31`/`25`/`8`/`8`) e controles de UI. |
+| **3. Usage** | `USAGE.md` | `UPDATE_DEFASADO` | **UPDATED** | Atualizado com `MAINSTREAM_DATABASE_URL`, `SOURCES_DATABASE_URL`, novos parâmetros de `GET /api/explore/works` (`work_types`, `data_sources`, `genres_*`, `status`, `person_query`, `role_type`), rotas `mainstream-stats`/`update-mainstream` e comandos dos 64 testes. |
+| **4. Release Notes** | `RELEASE-NOTES.md` | `UPDATE_DEFASADO` | **UPDATED** | Adicionada release executiva `v0.7.0` com métricas reais verificadas (`279.362` obras, `4.529.748` episódios, `31` gêneros, `25` provedores, `8` fontes de dados) e guia de atualização. |
+| **5. Agent State** | `STATE.md` | `UPDATE_DEFASADO` | **UPDATED** | Sincronizado com `v0.7.0`, tabela de ADRs incluindo `ADR-011` (`16/16`, `ARCHIVED_OK` com `ADR-011-ER.md`) e zero débitos técnicos ativos. |
+| **6. Governance** | `AGENTS.md` / `GEMINI.md` | `UPDATE_DEFASADO` | **UPDATED** | Atualizado em EN-US para `v0.7.0` refletindo os invariantes Dual-SSOT (`mainstream.db` vs `sources.db`), `canonical_taxonomy.py` e suíte de `64 tests`. |
 
 ---
 
 ## 2. ✅ Verificação Determinística (Completion Gate)
 
-- **Zero Placeholders / Zero Fabricações:** Todas as rotas, flags de CLI, variáveis de ambiente e entidades documentadas foram extraídas diretamente do código-fonte real (`src/backend/`, `src/frontend/`, `scripts/`).
-- **ADR Janitor (`adr-archive`):** `ADR-001` a `ADR-010` certificadas com `ADR-XXX-ER.md` na raiz de `docs/adr/` e conjuntos de trabalho movidos para `docs/adr/archive/`.
-- **Linter Estático (`make lint`):** `All checks passed!` (0 erros ou avisos).
-- **Suíte de Testes (`make test`):** `63 passed` (100% de aprovação).
+- **Zero Placeholders / Zero Fabricações:** Todas as rotas, parâmetros, variáveis e métricas foram validados diretamente sobre o código-fonte e os bancos SQLite ativos.
+- **ADR Janitor (`adr-archive`):** `ADR-001` a `ADR-011` certificadas com `ADR-XXX-ER.md` na raiz de `docs/adr/` e artefatos movidos para `docs/adr/archive/`.
+- **Linter Estático (`ruff check`):** `All checks passed!` (0 erros).
+- **Suíte de Testes (`pytest -q`):** `64 passed` (100% de aprovação).

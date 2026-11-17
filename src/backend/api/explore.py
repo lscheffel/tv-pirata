@@ -7,7 +7,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
 
-from src.backend.core.cache import discovery_cache
+from src.backend.core.cache import catalog_cache, discovery_cache
 from src.backend.core.database import get_eztv_session, get_session
 from src.backend.repositories.discovery_engine import DiscoveryEngineRepository
 from src.backend.services.federated_catalog import FederatedCatalogService
@@ -57,6 +57,13 @@ def explore_works(
         False, description="Ocultar obras já assistidas ou em acompanhamento"
     ),
     only_with_p2p: bool = Query(False, description="Restringir a obras com seeds P2P ativos"),
+    data_sources: Optional[str] = Query(
+        None,
+        description=(
+            "Fontes de dados: eztv,p2p_active,imdb,tmdb,tvmaze,ptbr,"
+            "youtube_trailer,personal_library"
+        ),
+    ),
     sort_by: str = Query(
         "rating", description="Ordenação: rating, popularity, year_desc, year_asc, runtime, title"
     ),
@@ -91,6 +98,7 @@ def explore_works(
         min_seasons=min_seasons,
         exclude_watched=exclude_watched,
         only_with_p2p=only_with_p2p,
+        data_sources=data_sources,
         sort_by=sort_by,
         page=page,
         page_size=page_size,
@@ -99,14 +107,15 @@ def explore_works(
 
 @router.get("/works/{work_id}")
 def get_work_dossier(
-    work_id: int,
+    work_id: str,
     session: Session = Depends(get_session),
     eztv_session: Session = Depends(get_eztv_session),
 ) -> dict[str, Any]:
-    """Retrieve complete canonical dossier for an audiovisual work."""
+    """Retrieve complete canonical dossier for an audiovisual work (numeric ID or ttXXXXXXX)."""
     _ensure_seeded(session)
+    parsed_id: int | str = int(work_id) if work_id.isdigit() else work_id
     dossier = DiscoveryEngineRepository.get_work_dossier(
-        session, work_id, eztv_session=eztv_session
+        session, parsed_id, eztv_session=eztv_session
     )
     if not dossier:
         raise HTTPException(status_code=404, detail=f"Obra canônica #{work_id} não encontrada.")
@@ -195,3 +204,33 @@ async def federate_catalog(
         "seed_telemetry": seed_stats,
         "live_ingested": live_ingested,
     }
+
+
+@router.get("/mainstream-stats")
+def get_mainstream_stats(
+    session: Session = Depends(get_session),
+) -> dict[str, int]:
+    """Retrieve statistics for the canonical database (data/mainstream.db)."""
+    return FederatedCatalogService().get_mainstream_stats(session)
+
+
+@router.post("/update-mainstream")
+async def update_mainstream_database(
+    mode: str = Query(
+        "delta", description="Modo de atualização: delta, hydrate ou badges"
+    ),
+    limit: int = Query(25, ge=1, le=200, description="Lote de títulos para hidratação"),
+    session: Session = Depends(get_session),
+    eztv_session: Session = Depends(get_eztv_session),
+) -> dict[str, Any]:
+    """Update canonical database (data/mainstream.db): cross-ref EZTV badges & hydrate metadata."""
+    service = FederatedCatalogService()
+    result = await service.update_mainstream_catalog(
+        session=session,
+        eztv_session=eztv_session,
+        mode=mode,
+        limit=limit,
+    )
+    discovery_cache.invalidate()
+    catalog_cache.invalidate()
+    return result

@@ -11,6 +11,7 @@ from sqlalchemy import Engine, event, inspect, text
 from sqlmodel import Session, SQLModel, create_engine
 
 import src.backend.models  # noqa: F401
+from src.backend.models.catalog_domain import imdb_metadata
 from src.backend.models.eztv_db import eztv_metadata
 
 
@@ -33,62 +34,245 @@ def _configure_sqlite_pragmas(dbapi_connection: object, _connection_record: obje
     finally:
         cur.close()
 
-# Default SQLite database paths
-DEFAULT_DB_PATH = Path("data/tv_pirata.db")
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
+# Default SQLite Dual-SSOT database paths (ADR-011)
+DEFAULT_MAINSTREAM_DB_PATH = Path("data/mainstream.db")
+DEFAULT_DB_PATH = DEFAULT_MAINSTREAM_DB_PATH
+MAINSTREAM_DATABASE_URL = os.getenv(
+    "MAINSTREAM_DATABASE_URL",
+    os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_MAINSTREAM_DB_PATH}"),
+)
+DATABASE_URL = MAINSTREAM_DATABASE_URL
 
-DEFAULT_EZTV_DB_PATH = Path("data/eztv_metadata.db")
-EZTV_DATABASE_URL = os.getenv("EZTV_DATABASE_URL", f"sqlite:///{DEFAULT_EZTV_DB_PATH}")
+DEFAULT_SOURCES_DB_PATH = Path("data/sources.db")
+DEFAULT_EZTV_DB_PATH = DEFAULT_SOURCES_DB_PATH
+SOURCES_DATABASE_URL = os.getenv(
+    "SOURCES_DATABASE_URL",
+    os.getenv("EZTV_DATABASE_URL", f"sqlite:///{DEFAULT_SOURCES_DB_PATH}"),
+)
+EZTV_DATABASE_URL = SOURCES_DATABASE_URL
 
 # Ensure parent directories exist for SQLite files
-for _url in (DATABASE_URL, EZTV_DATABASE_URL):
+for _url in (MAINSTREAM_DATABASE_URL, SOURCES_DATABASE_URL):
     if _url.startswith("sqlite:///") and not _url.startswith("sqlite:///:memory:"):
         _db_file_path = Path(_url.replace("sqlite:///", ""))
         _db_file_path.parent.mkdir(parents=True, exist_ok=True)
 
 # Connect args needed for SQLite concurrency
-connect_args = {"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
-eztv_connect_args = {"check_same_thread": False} if "sqlite" in EZTV_DATABASE_URL else {}
+connect_args = {"check_same_thread": False} if "sqlite" in MAINSTREAM_DATABASE_URL else {}
+eztv_connect_args = {"check_same_thread": False} if "sqlite" in SOURCES_DATABASE_URL else {}
 
-engine = create_engine(
-    DATABASE_URL,
+mainstream_engine = create_engine(
+    MAINSTREAM_DATABASE_URL,
     echo=False,
     connect_args=connect_args,
 )
+engine = mainstream_engine
 
-eztv_engine = create_engine(
-    EZTV_DATABASE_URL,
+sources_engine = create_engine(
+    SOURCES_DATABASE_URL,
     echo=False,
     connect_args=eztv_connect_args,
 )
+eztv_engine = sources_engine
 
 
 def get_engine(custom_url: Optional[str] = None):
-    """Retrieve or create a database engine (supports in-memory test databases)."""
+    """Retrieve or create a mainstream database engine (supports in-memory test databases)."""
     if custom_url:
         args = {"check_same_thread": False} if "sqlite" in custom_url else {}
         return create_engine(custom_url, echo=False, connect_args=args)
-    return engine
+    return mainstream_engine
+
+
+def get_mainstream_engine(custom_url: Optional[str] = None):
+    """Canonical alias for get_engine pointing to data/mainstream.db."""
+    return get_engine(custom_url)
 
 
 def get_eztv_engine(custom_url: Optional[str] = None):
-    """Retrieve or create the dedicated EZTV metadata database engine."""
+    """Retrieve or create the dedicated external sources database engine (data/sources.db)."""
     if custom_url:
         args = {"check_same_thread": False} if "sqlite" in custom_url else {}
         return create_engine(custom_url, echo=False, connect_args=args)
-    return eztv_engine
+    return sources_engine
+
+
+def get_sources_engine(custom_url: Optional[str] = None):
+    """Canonical alias for get_eztv_engine pointing to data/sources.db."""
+    return get_eztv_engine(custom_url)
 
 
 def init_db(target_engine=None) -> None:
-    """Initialize main tv_pirata.db tables deterministically."""
-    active_engine = target_engine or engine
+    """Initialize mainstream.db tables, IMDb show merge/badge columns, and composite indexes."""
+    active_engine = target_engine or mainstream_engine
     SQLModel.metadata.create_all(active_engine)
+    imdb_metadata.create_all(active_engine)
+    inspector = inspect(active_engine)
+    if "shows" in set(inspector.get_table_names()):
+        cols = {c["name"] for c in inspector.get_columns("shows")}
+        additive = [
+            ("tvmaze_id", "INTEGER"),
+            ("status", "TEXT"),
+            ("air_day_time", "TEXT"),
+            ("streaming_providers", "TEXT"),
+            ("has_eztv", "INTEGER DEFAULT 0"),
+            ("eztv_id", "INTEGER"),
+            ("eztv_slug", "TEXT"),
+            ("eztv_match_type", "TEXT"),
+        ]
+        with active_engine.begin() as conn:
+            for col_name, col_type in additive:
+                if col_name not in cols:
+                    conn.execute(text(f"ALTER TABLE shows ADD COLUMN {col_name} {col_type}"))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_shows_votes_rating "
+                    "ON shows(rating_votes DESC, rating_score DESC)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_shows_year_votes "
+                    "ON shows(start_year DESC, rating_votes DESC)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_shows_type_votes "
+                    "ON shows(title_type, rating_votes DESC)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_shows_has_eztv "
+                    "ON shows(has_eztv, rating_votes DESC)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_shows_filter_cover "
+                    "ON shows(title_type, start_year DESC, rating_score DESC, rating_votes DESC)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_shows_score_cover "
+                    "ON shows(rating_score DESC, rating_votes DESC, start_year DESC, title_type)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_shows_facets_cover "
+                    "ON shows(title_type, has_eztv, start_year, rating_score, "
+                    "genres_ptbr, streaming_providers, status)"
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS sync_state (
+                        key TEXT PRIMARY KEY,
+                        value TEXT,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE VIRTUAL TABLE IF NOT EXISTS shows_fts USING fts5(
+                        imdb_id,
+                        primary_title,
+                        original_title,
+                        title_ptbr,
+                        directors,
+                        creators,
+                        cast_members,
+                        content='shows',
+                        content_rowid='rowid',
+                        tokenize='unicode61 remove_diacritics 2'
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS mainstream_shows_fts_ai AFTER INSERT ON shows BEGIN
+                        INSERT INTO shows_fts(
+                            rowid, imdb_id, primary_title, original_title,
+                            title_ptbr, directors, creators, cast_members
+                        )
+                        VALUES (
+                            new.rowid, new.imdb_id, new.primary_title, new.original_title,
+                            new.title_ptbr, new.directors, new.creators, new.cast_members
+                        );
+                    END
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS mainstream_shows_fts_ad AFTER DELETE ON shows BEGIN
+                        INSERT INTO shows_fts(
+                            shows_fts, rowid, imdb_id, primary_title, original_title,
+                            title_ptbr, directors, creators, cast_members
+                        )
+                        VALUES (
+                            'delete', old.rowid, old.imdb_id, old.primary_title, old.original_title,
+                            old.title_ptbr, old.directors, old.creators, old.cast_members
+                        );
+                    END
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS mainstream_shows_fts_au AFTER UPDATE ON shows BEGIN
+                        INSERT INTO shows_fts(
+                            shows_fts, rowid, imdb_id, primary_title, original_title,
+                            title_ptbr, directors, creators, cast_members
+                        )
+                        VALUES (
+                            'delete', old.rowid, old.imdb_id, old.primary_title, old.original_title,
+                            old.title_ptbr, old.directors, old.creators, old.cast_members
+                        );
+                        INSERT INTO shows_fts(
+                            rowid, imdb_id, primary_title, original_title,
+                            title_ptbr, directors, creators, cast_members
+                        )
+                        VALUES (
+                            new.rowid, new.imdb_id, new.primary_title, new.original_title,
+                            new.title_ptbr, new.directors, new.creators, new.cast_members
+                        );
+                    END
+                    """
+                )
+            )
+            fts_data_cnt = conn.execute(text("SELECT COUNT(*) FROM shows_fts_data")).scalar() or 0
+            shows_cnt = conn.execute(text("SELECT COUNT(*) FROM shows")).scalar() or 0
+            if fts_data_cnt <= 2 and shows_cnt > 0:
+                conn.execute(text("INSERT INTO shows_fts(shows_fts) VALUES('rebuild')"))
+
+
+def init_mainstream_db(target_engine=None) -> None:
+    """Canonical alias for init_db (data/mainstream.db)."""
+    init_db(target_engine)
 
 
 def init_eztv_db(target_engine=None) -> None:
-    """Initialize eztv_metadata.db tables, materialized stats, indexes, and FTS5 idempotently."""
-    active_engine = target_engine or eztv_engine
+    """Initialize sources.db tables (EZTV + P2P catalog), stats, indexes, and FTS5."""
+    active_engine = target_engine or sources_engine
     eztv_metadata.create_all(active_engine)
+    from src.backend.models.db import CatalogRelease, CatalogShow
+
+    SQLModel.metadata.create_all(
+        active_engine,
+        tables=[CatalogShow.__table__, CatalogRelease.__table__],
+    )
     inspector = inspect(active_engine)
     table_names = set(inspector.get_table_names())
     if "shows" not in table_names:
@@ -218,29 +402,44 @@ def init_eztv_db(target_engine=None) -> None:
                 """
             )
         )
-        fts_count = conn.execute(text("SELECT COUNT(*) FROM shows_fts")).scalar() or 0
+        fts_data_count = conn.execute(text("SELECT COUNT(*) FROM shows_fts_data")).scalar() or 0
         shows_count = conn.execute(text("SELECT COUNT(*) FROM shows")).scalar() or 0
-        if fts_count == 0 and shows_count > 0:
+        if fts_data_count <= 2 and shows_count > 0:
             conn.execute(text("INSERT INTO shows_fts(shows_fts) VALUES('rebuild')"))
 
 
+def init_sources_db(target_engine=None) -> None:
+    """Canonical alias for init_eztv_db (data/sources.db)."""
+    init_eztv_db(target_engine)
+
+
 def get_session() -> Generator[Session, None, None]:
-    """FastAPI dependency yielding main tv_pirata.db sessions with commit/rollback."""
-    with Session(engine) as session:
+    """FastAPI dependency yielding main data/mainstream.db sessions with commit/rollback."""
+    with Session(mainstream_engine) as session:
         try:
             yield session
             session.commit()
         except Exception:
             session.rollback()
             raise
+
+
+def get_mainstream_session() -> Generator[Session, None, None]:
+    """Canonical alias for get_session yielding data/mainstream.db sessions."""
+    yield from get_session()
 
 
 def get_eztv_session() -> Generator[Session, None, None]:
-    """FastAPI dependency yielding dedicated eztv_metadata.db sessions."""
-    with Session(eztv_engine) as session:
+    """FastAPI dependency yielding dedicated data/sources.db sessions."""
+    with Session(sources_engine) as session:
         try:
             yield session
             session.commit()
         except Exception:
             session.rollback()
             raise
+
+
+def get_sources_session() -> Generator[Session, None, None]:
+    """Canonical alias for get_eztv_session yielding data/sources.db sessions."""
+    yield from get_eztv_session()

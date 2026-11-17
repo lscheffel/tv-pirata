@@ -58,11 +58,21 @@ class CatalogRepository:
             select(
                 func.count(EZTVShow.id),
                 func.max(EZTVShow.updated_at),
-                func. coalesce(func.sum(EZTVShow.episodes_count), 0),
+                func.coalesce(func.sum(EZTVShow.episodes_count), 0),
             )
         ).one()
         p2p_sig: tuple[Any, ...] = (0, 0)
-        if p2p_session is not None:
+        try:
+            src_p2p = eztv_session.exec(
+                select(
+                    func.count(CatalogShow.imdb_id),
+                    func.coalesce(func.max(CatalogShow.max_seeds), 0),
+                )
+            ).one()
+            p2p_sig = (int(src_p2p[0] or 0), int(src_p2p[1] or 0))
+        except Exception:
+            p2p_sig = (0, 0)
+        if p2p_sig == (0, 0) and p2p_session is not None:
             p2p_row = p2p_session.exec(
                 select(
                     func.count(CatalogShow.imdb_id),
@@ -73,11 +83,21 @@ class CatalogRepository:
         return (int(row[0] or 0), str(row[1] or ""), int(row[2] or 0)) + p2p_sig
 
     @staticmethod
-    def _build_p2p_map(p2p_session: Optional[Session]) -> dict[str, CatalogShow]:
-        """Load P2P seed/release telemetry indexed by normalized IMDb ID."""
-        if p2p_session is None:
-            return {}
-        rows = p2p_session.exec(select(CatalogShow)).all()
+    def _build_p2p_map(
+        p2p_session: Optional[Session], fallback_session: Optional[Session] = None
+    ) -> dict[str, CatalogShow]:
+        """Load P2P seed telemetry indexed by normalized IMDb ID (sources.db primary)."""
+        rows: list[CatalogShow] = []
+        if p2p_session is not None:
+            try:
+                rows = list(p2p_session.exec(select(CatalogShow)).all())
+            except Exception:
+                rows = []
+        if not rows and fallback_session is not None and fallback_session is not p2p_session:
+            try:
+                rows = list(fallback_session.exec(select(CatalogShow)).all())
+            except Exception:
+                rows = []
         return {CatalogRepository.normalize_imdb_id(r.imdb_id): r for r in rows if r.imdb_id}
 
     @staticmethod
@@ -230,7 +250,7 @@ class CatalogRepository:
             all_shows = list(eztv_session.exec(select(EZTVShow)).all())
             if not all_shows:
                 return []
-            p2p_map = CatalogRepository._build_p2p_map(p2p_session)
+            p2p_map = CatalogRepository._build_p2p_map(eztv_session, p2p_session)
             ep_map = CatalogRepository._resolve_episode_stats(eztv_session, all_shows)
             return [
                 CatalogRepository._serialize_eztv_show(
@@ -467,10 +487,18 @@ class CatalogRepository:
 
         p2p_info = None
         releases: list[CatalogRelease] = []
-        if p2p_session is not None and show.imdb_id:
+        if show.imdb_id:
             norm_imdb = CatalogRepository.normalize_imdb_id(show.imdb_id)
-            p2p_info = p2p_session.get(CatalogShow, norm_imdb)
-            releases = CatalogRepository.get_show_releases(p2p_session, norm_imdb)
+            try:
+                p2p_info = eztv_session.get(CatalogShow, norm_imdb)
+                releases = CatalogRepository.get_show_releases(eztv_session, norm_imdb)
+            except Exception:
+                p2p_info = None
+                releases = []
+            if not p2p_info and p2p_session is not None:
+                p2p_info = p2p_session.get(CatalogShow, norm_imdb)
+            if not releases and p2p_session is not None:
+                releases = CatalogRepository.get_show_releases(p2p_session, norm_imdb)
 
         return {
             "show": CatalogRepository._serialize_eztv_show(
@@ -522,14 +550,29 @@ class CatalogRepository:
             total_releases = 0
             max_seeds = 0
             latest_p2p_date = None
-            if p2p_session is not None:
+            try:
+                total_releases = int(
+                    eztv_session.exec(select(func.count(CatalogRelease.id))).one() or 0
+                )
+                max_seeds = int(
+                    eztv_session.exec(select(func.max(CatalogShow.max_seeds))).one() or 0
+                )
+                latest_p2p_date = eztv_session.exec(
+                    select(func.max(CatalogShow.latest_release_date))
+                ).one()
+            except Exception:
+                total_releases = 0
+                max_seeds = 0
+                latest_p2p_date = None
+
+            if p2p_session is not None and total_releases == 0 and max_seeds == 0:
                 total_releases = int(
                     p2p_session.exec(select(func.count(CatalogRelease.id))).one() or 0
                 )
                 max_seeds = int(
                     p2p_session.exec(select(func.max(CatalogShow.max_seeds))).one() or 0
                 )
-                latest_p2p_date = p2p_session.exec(
+                latest_p2p_date = latest_p2p_date or p2p_session.exec(
                     select(func.max(CatalogShow.latest_release_date))
                 ).one()
 

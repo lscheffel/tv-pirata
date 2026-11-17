@@ -78,6 +78,12 @@ export const ShowCard: React.FC<ShowCardProps> = ({
           <h3 className="text-sm font-bold text-white line-clamp-1 group-hover:text-brand-red transition-colors">
             {show.title}
           </h3>
+          {show.original_title &&
+            show.original_title.toLowerCase() !== show.title.toLowerCase() && (
+              <p className="text-[11px] text-slate-400/90 line-clamp-1 italic">
+                {show.original_title}
+              </p>
+            )}
 
           <div className="flex items-center justify-between mt-1 text-xs text-slate-400">
             <span>{year || "Série"}</span>

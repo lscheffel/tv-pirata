@@ -1,19 +1,19 @@
 # Estado Atual do Workspace (STATE.md)
 
 > **Persistent Agent Memory & Repository State (SSOT)**  
-> Última auditoria e reconciliação completa (6 Pilares SOTA): 2026-11-15
+> Última auditoria e reconciliação completa (6 Pilares SOTA): 2026-11-17
 
 ---
 
 ## 1. 📍 Contexto e Fase Ativa
 
-- **Versão Atual:** `v0.6.0`
-- **Branch Ativa:** `main` / `develop` (Sincronizadas para Release `v0.6.0`)
-- **Posicionamento Arquitetural:** **Audiovisual Discovery Platform & Personal Media Ecosystem (Discovery-First)** estruturada em 3 camadas e persistência Dual-SQLite de alta performance:
-  - **Camada 1 — Audiovisual Discovery Core (`data/tv_pirata.db`):** Domínio canônico multi-formato (`MediaWork`), resolução de identidade multi-fonte (`EntityResolutionService`), procedência por atributo (`DataProvenance`), filtragem booleana (`AND`/`OR`/`NOT`), facetas dinâmicas, descoberta por filmografia/colaborações, similaridade objetiva, calendário de estreias e cruzamento de disponibilidade com o catálogo EZTV (`/api/explore` + `ExplorerView.tsx`).
-  - **Camada 2 — Personal Media Ecosystem (`data/tv_pirata.db` + `data/eztv_metadata.db`):** Separação física entre a base principal e a base dedicada EZTV (`EZTVShow`, `EZTVEpisodeCatalog`, `shows_fts`), `EngineScopedCache` com fingerprint, estatísticas de episódios materializadas (`episodes_count`, `max_season`, `max_episode`), badges universais (`StatusBadge`, `ProviderBadge`, `EztvBadge`), biblioteca pessoal (`ShowRecord`), progresso de episódios (`EpisodeWatchRecord`), disponibilidade SMB (`LocalMediaRecord`) e agendador assíncrono com notificações de novos episódios (`BackgroundSyncService`, `ReleaseNotificationRecord`).
-  - **Camada 3 — Personalization & Intelligence:** Motor de similaridade multi-critério sem N+1 queries com justificativa explícita, coleções inteligentes (`CollectionRecord`) e exclusão de títulos já assistidos.
-- **Status do Build / Quality Gate:** **PASSING** (`63/63` testes aprovados, `ruff check` 100% limpo, bundle SPA Vite compilado em `src/backend/static/dist/`).
+- **Versão Atual:** `v0.7.0`
+- **Branch Ativa:** `main` / `develop` / `imdb` (Sincronizadas para Release `v0.7.0`)
+- **Posicionamento Arquitetural:** **Audiovisual Discovery Platform & Personal Media Ecosystem (Discovery-First)** estruturada em 3 camadas e arquitetura **Dual-SSOT** (`data/mainstream.db` + `data/sources.db`):
+  - **Camada 1 — Base Canônica & Audiovisual Discovery Core (`data/mainstream.db`):** Catálogo universal `IMDbCatalogShow` (`279.362` obras e `4.529.748` episódios em `IMDbEpisodeCatalog`) + `MediaWork`, taxonomia canônica (`canonical_taxonomy.py`: 31 categorias, 25 streamings normalizados via TMDB `/discover`, 8 formatos, 8 fontes de dados), índice bilíngue `FTS5` PT-BR/EN-US (`shows_fts`), motor SQL Pushdown (`DiscoveryEngineRepository`), snapshot global `global_facets_v2` e controles UI Dual-SSOT + reset de filtros (`/api/explore` + `ExplorerView.tsx`).
+  - **Camada 2 — Base de Recursos Externos & Personal Media Ecosystem (`data/sources.db` + `data/mainstream.db`):** Isolamento físico das fontes P2P/EZTV (`EZTVShow` `860` séries / `140.571` episódios, `CatalogShow`, `CatalogRelease`) em `data/sources.db` 100% cruzadas com `mainstream.db` (`has_eztv = 1`, `878` obras), biblioteca pessoal (`ShowRecord`), histórico de episódios (`EpisodeWatchRecord`), disponibilidade SMB (`LocalMediaRecord`), badges universais (`StatusBadge`, `ProviderBadge`, `EztvBadge`) e `BackgroundSyncService` + `ReleaseNotificationRecord`.
+  - **Camada 3 — Personalization & Intelligence:** Motor de similaridade multi-critério com justificativa explícita, coleções inteligentes (`CollectionRecord`) e exclusão de títulos já assistidos.
+- **Status do Build / Quality Gate:** **PASSING** (`64/64` testes aprovados, `ruff check` 100% limpo, bundle SPA Vite compilado em `src/backend/static/dist/`).
 
 ---
 
@@ -31,6 +31,7 @@
 | **ADR-008** | [Fundação do Audiovisual Discovery Core (Camada 1): Domínio Canônico, Procedência e Motor de Descoberta](./docs/adr/ADR-008-ER.md) | Sim | 10/10 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
 | **ADR-009** | [Separação de Bases (tv_pirata.db vs eztv_metadata.db) + Entrelaçamento EZTV](./docs/adr/ADR-009-ER.md) | Sim | 7/7 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
 | **ADR-010** | [Otimização de Desempenho de Leitura Dual-SQLite, Estatísticas Materializadas, Cache Escopado por Engine e FTS5](./docs/adr/ADR-010-ER.md) | Sim | 21/21 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
+| **ADR-011** | [Consolidação Dual-SSOT (`data/mainstream.db` vs `data/sources.db`), IMDb Universal (`279k+` Títulos) e Motor SQL Pushdown](./docs/adr/ADR-011-ER.md) | Sim | 16/16 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
 
 ---
 
@@ -50,6 +51,9 @@
   - Implementada `ADR-009` (Isolamento Dual-Database `data/tv_pirata.db` vs `data/eztv_metadata.db`, cruzamento de disponibilidade EZTV, sistema de badges permanentes `StatusBadge`, `ProviderBadge` e `EztvBadge`, e contorno Cloudflare `403` com enriquecimento multi-provedor em `scripts/eztv-metadata-catalog.py`).
   - Implementada `ADR-010` (Tuning `PRAGMA`s SQLite WAL/mmap, estatísticas de episódios materializadas em `shows`, índice virtual `FTS5` `shows_fts`, `EngineScopedCache` com fingerprint e pipeline single-pass de seções curadas, reduzindo a latência de leitura em mais de 98%).
   - Executado ciclo completo `adr-archive` (`ADR-005` a `ADR-010` arquivadas com `ER.md` e poda de débitos) e reconciliação dos 6 Pilares SOTA.
+- **2026-11-17 (`v0.7.0`):**
+  - Implementada e arquivada `ADR-011` (`16/16` tarefas concluídas com `ADR-011-ER.md`): consolidação Dual-SSOT (`data/mainstream.db` com `279.362` obras / `4.529.748` episódios + `data/sources.db` com `860` séries / `140.571` episódios), motor SQL Pushdown com índices de cobertura, busca bilíngue PT-BR/EN-US via `shows_fts` (`unicode61 remove_diacritics 2`) e ranking de similaridade.
+  - Refatoração completa do sistema de filtragem e taxonomia canônica (`canonical_taxonomy.py` + `sync_canonical_facets_and_providers.py`): `31` categorias unificadas em PT-BR, `25` streamings hidratados via TMDB `/3/discover` (`BR`/`US`), `8` formatos, `8` fontes de dados, controles UI de atualização Dual-SSOT (`ExplorerView.tsx` + `CatalogView.tsx`) e botão de limpeza/reset de filtros.
 
 ---
 

@@ -39,7 +39,7 @@ MIRROR_DOMAINS = [
 ]
 BASE_URL = MIRROR_DOMAINS[0]
 SHOWLIST_URL = f"{BASE_URL}/showlist/"
-DB_FILE = "eztv_metadata.db"
+DB_FILE = "data/sources.db"
 
 STOP_REQUESTED = False
 THREAD_LOCAL = threading.local()

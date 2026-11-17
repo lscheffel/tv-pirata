@@ -37,6 +37,7 @@ export interface UnifiedShow {
   network?: string | null;
   streaming_providers?: string[];
   eztv_available?: boolean;
+  eztv_show_id?: number | null;
   source_provider: string;
   seasons: UnifiedSeason[];
 }
@@ -247,6 +248,7 @@ export interface FacetBucket {
 
 export interface DiscoveryFacets {
   work_types: FacetBucket[];
+  data_sources?: FacetBucket[];
   genres: FacetBucket[];
   streaming_providers: FacetBucket[];
   decades: FacetBucket[];
