@@ -4,6 +4,47 @@ Este documento consolida os marcos de valor de negócio, evolução arquitetural
 
 ---
 
+## 🚀 Release v0.7.0 — Consolidação Dual-SSOT (`mainstream.db` & `sources.db`), Busca Bilíngue FTS5, Taxonomia Canônica e Refatoração do Motor de Filtros (2026-11-17)
+
+### 🌟 Destaques Executivos e Valor de Produto
+A versão **v0.7.0** consolida o **TV Pirata** sobre uma arquitetura **Dual-SSOT** de escala universal (`ADR-011`): o catálogo principal passa a operar diretamente sobre **279.362 títulos** e **4.529.748 episódios** unificados (IMDb + TMDB + TVMaze + Biblioteca Pessoal) em [data/mainstream.db](file:///home/loupan/projetosVS/tv-pirata/data/mainstream.db), enquanto [data/sources.db](file:///home/loupan/projetosVS/tv-pirata/data/sources.db) isola as fontes externas P2P/EZTV (`860` séries e `140.571` episódios) 100% entrelaçadas ao catálogo canônico. Além disso, entrega busca bilíngue **PT-BR / EN-US** instantânea com ranking por similaridade, hidratação real de provedores de streaming via TMDB `/discover` e um painel multidimensional totalmente refatorado com contagens exatas em todas as categorias, formatos e fontes de dados.
+
+### 🏗️ Principais Entregas Arquiteturais (`ADR-011`)
+1. **Arquitetura Dual-SSOT & Motor SQL Pushdown (`279k+` Títulos em `< 6 ms`):**
+   - Separação estrita entre **Base Canônica (`data/mainstream.db`)** e **Base de Recursos Externos (`data/sources.db`)**, com modelos dedicados `IMDbCatalogShow` e `IMDbEpisodeCatalog` isolados em `imdb_metadata`.
+   - Reescrita de `DiscoveryEngineRepository` para execução 100% SQL Pushdown com índices compostos de cobertura (`idx_shows_filter_cover`, `idx_shows_score_cover`, `idx_shows_facets_cover`) e snapshot global pré-computado `global_facets_v2` em `sync_state` (`159,4 ms` end-to-end no `/api/explore/works`).
+   - Cruzamento integral e upsert de **100%** das séries EZTV/CatalogShow de `sources.db` em `mainstream.db` (`878` obras marcadas com `has_eztv = 1`).
+2. **Busca Bilíngue (`PT-BR` / `EN-US`) com `FTS5` e Ranking por Similaridade:**
+   - Índice virtual `shows_fts` com tokenizer `unicode61 remove_diacritics 2`, permitindo consultas sem acentos (ex.: *"senhor dos aneis"*, *"um sonho de liberdade"*, *"Shawshank"*) nas páginas **Descobrir** e **Explorar Universo**.
+   - Pontuação multi-camada (`score_title_pair_relevance` / `score_imdb_show_relevance`) priorizando correspondência exata, prefixo de franquia e similaridade contextual combinada à popularidade.
+3. **Taxonomia Canônica Única, Streaming Real & Painel de Filtros Refatorado:**
+   - Centralização em [canonical_taxonomy.py](file:///home/loupan/projetosVS/tv-pirata/src/backend/core/canonical_taxonomy.py): **31 categorias canônicas PT-BR** (corrigindo os antigos zeros em *Ficção Científica* `16.022`, *Suspense* `38.786`, *Crime & Investigação* `37.424`), **8 formatos** (incluindo *Documentário* `34.042`, *Animação* `13.803`, *Especial & Reality* `8.942`, *Curta-Metragem* `668`), **8 fontes de dados** (`EZTV P2P`, `Torrents Ativos`, `IMDb`, `TMDB`, `Sinopse PT-BR`, `Trailer YouTube`, `TVMaze`, `Minha Biblioteca`) e **25 provedores/redes de streaming**.
+   - Coleta real via TMDB `/3/discover` (`BR`/`US`) com `12.373` títulos mapeados e `175.397` registros normalizados em `mainstream.db` (Netflix `3.888`, Prime Video `2.158`, Max `2.068`, Disney+ `1.872`, Globoplay `1.026`, Crunchyroll `3.912`).
+   - Correspondência exata de tokens CSV (`_csv_token_in`), eliminando falsos positivos como `"Ação"` $\leftrightarrow$ `"Animação"`, `"Music"` $\leftrightarrow$ `"Musical"` e `"Max"` $\leftrightarrow$ `"Cinemax"`.
+4. **Controles de Atualização Dual-SSOT & Limpeza de Filtros na UI:**
+   - Novos endpoints `GET /api/explore/mainstream-stats` e `POST /api/explore/update-mainstream` (`delta`, `badges`, `hydrate`), integrados diretamente em `ExplorerView.tsx` e `CatalogView.tsx` ao lado dos controles de sincronização de `sources.db`.
+   - Novo botão destacado **Limpar / Resetar Filtros** com contador de filtros ativos e limpeza instantânea de campos de busca em `ExplorerView.tsx`.
+
+### 📊 Métricas da Release v0.7.0
+- **Escala do Catálogo Canônico (`mainstream.db`):** `279.362` obras (`217.690` filmes, `49.760` séries, `11.912` minisséries) e `4.529.748` episódios catalogados.
+- **Testes Automatizados:** `64 passed` (100% herméticos e offline, +suite integral Dual-SSOT em `tests/integration/test_mainstream_sources_ssot.py`).
+- **ADRs Consolidadas e Arquivadas:** `11/11` (`ADR-001` a `ADR-011` — `100%` arquivadas com Certificados de Evidência `ER.md`).
+- **Qualidade Estática:** `ruff check` (`All checks passed!`) e compilação React 19 + TypeScript (`tsc && vite build`) limpa em `src/backend/static/dist/`.
+
+### 🔄 Guia de Atualização (v0.6.0 $\rightarrow$ v0.7.0)
+```bash
+# 1. Atualizar código e compilar assets do frontend
+make build-front
+
+# 2. (Opcional) Sincronizar cruzamento Dual-SSOT, streaming BR/US e facetas globais
+.venv/bin/python scripts/sync_canonical_facets_and_providers.py
+
+# 3. Iniciar o servidor integrado
+make run
+```
+
+---
+
 ## 🚀 Release v0.6.0 — Audiovisual Discovery Core, Dual-Database EZTV & High-Performance Read Pipeline (2026-11-15)
 
 ### 🌟 Destaques Executivos e Valor de Produto

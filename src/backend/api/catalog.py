@@ -15,6 +15,7 @@ from src.backend.models.db import CatalogRelease
 from src.backend.models.eztv_db import EZTVEpisodeCatalog, EZTVShow
 from src.backend.repositories.catalog import CatalogRepository
 from src.backend.services.catalog_indexer import EZTVIndexerService
+from src.backend.services.federated_catalog import FederatedCatalogService
 
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
 
@@ -161,16 +162,34 @@ async def sync_catalog(
     start_page: int = Query(1, ge=1, description="Página inicial do EZTV"),
     pages: int = Query(5, ge=1, le=100, description="Quantidade de páginas para ler"),
     enrich: bool = Query(True, description="Enriquecer metadados via TVMaze/TMDB"),
+    eztv_session: Session = Depends(get_eztv_session),
     session: Session = Depends(get_session),
 ):
-    """Trigger on-demand synchronization of EZTV P2P releases into tv_pirata.db."""
+    """Trigger on-demand synchronization of EZTV P2P releases into sources.db & mainstream.db."""
     indexer = EZTVIndexerService()
+    # Sync into primary session and mirror into sources.db when separated
     telemetry = await indexer.sync_pages(
         session=session,
         start_page=start_page,
         max_pages=pages,
         enrich_metadata=enrich,
     )
+    if eztv_session is not session:
+        try:
+            await indexer.sync_pages(
+                session=eztv_session,
+                start_page=start_page,
+                max_pages=pages,
+                enrich_metadata=False,
+            )
+            await FederatedCatalogService().update_mainstream_catalog(
+                session=session,
+                eztv_session=eztv_session,
+                mode="badges",
+                limit=0,
+            )
+        except Exception:
+            pass
     catalog_cache.invalidate()
     discovery_cache.invalidate()
     return CatalogSyncResponse(status="success", telemetry=telemetry)

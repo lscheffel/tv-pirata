@@ -14,3 +14,4 @@
 | ADR-008 | Fundação do Audiovisual Discovery Core (Camada 1): Domínio Canônico Multi-Formato, Resolução de Identidade com Procedência, Federação de Fontes e Motor de Descoberta Avançada | Sim | 10/10 | CONSOLIDADA | - | ARCHIVED_OK |
 | ADR-009 | Separação de Bases (tv_pirata.db vs eztv_metadata.db) + Entrelaçamento EZTV | Sim | 7/7 | CONSOLIDADA | - | ARCHIVED_OK |
 | ADR-010 | ADR-010: Otimização de Desempenho de Leitura Dual-SQLite, Estatísticas Materializadas, Cache Escopado por Engine e FTS5 | Sim | 21/21 | CONSOLIDADA | - | ARCHIVED_OK |
+| ADR-011 | ADR-011: Consolidação Dual-SSOT (`data/mainstream.db` vs `data/sources.db`), IMDb como Âncora Universal (279k+ Títulos / 4.5M+ Episódios) e Motor SQL Pushdown | Sim | 16/16 | CONSOLIDADA | - | ARCHIVED_OK |

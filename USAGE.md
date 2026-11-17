@@ -1,6 +1,6 @@
 # Guia de Uso e Operação (USAGE.md) — TV Pirata 🏴‍☠️
 
-Este manual operacional detalha os fluxos de ponta a ponta, comandos de terminal verificáveis, parâmetros de configuração, chamadas REST (`curl`) e utilitários CLI da plataforma **TV Pirata (v0.6.0)**.
+Este manual operacional detalha os fluxos de ponta a ponta, comandos de terminal verificáveis, parâmetros de configuração, chamadas REST (`curl`) e utilitários CLI da plataforma **TV Pirata (v0.7.0)**.
 
 ---
 
@@ -18,13 +18,13 @@ cp .env.example .env
 uv pip install -e ".[dev]"
 ```
 
-### 1.2. Variáveis de Ambiente Suportadas (`src/backend/core/config.py`)
+### 1.2. Variáveis de Ambiente Suportadas (`src/backend/core/config.py` / `database.py`)
 
 | Variável | Valor Padrão | Descrição |
 | :--- | :--- | :--- |
-| `TMDB_API_KEY` | `""` (vazio) | Chave da API v3 ou Bearer Token v4 do TMDB. Se ausente ou inacessível, o sistema opera automaticamente via fallback público (TVMaze) e catálogo federado local. |
-| `DATABASE_URL` | `sqlite:///data/tv_pirata.db` | URI de conexão do banco relacional principal (`MediaWork`, biblioteca, histórico e telemetria P2P). |
-| `EZTV_DATABASE_URL` | `sqlite:///data/eztv_metadata.db` | URI de conexão do banco dedicado ao catálogo de séries e episódios da EZTV (`shows`, `episodes_catalog`, `shows_fts`). |
+| `TMDB_API_KEY` | `""` (vazio) | Chave da API v3 ou Bearer Token v4 do TMDB. Habilita hidratação PT-BR, trailers e disponibilidade real de streaming (`watch/providers` e `/discover`). |
+| `MAINSTREAM_DATABASE_URL` | `sqlite:///data/mainstream.db` | URI da **Base Canônica** (279k+ títulos IMDb, 4.5M+ episódios, metadados TMDB/TVMaze, biblioteca pessoal, `MediaWork`, `shows_fts` e `global_facets_v2`). Também aceita `DATABASE_URL` por retrocompatibilidade. |
+| `SOURCES_DATABASE_URL` | `sqlite:///data/sources.db` | URI da **Base de Recursos Externos** dedicada ao acervo P2P/EZTV (`shows`, `episodes_catalog`, `catalogshow`, `catalogrelease`, `shows_fts`). Também aceita `EZTV_DATABASE_URL`. |
 | `SMB_MOUNT_PATH` | `/mnt/storage/media` | Caminho local onde o compartilhamento SMB de mídia doméstica está montado. |
 | `REQUEST_TIMEOUT` | `2.0` | Timeout máximo (em segundos) para chamadas ao provedor primário antes do disparo do fallback. |
 | `AUTO_SYNC_ENABLED` | `true` | Ativa ou desativa o agendador periódico em segundo plano (`BackgroundSyncService`). |
@@ -63,34 +63,34 @@ make dev-front
 
 A aba **"Explorar Universo"** (`ExplorerView.tsx`) e o roteador `/api/explore` fornecem descoberta multi-formato (Filmes, Séries, Minisséries, Documentários, Animações e Especiais) independente da existência de torrents ou arquivos locais.
 
-### 3.1. Filtragem Booleana Avançada e Facetas Dinâmicas
-O endpoint `GET /api/explore/works` retorna simultaneamente a lista paginada de obras (`items`) e os contadores dinâmicos de facetas (`facets`: formatos, gêneros, plataformas de streaming, países e décadas).
+### 3.1. Filtragem Booleana Avançada, Fontes de Dados e Facetas Dinâmicas
+O endpoint `GET /api/explore/works` executa SQL Pushdown sobre `data/mainstream.db` e retorna simultaneamente a lista paginada de obras (`items`) e os contadores exatos/escalados de facetas (`facets`: `work_types`, `data_sources`, `genres`, `streaming_providers`, `statuses`, `countries` e `decades`).
 
 ```bash
-# 1. Buscar Obras de Ficção Científica E Thriller (modo booleano AND), excluindo Terror (NOT), com nota >= 8.0
-curl -s "http://127.0.0.1:8000/api/explore/works?genres_include=Sci-Fi,Thriller&genres_mode=AND&genres_exclude=Horror&rating_min=8.0&sort_by=rating" | python3 -m json.tool
+# 1. Buscar Obras de Ficção Científica E Suspense (modo AND), excluindo Terror (NOT), com nota >= 8.0
+curl -s "http://127.0.0.1:8000/api/explore/works?genres_all=Fic%C3%A7%C3%A3o%20Cient%C3%ADfica,Suspense&genres_not=Terror&min_rating=8.0&sort_by=rating" | python3 -m json.tool
 
-# 2. Filtrar apenas Filmes (format=movie) lançados entre 2015 e 2026 disponíveis em streaming (ex: Max ou Apple TV+)
-curl -s "http://127.0.0.1:8000/api/explore/works?format=movie&year_min=2015&year_max=2026&streaming=Max" | python3 -m json.tool
+# 2. Filtrar Documentários ou Filmes em Streaming (Netflix ou Max)
+curl -s "http://127.0.0.1:8000/api/explore/works?work_types=documentary&streaming_providers=Netflix,Max" | python3 -m json.tool
 
-# 3. Filtrar por Diretor ou Ator e ocultar obras já concluídas na biblioteca pessoal
-curl -s "http://127.0.0.1:8000/api/explore/works?director=Denis%20Villeneuve&exclude_watched=true" | python3 -m json.tool
+# 3. Cruzar Base Canônica por Fonte de Dados (ex.: apenas obras com EZTV P2P + Sinopse PT-BR)
+curl -s "http://127.0.0.1:8000/api/explore/works?data_sources=eztv,ptbr&sort_by=popularity" | python3 -m json.tool
+
+# 4. Consultar estatísticas da Base Canônica e disparar atualização Delta pela API
+curl -s "http://127.0.0.1:8000/api/explore/mainstream-stats" | python3 -m json.tool
+curl -s -X POST "http://127.0.0.1:8000/api/explore/update-mainstream?mode=delta&limit=25" | python3 -m json.tool
 ```
 
-**Parâmetros de Consulta (`GET /api/explore/works`):**
-- `q`: Busca textual no título canônico, título original ou sinopse.
-- `format`: `movie`, `tv_show`, `mini_series`, `documentary`, `animation`, `special`.
-- `genres_include`: Lista separada por vírgula de gêneros obrigatórios/desejados.
-- `genres_mode`: `OR` (padrão — qualquer gênero listado) ou `AND` (todos os gêneros listados).
-- `genres_exclude`: Lista separada por vírgula de gêneros a excluir (`NOT`).
-- `year_min` / `year_max`: Intervalo de ano de lançamento.
-- `rating_min`: Nota mínima consolidada (`0.0` a `10.0`).
-- `runtime_min` / `runtime_max`: Duração em minutos (para filmes ou episódios).
-- `country` / `language` / `streaming`: Filtro por país (`US`, `KR`, `DE`, `BR`, `JP`, `GB`), idioma (`en`, `ko`, `de`, `pt`, `ja`) ou plataforma (`Netflix`, `Max`, `Apple TV+`, `Prime Video`, `MUBI`, `Disney+`).
-- `director` / `actor` / `creator`: Filtro nominal por créditos associados à obra.
-- `has_torrent`: `true` para restringir a obras com sementes P2P ativas.
-- `exclude_watched`: `true` para excluir obras com status `completed` na biblioteca pessoal.
-- `sort_by`: `rating`, `popularity`, `year`, `title`, `trending`.
+**Parâmetros Principais (`GET /api/explore/works`):**
+- `q`: Busca bilíngue PT-BR/EN-US (tolerante a acentos via `shows_fts`) ranqueada por correspondência exata/similaridade.
+- `work_types`: `movie`, `tv_show`, `mini_series`, `tv_movie`, `documentary`, `animation`, `special`, `short`.
+- `data_sources`: Interseção de fontes: `eztv`, `p2p_active`, `imdb`, `tmdb`, `ptbr`, `youtube_trailer`, `tvmaze`, `personal_library`.
+- `genres_any` / `genres_all` / `genres_not`: Filtragem booleana (`OR`, `AND`, `NOT`) sobre as 31 categorias canônicas.
+- `streaming_providers`: `Netflix`, `Prime Video`, `Max`, `Disney+`, `Globoplay`, `Apple TV+`, `Paramount+`, `Crunchyroll`, `MUBI`, `Looke`, `Claro tv+`, etc.
+- `status`: `Running`, `Ended`, `Released`, `To Be Determined`, `Canceled`.
+- `year_from` / `year_to` / `min_rating` / `max_rating` / `min_runtime` / `max_runtime`: Filtros quantitativos.
+- `person_query` & `role_type` (`director`, `creator`, `actor`, `writer`): Filtro nominal e por função na obra.
+- `only_with_p2p` / `exclude_watched` / `sort_by` (`rating`, `relevance`, `popularity`, `year_desc`, `year_asc`, `runtime`, `title`).
 
 ### 3.2. Dossiê Canônico da Obra, Procedência e Similaridade
 ```bash
@@ -167,35 +167,38 @@ make sync-catalog
 .venv/bin/python scripts/sync_catalog.py --pages 10 --start 1
 ```
 
-### 4.4. Crawler Multi-Provedor Resiliente a Cloudflare (`scripts/eztv-metadata-catalog.py`)
-Para construir e atualizar o banco dedicado de todas as séries e episódios da EZTV (`data/eztv_metadata.db`) com detecção automática de bloqueio Cloudflare, fallback para a API JSON oficial (`/api/get-torrents`) e enriquecimento cruzado (EZTV + TVMaze + TMDB):
+### 4.4. Pipeline de Hidratação Canônica (`mainstream.db`) & Base de Recursos (`sources.db`)
+Para manter a **Base Canônica (`data/mainstream.db`)** e a **Base de Recursos (`data/sources.db`)** sincronizadas via CLI:
 
 ```bash
-# 1. Inspecionar diagnóstico completo e estatísticas do banco de metadados
+# 1. Estatísticas e atualização delta/hidratação IMDb + TMDB (dumps + API /changes + watch/providers)
+.venv/bin/python scripts/imdb-metadata-catalog.py --stats
+.venv/bin/python scripts/imdb-metadata-catalog.py --update
+.venv/bin/python scripts/imdb-metadata-catalog.py --resume --limit 5000
+
+# 2. Crawler multi-provedor da base de recursos EZTV (data/sources.db)
 .venv/bin/python scripts/eztv-metadata-catalog.py --stats
+.venv/bin/python scripts/eztv-metadata-catalog.py --source auto --api-pages 30 --deep 50 --with-level3
 
-# 2. Sincronizar via modo automático (HTML ou fallback API JSON em caso de 403 Cloudflare) com 3º nível TVMaze/TMDB
-.venv/bin/python scripts/eztv-metadata-catalog.py --source auto --api-pages 30 --deep 50 --with-level3 --workers 5 --order rating
+# 3. Propagar badges e status (sources.db -> mainstream.db)
+.venv/bin/python scripts/sync-eztv-bade.py
 
-# 3. Forçar descoberta diretamente pela API JSON oficial da EZTV (sem depender de /showlist/ HTML)
-.venv/bin/python scripts/eztv-metadata-catalog.py --source api --api-pages 50 --api-start-page 1 --deep 100 --with-level3
-
-# 4. Re-enriquecer séries existentes que ainda não possuem streaming_providers ou status consolidado
-.venv/bin/python scripts/eztv-metadata-catalog.py --skip-level1 --refresh-stale --deep 200 --with-level3
+# 4. Hidratar streaming availability real (TMDB /discover BR/US), normalizar 31 gêneros e atualizar global_facets_v2
+.venv/bin/python scripts/sync_canonical_facets_and_providers.py
 ```
 
 ---
 
-## 5. 🧪 Pirâmide de Testes e Qualidade (`63 Testes`)
+## 5. 🧪 Pirâmide de Testes e Qualidade (`64 Testes`)
 
 Todos os testes automatizados são **100% herméticos e offline**, utilizando `respx` para interceptação determinística de chamadas HTTP e `SQLite :memory:` com isolamento por `Engine`.
 
 ```bash
-# 1. Executar toda a suíte (63 testes unitários e de integração)
+# 1. Executar toda a suíte (64 testes unitários e de integração)
 make test
 
-# 2. Executar testes da Arquitetura Dual-Database e Performance (ADR-009 & ADR-010)
-.venv/bin/pytest tests/integration/test_dual_db_eztv.py tests/unit/test_db_performance.py -v
+# 2. Executar testes Dual-SSOT, SQL Pushdown, Taxonomia e Busca Bilíngue (ADR-011)
+.venv/bin/pytest tests/integration/test_mainstream_sources_ssot.py tests/integration/test_dual_db_eztv.py tests/unit/test_db_performance.py -v
 
 # 3. Executar testes da Camada 1 (Audiovisual Discovery Core - ADR-008)
 .venv/bin/pytest tests/unit/test_entity_resolution.py tests/unit/test_discovery_engine.py tests/integration/test_explore_api.py -v

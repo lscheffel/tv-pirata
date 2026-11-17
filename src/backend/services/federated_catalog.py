@@ -8,10 +8,15 @@ from pathlib import Path
 from typing import Any, Optional
 
 import httpx
-from sqlmodel import Session, func, select
+from sqlmodel import Session, col, func, select
 
-from src.backend.models.catalog_domain import MediaWork
+from src.backend.core.canonical_taxonomy import (
+    merge_canonical_genres,
+    merge_canonical_providers,
+)
+from src.backend.models.catalog_domain import IMDbCatalogShow, IMDbEpisodeCatalog, MediaWork
 from src.backend.models.db import CatalogShow, ShowRecord
+from src.backend.models.eztv_db import EZTVShow
 from src.backend.providers.tmdb import TMDBProvider
 from src.backend.providers.tvmaze import TVMazeProvider
 from src.backend.services.entity_resolution import EntityResolutionService
@@ -53,6 +58,20 @@ class FederatedCatalogService:
                 "seeded_works": 0,
                 "bridged_local_works": 0,
                 "total_catalog_works": -1,
+            }
+
+        # When the canonical 279k+ IMDb shows table is active in mainstream.db,
+        # avoid full legacy bridging overhead on startup and mark engine as ready.
+        try:
+            imdb_count = int(session.exec(select(func.count(IMDbCatalogShow.imdb_id))).one() or 0)
+        except Exception:
+            imdb_count = 0
+        if imdb_count > 0 and not force:
+            _SEEDED_ENGINES.add(engine_id)
+            return {
+                "seeded_works": 0,
+                "bridged_local_works": 0,
+                "total_catalog_works": imdb_count,
             }
 
         existing_count = int(session.exec(select(func.count(MediaWork.id))).one() or 0)
@@ -219,3 +238,215 @@ class FederatedCatalogService:
 
         session.commit()
         return ingested
+
+    def get_mainstream_stats(self, session: Session) -> dict[str, int]:
+        """Return canonical catalog statistics from data/mainstream.db."""
+        try:
+            total_titles = int(
+                session.exec(select(func.count(IMDbCatalogShow.imdb_id))).one() or 0
+            )
+        except Exception:
+            total_titles = 0
+
+        if total_titles > 0:
+            total_episodes = int(
+                session.exec(select(func.count(IMDbEpisodeCatalog.episode_imdb_id))).one() or 0
+            )
+            hydrated_titles = int(
+                session.exec(
+                    select(func.count(IMDbCatalogShow.imdb_id)).where(
+                        col(IMDbCatalogShow.tmdb_synced).in_([1, 2])
+                    )
+                ).one()
+                or 0
+            )
+            eztv_badged_titles = int(
+                session.exec(
+                    select(func.count(IMDbCatalogShow.imdb_id)).where(
+                        IMDbCatalogShow.has_eztv == 1
+                    )
+                ).one()
+                or 0
+            )
+            return {
+                "total_titles": total_titles,
+                "total_episodes": total_episodes,
+                "hydrated_titles": hydrated_titles,
+                "eztv_badged_titles": eztv_badged_titles,
+            }
+
+        mw_count = int(session.exec(select(func.count(MediaWork.id))).one() or 0)
+        return {
+            "total_titles": mw_count,
+            "total_episodes": 0,
+            "hydrated_titles": mw_count,
+            "eztv_badged_titles": 0,
+        }
+
+    async def update_mainstream_catalog(
+        self,
+        session: Session,
+        eztv_session: Optional[Session] = None,
+        mode: str = "delta",
+        limit: int = 25,
+    ) -> dict[str, Any]:
+        """Synchronize canonical mainstream.db (EZTV badge cross-ref + TMDB/TVMaze hydration)."""
+        badges_synced = 0
+        titles_hydrated = 0
+
+        try:
+            imdb_count = int(
+                session.exec(select(func.count(IMDbCatalogShow.imdb_id))).one() or 0
+            )
+        except Exception:
+            imdb_count = 0
+
+        if imdb_count > 0:
+            # 1. Cross-reference EZTV badges and complementary status/providers from sources.db
+            if eztv_session is not None and mode in ("delta", "badges", "hydrate"):
+                ez_rows = list(
+                    eztv_session.exec(
+                        select(EZTVShow).where(col(EZTVShow.imdb_id).is_not(None))
+                    ).all()
+                )
+                ez_by_imdb: dict[str, EZTVShow] = {}
+                for ez in ez_rows:
+                    if ez.imdb_id:
+                        norm = EntityResolutionService.normalize_imdb_id(ez.imdb_id)
+                        if norm and norm not in ez_by_imdb:
+                            ez_by_imdb[norm] = ez
+
+                if ez_by_imdb:
+                    matched_shows = list(
+                        session.exec(
+                            select(IMDbCatalogShow).where(
+                                col(IMDbCatalogShow.imdb_id).in_(list(ez_by_imdb.keys()))
+                            )
+                        ).all()
+                    )
+                    for m_show in matched_shows:
+                        ez_src = ez_by_imdb.get(
+                            EntityResolutionService.normalize_imdb_id(m_show.imdb_id)
+                        )
+                        if not ez_src:
+                            continue
+                        changed = False
+                        if m_show.has_eztv != 1 or m_show.eztv_id != ez_src.id:
+                            m_show.has_eztv = 1
+                            m_show.eztv_id = ez_src.id
+                            m_show.eztv_slug = ez_src.slug
+                            m_show.eztv_match_type = "exact_imdb"
+                            changed = True
+                        if not m_show.status and ez_src.status:
+                            m_show.status = ez_src.status
+                            changed = True
+                        if not m_show.tvmaze_id and ez_src.tvmaze_id:
+                            m_show.tvmaze_id = ez_src.tvmaze_id
+                            changed = True
+                        if not m_show.streaming_providers and (
+                            ez_src.streaming_providers or ez_src.network
+                        ):
+                            m_show.streaming_providers = (
+                                ez_src.streaming_providers or ez_src.network
+                            )
+                            changed = True
+                        if not m_show.network and ez_src.network:
+                            m_show.network = ez_src.network
+                            changed = True
+                        merged_sp = merge_canonical_providers(
+                            m_show.streaming_providers,
+                            m_show.network,
+                            ez_src.streaming_providers,
+                            ez_src.network,
+                        )
+                        if merged_sp:
+                            sp_csv = ", ".join(merged_sp)
+                            if sp_csv != m_show.streaming_providers:
+                                m_show.streaming_providers = sp_csv
+                                changed = True
+                        merged_gen = merge_canonical_genres(m_show.genres_ptbr, m_show.genres)
+                        if merged_gen:
+                            g_csv = ", ".join(merged_gen)
+                            if g_csv != m_show.genres_ptbr:
+                                m_show.genres_ptbr = g_csv
+                                changed = True
+                        if not m_show.poster_url and ez_src.poster_url:
+                            m_show.poster_url = ez_src.poster_url
+                            changed = True
+                        if changed:
+                            session.add(m_show)
+                            badges_synced += 1
+                    session.commit()
+
+            # 2. Hydrate pending or incomplete popular titles via TVMaze/TMDB when requested
+            if mode in ("delta", "hydrate") and limit > 0:
+                pending_stmt = (
+                    select(IMDbCatalogShow)
+                    .where(
+                        (col(IMDbCatalogShow.tmdb_synced) == 0)
+                        | col(IMDbCatalogShow.poster_url).is_(None)
+                        | col(IMDbCatalogShow.status).is_(None)
+                    )
+                    .order_by(
+                        col(IMDbCatalogShow.has_eztv).desc(),
+                        col(IMDbCatalogShow.rating_votes).desc(),
+                    )
+                    .limit(min(limit, 50))
+                )
+                candidates = list(session.exec(pending_stmt).all())
+                for cand in candidates:
+                    try:
+                        info = None
+                        if cand.title_type in ("tvSeries", "tvMiniSeries"):
+                            info = await self.tvmaze.lookup_by_imdb(cand.imdb_id)
+                        if info:
+                            cand.poster_url = cand.poster_url or info.poster_url
+                            cand.backdrop_url = cand.backdrop_url or info.backdrop_url
+                            cand.synopsis = cand.synopsis or info.overview
+                            cand.status = cand.status or info.status
+                            cand.tvmaze_id = cand.tvmaze_id or info.tvmaze_id
+                            merged_g = merge_canonical_genres(
+                                cand.genres_ptbr,
+                                cand.genres,
+                                ", ".join(info.genres or []),
+                            )
+                            if merged_g:
+                                cand.genres_ptbr = ", ".join(merged_g)
+                            merged_p = merge_canonical_providers(
+                                cand.streaming_providers,
+                                cand.network,
+                                info.network,
+                                ", ".join(info.streaming_providers or []),
+                            )
+                            if merged_p:
+                                cand.streaming_providers = ", ".join(merged_p)
+                            if cand.tmdb_synced == 0:
+                                cand.tmdb_synced = 2
+                            session.add(cand)
+                            titles_hydrated += 1
+                    except Exception:
+                        continue
+                session.commit()
+
+            from src.backend.repositories.discovery_engine import DiscoveryEngineRepository
+
+            DiscoveryEngineRepository.refresh_global_facets_cache(
+                session, eztv_session=eztv_session, persist_to_sync_state=(imdb_count >= 100)
+            )
+            stats = self.get_mainstream_stats(session)
+            return {
+                "status": "updated",
+                "mode": mode,
+                "badges_synced": badges_synced,
+                "titles_hydrated": titles_hydrated,
+                "stats": stats,
+            }
+
+        seed_stats = self.ensure_federated_catalog_seeded(session, force=True)
+        return {
+            "status": "updated",
+            "mode": mode,
+            "badges_synced": 0,
+            "titles_hydrated": seed_stats.get("bridged_local_works", 0),
+            "stats": self.get_mainstream_stats(session),
+        }

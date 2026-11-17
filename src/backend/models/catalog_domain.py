@@ -3,8 +3,16 @@
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import MetaData, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
+
+imdb_metadata = MetaData()
+
+
+class IMDbBase(SQLModel):
+    """Isolated metadata so IMDb catalog tables only auto-create on explicit init_db()."""
+
+    metadata = imdb_metadata
 
 
 def utc_now() -> datetime:
@@ -222,3 +230,70 @@ class ReleaseCalendarEvent(SQLModel, table=True):
     source_provider: str = Field(default="tmdb")
 
     work: Optional[MediaWork] = Relationship(back_populates="calendar_events")
+
+
+class IMDbCatalogShow(IMDbBase, table=True):
+    """Canonical universal title in data/mainstream.db (IMDb backbone + TMDB/TVMaze merge)."""
+
+    __tablename__ = "shows"
+
+    imdb_id: str = Field(primary_key=True)
+    imdb_num: Optional[int] = Field(default=None, index=True)
+    tmdb_id: Optional[int] = Field(default=None, index=True)
+    title_type: str = Field(default="movie", index=True)
+    primary_title: str = Field(index=True)
+    original_title: Optional[str] = Field(default=None)
+    title_ptbr: Optional[str] = Field(default=None, index=True)
+    tagline: Optional[str] = Field(default=None)
+    is_adult: int = Field(default=0)
+    start_year: Optional[int] = Field(default=None, index=True)
+    end_year: Optional[int] = Field(default=None)
+    runtime_minutes: Optional[int] = Field(default=None)
+    genres: Optional[str] = Field(default=None)
+    genres_ptbr: Optional[str] = Field(default=None)
+    rating_score: Optional[float] = Field(default=None)
+    rating_votes: int = Field(default=0, index=True)
+    poster_url: Optional[str] = Field(default=None)
+    backdrop_url: Optional[str] = Field(default=None)
+    trailer_url: Optional[str] = Field(default=None)
+    synopsis: Optional[str] = Field(default=None)
+    synopsis_ptbr: Optional[str] = Field(default=None)
+    content_rating: Optional[str] = Field(default=None)
+    release_date: Optional[str] = Field(default=None)
+    countries: Optional[str] = Field(default=None)
+    languages: Optional[str] = Field(default=None)
+    network: Optional[str] = Field(default=None)
+    directors: Optional[str] = Field(default=None)
+    creators: Optional[str] = Field(default=None)
+    cast_members: Optional[str] = Field(default=None)
+    keywords: Optional[str] = Field(default=None)
+    total_seasons: Optional[int] = Field(default=None)
+    details_fetched: int = Field(default=0)
+    tmdb_synced: int = Field(default=0, index=True)
+    tvmaze_id: Optional[int] = Field(default=None)
+    status: Optional[str] = Field(default=None)
+    air_day_time: Optional[str] = Field(default=None)
+    streaming_providers: Optional[str] = Field(default=None)
+    has_eztv: int = Field(default=0, index=True)
+    eztv_id: Optional[int] = Field(default=None, index=True)
+    eztv_slug: Optional[str] = Field(default=None)
+    eztv_match_type: Optional[str] = Field(default=None)
+    last_error: Optional[str] = Field(default=None)
+    updated_at: Optional[str] = Field(default=None)
+
+
+class IMDbEpisodeCatalog(IMDbBase, table=True):
+    """Canonical IMDb episode tree stored in data/mainstream.db (table: episodes_catalog)."""
+
+    __tablename__ = "episodes_catalog"
+
+    episode_imdb_id: str = Field(primary_key=True)
+    show_imdb_id: str = Field(foreign_key="shows.imdb_id", index=True)
+    season: Optional[int] = Field(default=None)
+    episode: Optional[int] = Field(default=None)
+    title: Optional[str] = Field(default=None)
+    start_year: Optional[int] = Field(default=None)
+    runtime_minutes: Optional[int] = Field(default=None)
+    rating_score: Optional[float] = Field(default=None)
+    rating_votes: int = Field(default=0)
+    updated_at: Optional[str] = Field(default=None)

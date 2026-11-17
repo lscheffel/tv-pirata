@@ -15,6 +15,9 @@ import {
   Award,
   Globe,
   GitMerge,
+  RefreshCw,
+  RotateCcw,
+  Zap,
 } from "lucide-react";
 import {
   CalendarEventItem,
@@ -41,10 +44,110 @@ const WORK_TYPE_LABELS: Record<string, string> = {
   movie: "Filme",
   tv_show: "Série de TV",
   mini_series: "Minissérie",
+  tv_movie: "Telefilme",
   documentary: "Documentário",
   animation: "Animação",
-  special: "Especial",
+  special: "Especial & Reality",
+  short: "Curta-Metragem",
 };
+
+const DATA_SOURCE_OPTIONS: Array<{
+  key: string;
+  label: string;
+  accent: string;
+}> = [
+  { key: "eztv", label: "EZTV P2P (sources.db)", accent: "text-yellow-300 border-yellow-500/40 bg-yellow-500/15" },
+  { key: "p2p_active", label: "Torrents c/ Seeds Ativos", accent: "text-emerald-300 border-emerald-500/40 bg-emerald-500/15" },
+  { key: "imdb", label: "IMDb Universal", accent: "text-amber-200 border-amber-400/40 bg-amber-500/15" },
+  { key: "tmdb", label: "TMDB Hidratado", accent: "text-sky-300 border-sky-500/40 bg-sky-500/15" },
+  { key: "ptbr", label: "Sinopse PT-BR", accent: "text-green-300 border-green-500/40 bg-green-500/15" },
+  { key: "youtube_trailer", label: "Com Trailer YouTube", accent: "text-rose-300 border-rose-500/40 bg-rose-500/15" },
+  { key: "tvmaze", label: "TVMaze Séries", accent: "text-cyan-300 border-cyan-500/40 bg-cyan-500/15" },
+  { key: "personal_library", label: "Minha Biblioteca", accent: "text-purple-300 border-purple-500/40 bg-purple-500/15" },
+];
+
+const STATUS_OPTIONS: Array<{ key: string; label: string }> = [
+  { key: "", label: "Qualquer Status" },
+  { key: "Running", label: "Em Exibição (Running)" },
+  { key: "Ended", label: "Finalizada (Ended)" },
+  { key: "Released", label: "Lançado (Released)" },
+  { key: "To Be Determined", label: "A Definir (TBD)" },
+  { key: "Canceled", label: "Cancelada" },
+];
+
+const ALL_CANONICAL_GENRES_FALLBACK: string[] = [
+  "Drama",
+  "Comédia",
+  "Romance",
+  "Suspense",
+  "Ação",
+  "Crime & Investigação",
+  "Documentário",
+  "Aventura",
+  "Terror",
+  "Família",
+  "Mistério",
+  "Fantasia",
+  "Ficção Científica",
+  "Cinema TV",
+  "Animação",
+  "História",
+  "Música",
+  "Biografia",
+  "Guerra & Política",
+  "Reality-TV",
+  "Faroeste",
+  "Musical",
+  "Esporte",
+  "Infantil / Kids",
+  "Talk-Show",
+  "Game-Show",
+  "Adulto",
+  "Novela / Soap",
+  "Notícias",
+  "Film-Noir",
+  "Curta-Metragem",
+];
+
+const ALL_CANONICAL_PROVIDERS_FALLBACK: string[] = [
+  "Netflix",
+  "Prime Video",
+  "Max",
+  "Disney+",
+  "Globoplay",
+  "Apple TV+",
+  "Paramount+",
+  "Crunchyroll",
+  "MUBI",
+  "Looke",
+  "Claro tv+",
+  "Hulu",
+  "Peacock / NBC",
+  "BBC",
+  "Discovery",
+  "FOX / FX",
+  "CBS",
+  "ABC",
+  "YouTube",
+  "AMC+",
+  "Cartoon Network",
+  "Nickelodeon",
+  "MTV / Comedy Central",
+  "History / A&E",
+  "The CW",
+];
+
+function formatFacetCount(n: number): string {
+  return (n ?? 0).toLocaleString("pt-BR");
+}
+
+function normalizeLookupKey(raw: string): string {
+  return raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
 
 const CONFIDENCE_BADGES: Record<string, { label: string; color: string }> = {
   confirmed: {
@@ -71,6 +174,7 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
 
   // --- Advanced Filter State ---
   const [queryText, setQueryText] = useState("");
+  const [debouncedQueryText, setDebouncedQueryText] = useState("");
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [genresAny, setGenresAny] = useState<string[]>([]);
   const [genresAll, setGenresAll] = useState<string[]>([]);
@@ -81,10 +185,29 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
   const [minRating, setMinRating] = useState<number>(0);
   const [minRuntime, setMinRuntime] = useState<string>("");
   const [personFilter, setPersonFilter] = useState<string>("");
+  const [debouncedPersonFilter, setDebouncedPersonFilter] = useState<string>("");
   const [roleFilter, setRoleFilter] = useState<string>("");
   const [excludeWatched, setExcludeWatched] = useState<boolean>(false);
   const [onlyWithP2P, setOnlyWithP2P] = useState<boolean>(false);
+  const [selectedSources, setSelectedSources] = useState<string[]>([]);
+  const [selectedStatus, setSelectedStatus] = useState<string>("");
+  const [showAllGenres, setShowAllGenres] = useState<boolean>(true);
+  const [showAllProviders, setShowAllProviders] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<string>("rating");
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQueryText(queryText);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [queryText]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedPersonFilter(personFilter);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [personFilter]);
 
   // --- Results & Facets State ---
   const [works, setWorks] = useState<MediaWorkSummary[]>([]);
@@ -104,25 +227,50 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
   const [calendarEvents, setCalendarEvents] = useState<CalendarEventItem[]>([]);
   const [calendarConfidenceFilter, setCalendarConfidenceFilter] = useState<string>("");
 
+  // --- Dual-SSOT Update Controls State ---
+  const [mainstreamMode, setMainstreamMode] = useState<string>("delta");
+  const [isUpdatingMainstream, setIsUpdatingMainstream] = useState<boolean>(false);
+  const [sourcesSyncPages, setSourcesSyncPages] = useState<number>(5);
+  const [isUpdatingSources, setIsUpdatingSources] = useState<boolean>(false);
+  const [mainstreamStats, setMainstreamStats] = useState<{
+    total_titles: number;
+    total_episodes: number;
+    hydrated_titles: number;
+    eztv_badged_titles: number;
+  } | null>(null);
+
+  const loadMainstreamStats = useCallback(() => {
+    api.explore
+      .getMainstreamStats()
+      .then(setMainstreamStats)
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadMainstreamStats();
+  }, [loadMainstreamStats]);
+
   const executeExploreQuery = useCallback(() => {
     setLoadingWorks(true);
     api.explore
       .getWorks({
-        q: queryText.trim() || undefined,
+        q: debouncedQueryText.trim() || undefined,
         work_types: selectedTypes.length > 0 ? selectedTypes.join(",") : undefined,
         genres_any: genresAny.length > 0 ? genresAny.join(",") : undefined,
         genres_all: genresAll.length > 0 ? genresAll.join(",") : undefined,
         genres_not: genresNot.length > 0 ? genresNot.join(",") : undefined,
         streaming_providers:
           selectedProviders.length > 0 ? selectedProviders.join(",") : undefined,
+        status: selectedStatus || undefined,
         year_from: yearFrom ? parseInt(yearFrom, 10) : undefined,
         year_to: yearTo ? parseInt(yearTo, 10) : undefined,
         min_rating: minRating > 0 ? minRating : undefined,
         min_runtime: minRuntime ? parseInt(minRuntime, 10) : undefined,
-        person_query: personFilter.trim() || undefined,
+        person_query: debouncedPersonFilter.trim() || undefined,
         role_type: roleFilter || undefined,
         exclude_watched: excludeWatched || undefined,
         only_with_p2p: onlyWithP2P || undefined,
+        data_sources: selectedSources.length > 0 ? selectedSources.join(",") : undefined,
         sort_by: sortBy,
         page_size: 48,
       })
@@ -137,20 +285,22 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
       })
       .finally(() => setLoadingWorks(false));
   }, [
-    queryText,
+    debouncedQueryText,
     selectedTypes,
     genresAny,
     genresAll,
     genresNot,
     selectedProviders,
+    selectedStatus,
     yearFrom,
     yearTo,
     minRating,
     minRuntime,
-    personFilter,
+    debouncedPersonFilter,
     roleFilter,
     excludeWatched,
     onlyWithP2P,
+    selectedSources,
     sortBy,
     showToast,
   ]);
@@ -185,7 +335,7 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
     }
   }, [subMode, calendarConfidenceFilter]);
 
-  const handleOpenDossier = async (workId: number) => {
+  const handleOpenDossier = async (workId: number | string) => {
     try {
       const dossier = await api.explore.getWorkDossier(workId);
       setSelectedDossier(dossier);
@@ -221,22 +371,91 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
     );
   };
 
+  const handleToggleSource = (srcKey: string) => {
+    setSelectedSources((prev) =>
+      prev.includes(srcKey) ? prev.filter((s) => s !== srcKey) : [...prev, srcKey]
+    );
+  };
+
+  const activeFiltersCount =
+    (queryText.trim() ? 1 : 0) +
+    (personFilter.trim() ? 1 : 0) +
+    (roleFilter ? 1 : 0) +
+    selectedTypes.length +
+    genresAny.length +
+    genresAll.length +
+    genresNot.length +
+    selectedProviders.length +
+    selectedSources.length +
+    (selectedStatus ? 1 : 0) +
+    (yearFrom ? 1 : 0) +
+    (yearTo ? 1 : 0) +
+    (minRating > 0 ? 1 : 0) +
+    (minRuntime ? 1 : 0) +
+    (excludeWatched ? 1 : 0) +
+    (onlyWithP2P ? 1 : 0) +
+    (sortBy !== "rating" ? 1 : 0);
+
   const handleResetFilters = () => {
     setQueryText("");
+    setDebouncedQueryText("");
     setSelectedTypes([]);
     setGenresAny([]);
     setGenresAll([]);
     setGenresNot([]);
     setSelectedProviders([]);
+    setSelectedSources([]);
+    setSelectedStatus("");
     setYearFrom("");
     setYearTo("");
     setMinRating(0);
     setMinRuntime("");
     setPersonFilter("");
+    setDebouncedPersonFilter("");
     setRoleFilter("");
     setExcludeWatched(false);
     setOnlyWithP2P(false);
     setSortBy("rating");
+    showToast("Todos os filtros foram limpos e restaurados", "info");
+  };
+
+  const handleUpdateMainstream = async () => {
+    setIsUpdatingMainstream(true);
+    showToast("Atualizando Base Canônica (mainstream.db — IMDb/TMDB/TVMaze + Selos)...", "info");
+    try {
+      const res = await api.explore.updateMainstream(mainstreamMode, 25);
+      setMainstreamStats(res.stats);
+      showToast(
+        `Base Canônica atualizada! ${res.titles_hydrated} títulos hidratados, ${res.badges_synced} selos EZTV sincronizados.`,
+        "success"
+      );
+      executeExploreQuery();
+    } catch {
+      showToast("Erro ao atualizar Base Canônica (mainstream.db)", "error");
+    } finally {
+      setIsUpdatingMainstream(false);
+    }
+  };
+
+  const handleUpdateSources = async () => {
+    setIsUpdatingSources(true);
+    showToast(
+      `Sincronizando Base de Recursos (sources.db — ${sourcesSyncPages} páginas EZTV)...`,
+      "info"
+    );
+    try {
+      const res = await api.catalog.sync(sourcesSyncPages);
+      showToast(
+        `Base de Recursos atualizada! +${res.telemetry.torrents_indexed} releases indexados, ${res.telemetry.shows_created} novas séries.`,
+        "success"
+      );
+      loadMainstreamStats();
+      executeExploreQuery();
+    } catch {
+      showToast("Erro ao sincronizar Base de Recursos (sources.db)", "error");
+    } finally {
+      setIsUpdatingSources(false);
+    }
   };
 
   const applyPreset = (presetId: string) => {
@@ -278,7 +497,11 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
     genres: w.genres,
     first_air_date: w.release_date || undefined,
     status: w.status,
-    source_provider: w.rating_source || "federated-catalog",
+    network: w.network_or_studio || undefined,
+    streaming_providers: w.streaming_providers || [],
+    eztv_available: w.eztv_available,
+    eztv_show_id: w.eztv_show_id || undefined,
+    source_provider: w.rating_source || "imdb",
     seasons: [],
   });
 
@@ -306,33 +529,41 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
     }
   };
 
-  const availableGenres = [
-    "Ficção Científica",
-    "Suspense",
-    "Drama",
-    "Crime & Investigação",
-    "Mistério",
-    "Aventura",
-    "Ação",
-    "História",
-    "Documentário",
-    "Animação",
-    "Fantasia",
-    "Comédia",
-    "Biografia",
-    "Guerra & Política",
-  ];
+  const genreCountMap = new Map<string, number>();
+  for (const fg of facets?.genres ?? []) {
+    genreCountMap.set(normalizeLookupKey(fg.key), fg.count);
+  }
+  const getGenreCount = (g: string): number =>
+    facets?.genres.find((fg) => fg.key === g)?.count ??
+    genreCountMap.get(normalizeLookupKey(g)) ??
+    0;
 
-  const availableProviders = [
-    "Netflix",
-    "Max",
-    "Prime Video",
-    "Apple TV+",
-    "Disney+",
-    "MUBI",
-    "Globoplay",
-    "Paramount+",
-  ];
+  const allMergedGenres = Array.from(
+    new Set([
+      ...(facets?.genres.map((fg) => fg.key) ?? []),
+      ...ALL_CANONICAL_GENRES_FALLBACK,
+    ])
+  ).sort((a, b) => getGenreCount(b) - getGenreCount(a));
+  const availableGenres = showAllGenres ? allMergedGenres : allMergedGenres.slice(0, 16);
+
+  const providerCountMap = new Map<string, number>();
+  for (const fp of facets?.streaming_providers ?? []) {
+    providerCountMap.set(normalizeLookupKey(fp.key), fp.count);
+  }
+  const getProviderCount = (p: string): number =>
+    facets?.streaming_providers.find((fp) => fp.key === p)?.count ??
+    providerCountMap.get(normalizeLookupKey(p)) ??
+    0;
+
+  const allMergedProviders = Array.from(
+    new Set([
+      ...(facets?.streaming_providers.map((fp) => fp.key) ?? []),
+      ...ALL_CANONICAL_PROVIDERS_FALLBACK,
+    ])
+  ).sort((a, b) => getProviderCount(b) - getProviderCount(a));
+  const availableProviders = showAllProviders
+    ? allMergedProviders
+    : allMergedProviders.slice(0, 14);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-16 space-y-8">
@@ -392,6 +623,96 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
         </div>
       </div>
 
+      {/* Dual-SSOT Database Update Controls (Canonical mainstream.db & External sources.db) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 p-4 rounded-2xl bg-surface-elevated/70 border border-white/10 shadow-xl">
+        {/* Canonical Catalog Control (mainstream.db) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-canvas/80 border border-white/5">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <Database className="w-4 h-4 text-brand-red" />
+              <span className="text-xs font-extrabold uppercase tracking-wider text-white">
+                Base Canônica (mainstream.db)
+              </span>
+              {mainstreamStats && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-red/15 text-brand-red border border-brand-red/30">
+                  {mainstreamStats.total_titles.toLocaleString("pt-BR")} títulos •{" "}
+                  {mainstreamStats.eztv_badged_titles.toLocaleString("pt-BR")} c/ EZTV
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400">
+              IMDb + TMDB + TVMaze (Metadados universais, PT-BR/EN-US e badges cruzados)
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <select
+              value={mainstreamMode}
+              onChange={(e) =>
+                setMainstreamMode(e.target.value as "delta" | "hydrate" | "badges")
+              }
+              disabled={isUpdatingMainstream}
+              aria-label="Modo de atualização da base canônica"
+              className="bg-surface-elevated border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-red"
+            >
+              <option value="delta">Delta Completo (Badges + Hidratação)</option>
+              <option value="badges">Sincronizar Badges EZTV</option>
+              <option value="hydrate">Hidratar TVMaze / TMDB (Lote)</option>
+            </select>
+            <button
+              onClick={handleUpdateMainstream}
+              disabled={isUpdatingMainstream}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-brand-red hover:bg-brand-red/90 disabled:opacity-50 text-white transition-all shadow-cinema-glow cursor-pointer whitespace-nowrap"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isUpdatingMainstream ? "animate-spin" : ""}`}
+              />
+              <span>{isUpdatingMainstream ? "Atualizando..." : "Atualizar Canônica"}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* External Resource Sources Control (sources.db) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-canvas/80 border border-white/5">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-emerald-400" />
+              <span className="text-xs font-extrabold uppercase tracking-wider text-white">
+                Base de Recursos (sources.db)
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                EZTV P2P • Magnets &amp; Seeds
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Indexação de torrents, swarms P2P e propagação automática de disponibilidade
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <select
+              value={sourcesSyncPages}
+              onChange={(e) => setSourcesSyncPages(Number(e.target.value))}
+              disabled={isUpdatingSources}
+              aria-label="Páginas para sincronização da base de recursos"
+              className="bg-surface-elevated border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+            >
+              <option value={5}>Rápido (5 págs)</option>
+              <option value={15}>Padrão (15 págs)</option>
+              <option value={30}>Profundo (30 págs)</option>
+            </select>
+            <button
+              onClick={handleUpdateSources}
+              disabled={isUpdatingSources}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white transition-all cursor-pointer whitespace-nowrap"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isUpdatingSources ? "animate-spin" : ""}`}
+              />
+              <span>{isUpdatingSources ? "Sincronizando..." : "Atualizar Recursos"}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* ===================================================================== */}
       {/* SUB-MODE 1: ADVANCED FILTERING ENGINE & DYNAMIC FACETS                */}
       {/* ===================================================================== */}
@@ -435,40 +756,104 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
             </button>
             <button
               onClick={handleResetFilters}
-              className="px-3 py-1.5 rounded-xl text-xs font-bold text-brand-red hover:bg-brand-red/10 whitespace-nowrap transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-brand-red bg-brand-red/10 hover:bg-brand-red/20 border border-brand-red/30 whitespace-nowrap transition-colors cursor-pointer"
             >
-              Limpar Filtros
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Limpar / Resetar Filtros</span>
             </button>
           </div>
 
           {/* Multi-Dimensional Filter Control Box */}
           <div className="p-5 rounded-2xl bg-surface-elevated/90 border border-white/10 shadow-2xl space-y-5">
+            {/* Filter Box Header with Active Counter & Clear/Reset Button */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-brand-red" />
+                <span className="text-xs font-extrabold uppercase tracking-wider text-white">
+                  Painel de Filtros Multidimensionais
+                </span>
+                {activeFiltersCount > 0 ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-brand-red text-white">
+                    {activeFiltersCount} {activeFiltersCount === 1 ? "filtro ativo" : "filtros ativos"}
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-slate-500">
+                    Nenhum filtro restritivo aplicado
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                  activeFiltersCount > 0
+                    ? "bg-brand-red/20 hover:bg-brand-red text-brand-red hover:text-white border-brand-red/40 shadow-sm"
+                    : "bg-canvas hover:bg-white/10 text-slate-300 border-white/10"
+                }`}
+                title="Restaurar todos os filtros para os valores padrão"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Limpar / Resetar Filtros</span>
+              </button>
+            </div>
+
             {/* Row 1: Text Search, Person Filter, Role, Sort */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                  Pesquisa Contextual Livre
+                  Pesquisa Contextual Livre (PT-BR / EN)
                 </label>
-                <input
-                  type="text"
-                  value={queryText}
-                  onChange={(e) => setQueryText(e.target.value)}
-                  placeholder="Título, franquia, tema, estúdio..."
-                  className="w-full bg-canvas border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-red"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={queryText}
+                    onChange={(e) => setQueryText(e.target.value)}
+                    placeholder="Título em PT ou EN, franquia, tema..."
+                    className="w-full bg-canvas border border-white/10 rounded-xl pl-3 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-red"
+                  />
+                  {queryText && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQueryText("");
+                        setDebouncedQueryText("");
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
+                      title="Limpar pesquisa de texto"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
                   Pessoa (Ator, Diretor, Criador)
                 </label>
-                <input
-                  type="text"
-                  value={personFilter}
-                  onChange={(e) => setPersonFilter(e.target.value)}
-                  placeholder="Ex: Denis Villeneuve, Cillian Murphy..."
-                  className="w-full bg-canvas border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-red"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={personFilter}
+                    onChange={(e) => setPersonFilter(e.target.value)}
+                    placeholder="Ex: Denis Villeneuve, Cillian Murphy..."
+                    className="w-full bg-canvas border border-white/10 rounded-xl pl-3 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-red"
+                  />
+                  {personFilter && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPersonFilter("");
+                        setDebouncedPersonFilter("");
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
+                      title="Limpar filtro de pessoa"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -497,8 +882,9 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
                   onChange={(e) => setSortBy(e.target.value)}
                   className="w-full bg-canvas border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-red"
                 >
-                  <option value="rating">Maior Avaliação Canônica</option>
-                  <option value="popularity">Maior Popularidade / Tendência</option>
+                  <option value="rating">Relevância & Avaliação Canônica</option>
+                  <option value="relevance">Melhor Correspondência (Exata / Similaridade)</option>
+                  <option value="popularity">Maior Popularidade / Votos</option>
                   <option value="year_desc">Lançamento Mais Recente</option>
                   <option value="year_asc">Lançamento Mais Antigo</option>
                   <option value="runtime">Maior Duração (Minutos)</option>
@@ -507,8 +893,49 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
               </div>
             </div>
 
-            {/* Row 2: Format Pills + Quantitative Filters (Years, Rating, Runtime, Checkboxes) */}
-            <div className="flex flex-wrap items-end justify-between gap-4 pt-2 border-t border-white/5">
+            {/* Row 1.5: Fontes de Dados & Catálogos */}
+            <div className="pt-2 border-t border-white/5 space-y-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Fontes de Dados &amp; Catálogos (Interseção)
+                </span>
+                <span className="text-[10px] text-slate-500">
+                  Filtre por provedor de metadados, disponibilidade P2P ou localização PT-BR
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {DATA_SOURCE_OPTIONS.map((src) => {
+                  const active = selectedSources.includes(src.key);
+                  const count =
+                    facets?.data_sources?.find((ds) => ds.key === src.key)?.count ?? 0;
+                  return (
+                    <button
+                      key={src.key}
+                      type="button"
+                      onClick={() => handleToggleSource(src.key)}
+                      className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
+                        active
+                          ? `${src.accent} ring-1 ring-white/40 shadow-md`
+                          : "bg-canvas text-slate-300 border-white/10 hover:border-white/25"
+                      }`}
+                    >
+                      <Database className="w-3 h-3 shrink-0 opacity-80" />
+                      <span>{src.label}</span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-extrabold tabular-nums ${
+                          active ? "bg-black/35 text-white" : "bg-white/5 text-slate-400"
+                        }`}
+                      >
+                        {formatFacetCount(count)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Row 2: Format Pills + Quantitative Filters (Years, Rating, Runtime, Status) */}
+            <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-4 pt-2 border-t border-white/5">
               <div className="space-y-1.5">
                 <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
                   Formato Audiovisual
@@ -521,22 +948,51 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
                     return (
                       <button
                         key={key}
+                        type="button"
                         onClick={() => handleToggleType(key)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
                           active
                             ? "bg-brand-red text-white border-brand-red shadow-cinema-glow"
                             : "bg-canvas text-slate-300 border-white/10 hover:border-white/25"
                         }`}
                       >
                         <span>{label}</span>
-                        <span className="text-[10px] opacity-75">({facetCount})</span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-extrabold tabular-nums ${
+                            active ? "bg-black/30 text-white" : "bg-white/5 text-slate-400"
+                          }`}
+                        >
+                          {formatFacetCount(facetCount)}
+                        </span>
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={selectedStatus}
+                    onChange={(e) => setSelectedStatus(e.target.value)}
+                    aria-label="Status de produção"
+                    className="bg-canvas border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-brand-red"
+                  >
+                    {STATUS_OPTIONS.map((opt) => {
+                      const stCount = opt.key
+                        ? facets?.statuses?.find((s) => s.key === opt.key)?.count ?? 0
+                        : 0;
+                      return (
+                        <option key={opt.key || "all"} value={opt.key}>
+                          {opt.key ? `${opt.label} (${formatFacetCount(stCount)})` : opt.label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
                 <div>
                   <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
                     Ano Inicial
@@ -590,21 +1046,31 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
               </div>
             </div>
 
-            {/* Row 3: Boolean Genre Matrix (OR / AND / NOT) */}
-            <div className="pt-2 border-t border-white/5 space-y-1.5">
-              <div className="flex items-center justify-between">
+            {/* Row 3: Boolean Genre Matrix (All Canonical Categories) */}
+            <div className="pt-2 border-t border-white/5 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Gêneros Combináveis (Clique 1x = <span className="text-brand-red">OR</span> • 2x ={" "}
+                  Categorias &amp; Gêneros Combináveis ({allMergedGenres.length}) — 1x ={" "}
+                  <span className="text-brand-red">OR</span> • 2x ={" "}
                   <span className="text-emerald-400">AND</span> • 3x ={" "}
-                  <span className="text-rose-400 line-through">NOT</span>)
+                  <span className="text-rose-400 line-through">NOT</span>
                 </span>
+                <button
+                  type="button"
+                  onClick={() => setShowAllGenres((prev) => !prev)}
+                  className="text-[11px] font-bold text-slate-300 hover:text-white underline underline-offset-2 cursor-pointer"
+                >
+                  {showAllGenres
+                    ? "Mostrar principais (16)"
+                    : `Ver todas as ${allMergedGenres.length} categorias`}
+                </button>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {availableGenres.map((g) => {
                   const isOr = genresAny.includes(g);
                   const isAnd = genresAll.includes(g);
                   const isNot = genresNot.includes(g);
-                  const count = facets?.genres.find((fg) => fg.key === g)?.count ?? 0;
+                  const count = getGenreCount(g);
 
                   let btnStyle =
                     "bg-canvas text-slate-300 border-white/10 hover:border-white/25";
@@ -625,14 +1091,23 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
                   return (
                     <button
                       key={g}
+                      type="button"
                       onClick={() => handleCycleGenre(g)}
-                      className={`px-2.5 py-1 rounded-lg text-xs border transition-all flex items-center gap-1 ${btnStyle}`}
+                      className={`px-2.5 py-1 rounded-lg text-xs border transition-all flex items-center gap-1.5 cursor-pointer ${btnStyle}`}
                     >
                       <span>
                         {prefix}
                         {g}
                       </span>
-                      <span className="text-[10px] opacity-70">({count})</span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-extrabold tabular-nums ${
+                          isOr || isAnd || isNot
+                            ? "bg-black/30 text-current"
+                            : "bg-white/5 text-slate-400"
+                        }`}
+                      >
+                        {formatFacetCount(count)}
+                      </span>
                     </button>
                   );
                 })}
@@ -640,36 +1115,55 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
             </div>
 
             {/* Row 4: Streaming Platforms & Ecosystem Toggles */}
-            <div className="pt-2 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-1.5">
-                <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Disponibilidade em Serviços de Streaming
-                </span>
+            <div className="pt-2 border-t border-white/5 flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+              <div className="space-y-2 flex-1">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Disponibilidade em Serviços de Streaming &amp; Redes ({allMergedProviders.length})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAllProviders((prev) => !prev)}
+                    className="text-[11px] font-bold text-slate-300 hover:text-white underline underline-offset-2 cursor-pointer"
+                  >
+                    {showAllProviders
+                      ? "Mostrar principais (14)"
+                      : `Ver todos os ${allMergedProviders.length} serviços`}
+                  </button>
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {availableProviders.map((prov) => {
                     const active = selectedProviders.includes(prov);
-                    const count =
-                      facets?.streaming_providers.find((fp) => fp.key === prov)?.count ?? 0;
+                    const count = getProviderCount(prov);
                     return (
                       <button
                         key={prov}
+                        type="button"
                         onClick={() => handleToggleProvider(prov)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 ${
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${
                           active
                             ? "bg-white text-black border-white shadow-md"
                             : "bg-canvas text-slate-300 border-white/10 hover:border-white/25"
                         }`}
                       >
-                        <Tv className="w-3 h-3" />
+                        <Tv className="w-3 h-3 shrink-0" />
                         <span>{prov}</span>
-                        <span className="text-[10px] opacity-70">({count})</span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-extrabold tabular-nums ${
+                            active
+                              ? "bg-black/15 text-black"
+                              : "bg-white/5 text-slate-400"
+                          }`}
+                        >
+                          {formatFacetCount(count)}
+                        </span>
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              <div className="flex items-center gap-4 shrink-0">
+              <div className="flex flex-wrap items-center gap-4 shrink-0">
                 <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -689,6 +1183,15 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
                   />
                   <span>Com Seeds P2P</span>
                 </label>
+
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-300 hover:text-white bg-canvas hover:bg-brand-red/20 border border-white/10 hover:border-brand-red/40 transition-all cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-brand-red" />
+                  <span>Resetar Filtros</span>
+                </button>
               </div>
             </div>
           </div>
@@ -724,8 +1227,8 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
 
                 return (
                   <div
-                    key={w.id}
-                    onClick={() => handleOpenDossier(w.id)}
+                    key={w.imdb_id || w.id}
+                    onClick={() => handleOpenDossier(w.imdb_id || w.id)}
                     className="group relative flex flex-col rounded-xl overflow-hidden bg-surface border border-white/5 hover:border-brand-red/50 transition-all hover:scale-[1.02] shadow-xl cursor-pointer"
                   >
                     {/* Poster */}
@@ -791,6 +1294,12 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
                         <h3 className="text-sm font-bold text-white line-clamp-1 group-hover:text-brand-red transition-colors">
                           {w.title}
                         </h3>
+                        {w.original_title &&
+                          w.original_title.toLowerCase() !== w.title.toLowerCase() && (
+                            <p className="text-[11px] text-slate-400/90 line-clamp-1 italic">
+                              {w.original_title}
+                            </p>
+                          )}
                         <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
                           {w.release_year && <span>{w.release_year}</span>}
                           {w.runtime_minutes && <span>• {w.runtime_minutes}m</span>}

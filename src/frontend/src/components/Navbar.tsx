@@ -127,7 +127,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Search className="w-4 h-4 text-slate-400 ml-3 shrink-0" />
             <input
               type="text"
-              placeholder="Buscar séries..."
+              placeholder="Buscar filmes e séries (PT / EN)..."
               value={searchQuery}
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setSearchFocused(false)}
