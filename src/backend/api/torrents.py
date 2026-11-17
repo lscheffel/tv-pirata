@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
-from src.backend.core.database import get_session
+from src.backend.core.database import get_eztv_session, get_session
 from src.backend.models.unified import TorrentRelease
 from src.backend.providers.eztv import EZTVProvider
 from src.backend.repositories.catalog import CatalogRepository
@@ -18,6 +18,7 @@ async def get_show_torrents(
     imdb_id: str,
     limit: int = Query(50, ge=1, le=100),
     page: int = Query(1, ge=1),
+    sources_session: Session = Depends(get_eztv_session),
     session: Session = Depends(get_session),
 ) -> list[TorrentRelease]:
     """Fetch available torrent releases from EZTV using IMDB ID with local DB fallback."""
@@ -26,8 +27,14 @@ async def get_show_torrents(
     if releases:
         return releases
 
-    # Fallback to local catalog releases if external EZTV API is slow, blocked, or returns empty
-    db_releases = CatalogRepository.get_show_releases(session, imdb_id)
+    # Fallback to local catalog releases (preferring sources.db, with legacy fallback)
+    db_releases = []
+    try:
+        db_releases = CatalogRepository.get_show_releases(sources_session, imdb_id)
+    except Exception:
+        db_releases = []
+    if not db_releases:
+        db_releases = CatalogRepository.get_show_releases(session, imdb_id)
     if db_releases:
         return [
             TorrentRelease(

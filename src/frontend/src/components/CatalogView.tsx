@@ -13,6 +13,7 @@ import {
   Check,
   Layers,
   Sparkles,
+  Database,
 } from "lucide-react";
 import { CatalogGenreCount, CatalogShow, CatalogStats, UnifiedShow } from "../types";
 import { api } from "../services/api";
@@ -40,6 +41,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
+  const [isUpdatingCanonical, setIsUpdatingCanonical] = useState(false);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
@@ -125,6 +127,23 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     }
   };
 
+  const handleUpdateCanonical = async () => {
+    setIsUpdatingCanonical(true);
+    showToast("Atualizando Base Canônica (mainstream.db) com badges e metadados...", "info");
+    try {
+      const res = await api.explore.updateMainstream("delta", 25);
+      showToast(
+        `Base Canônica atualizada! ${res.badges_synced} badges EZTV e ${res.titles_hydrated} títulos hidratados.`,
+        "success"
+      );
+      loadStats();
+    } catch {
+      showToast("Falha ao atualizar a Base Canônica (mainstream.db)", "error");
+    } finally {
+      setIsUpdatingCanonical(false);
+    }
+  };
+
   const convertCatalogToUnified = (cat: CatalogShow): UnifiedShow => {
     // Generate deterministic numeric id from imdb numbers for UI keys
     const numericPart = parseInt(cat.imdb_id.replace(/\D/g, ""), 10) || 1;
@@ -194,18 +213,29 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             <button
               onClick={handleSync}
               disabled={isSyncing}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-red hover:bg-brand-redHover disabled:bg-slate-800 text-white font-bold transition-all"
+              title="Sincronizar Base de Recursos Externos (sources.db)"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 text-white font-bold transition-all cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
-              {isSyncing ? "Sincronizando..." : "Sincronizar"}
+              {isSyncing ? "Sincronizando..." : "Atualizar Recursos"}
             </button>
           </div>
+
+          <button
+            onClick={handleUpdateCanonical}
+            disabled={isUpdatingCanonical}
+            title="Atualizar Base Canônica (mainstream.db) com badges EZTV e metadados incrementais"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-brand-red/20 border border-brand-red/40 hover:bg-brand-red hover:text-white text-brand-red text-xs font-bold transition-all cursor-pointer"
+          >
+            <Database className={`w-3.5 h-3.5 ${isUpdatingCanonical ? "animate-spin" : ""}`} />
+            {isUpdatingCanonical ? "Atualizando..." : "Atualizar Canônica"}
+          </button>
 
           <button
             onClick={handleEnrichPending}
             disabled={isEnriching}
             title="Buscar capas e sinopses para séries pendentes"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface border border-white/15 hover:border-white/30 text-slate-200 text-xs font-semibold transition-all"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface border border-white/15 hover:border-white/30 text-slate-200 text-xs font-semibold transition-all cursor-pointer"
           >
             <Sparkles className={`w-3.5 h-3.5 text-yellow-400 ${isEnriching ? "animate-spin" : ""}`} />
             {isEnriching ? "Enriquecendo..." : "Enriquecer Capas"}

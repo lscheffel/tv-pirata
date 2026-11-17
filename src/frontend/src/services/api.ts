@@ -67,6 +67,7 @@ export const api = {
         min_seasons?: number;
         exclude_watched?: boolean;
         only_with_p2p?: boolean;
+        data_sources?: string;
         sort_by?: string;
         page?: number;
         page_size?: number;
@@ -80,8 +81,8 @@ export const api = {
       });
       return request<ExploreWorksResponse>(`/explore/works?${query.toString()}`);
     },
-    getWorkDossier: (workId: number) =>
-      request<MediaWorkDossier>(`/explore/works/${workId}`),
+    getWorkDossier: (workId: number | string) =>
+      request<MediaWorkDossier>(`/explore/works/${encodeURIComponent(String(workId))}`),
     getPeople: (q?: string, department?: string) => {
       const query = new URLSearchParams();
       if (q) query.append("q", q);
@@ -120,6 +121,28 @@ export const api = {
         { method: "POST" }
       );
     },
+    getMainstreamStats: () =>
+      request<{
+        total_titles: number;
+        total_episodes: number;
+        hydrated_titles: number;
+        eztv_badged_titles: number;
+      }>("/explore/mainstream-stats"),
+    updateMainstream: (mode = "delta", limit = 25) =>
+      request<{
+        status: string;
+        mode: string;
+        badges_synced: number;
+        titles_hydrated: number;
+        stats: {
+          total_titles: number;
+          total_episodes: number;
+          hydrated_titles: number;
+          eztv_badged_titles: number;
+        };
+      }>(`/explore/update-mainstream?mode=${encodeURIComponent(mode)}&limit=${limit}`, {
+        method: "POST",
+      }),
   },
 
   discovery: {

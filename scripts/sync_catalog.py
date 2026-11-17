@@ -11,7 +11,7 @@ root_dir = Path(__file__).resolve().parent.parent
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
-from src.backend.core.database import get_session, init_db
+from src.backend.core.database import get_sources_session, init_sources_db
 from src.backend.services.catalog_indexer import EZTVIndexerService
 
 
@@ -35,12 +35,12 @@ async def main():
 
     args = parser.parse_args()
 
-    print("[*] Inicializando banco de dados local...")
-    init_db()
+    print("[*] Inicializando banco de fontes externas (data/sources.db)...")
+    init_sources_db()
 
     indexer = EZTVIndexerService()
 
-    with next(get_session()) as session:
+    with next(get_sources_session()) as session:
         if args.enrich_pending:
             print("[*] Enriquecendo séries pendentes sem metadados...")
             count = await indexer.enrich_pending_shows(session=session, limit=200)

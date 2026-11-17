@@ -1,11 +1,11 @@
 # TV Pirata 🏴‍☠️
 
-[![Version](https://img.shields.io/badge/version-v0.6.0-red.svg)](#)
+[![Version](https://img.shields.io/badge/version-v0.7.0-red.svg)](#)
 [![Status](https://img.shields.io/badge/status-active-success.svg)](#)
 [![Python](https://img.shields.io/badge/python-3.14+-blue.svg)](#)
 [![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20Tailwind-38bdf8.svg)](#)
 [![Backend](https://img.shields.io/badge/backend-FastAPI%20%2B%20SQLModel-009688.svg)](#)
-[![Tests](https://img.shields.io/badge/tests-63%20passing-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-64%20passing-brightgreen.svg)](#)
 [![Governance](https://img.shields.io/badge/governance-SynPraxis%20SOTA-purple.svg)](#)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](#)
 
@@ -22,8 +22,8 @@ A plataforma é estruturada em uma **Arquitetura de 3 Camadas**:
 
 | Camada | Escopo e Responsabilidades | Módulos Principais |
 | :--- | :--- | :--- |
-| **Camada 1 — Audiovisual Discovery Core** | Domínio canônico multi-formato (`MediaWork`), resolução de identidade em níveis de confiança (`EntityResolutionService`), rastreamento de procedência por campo (`DataProvenance`), notas preservadas por fonte (`ratings_breakdown`), motor de filtragem booleana (`AND`/`OR`/`NOT`), facetas dinâmicas, descoberta por filmografia/colaborações, calendário unificado de estreias e cruzamento instantâneo de disponibilidade com o acervo EZTV (`eztv_available`, `eztv_show_id`). | `catalog_domain.py`, `entity_resolution.py`, `federated_catalog.py`, `discovery_engine.py`, `explore.py`, `ExplorerView.tsx`, `ShowBadges.tsx`, `EztvBadge.tsx` |
-| **Camada 2 — Personal Media Ecosystem** | Persistência dual-database (`data/tv_pirata.db` + `data/eztv_metadata.db`), biblioteca pessoal (`ShowRecord`), controle granular de progresso por temporada/episódio (`EpisodeWatchRecord`), disponibilidade em rede local SMB (`LocalMediaRecord`), catálogo dedicado de séries e episódios EZTV (`EZTVShow`, `EZTVEpisodeCatalog`) com busca acelerada via `FTS5` (`shows_fts`), telemetria P2P (`CatalogShow`, `CatalogRelease`) e sincronização periódica em segundo plano com alertas de novos episódios (`ReleaseNotificationRecord`, `BackgroundSyncService`). | `db.py`, `eztv_db.py`, `cache.py`, `library.py`, `catalog.py`, `notification.py`, `catalog_indexer.py`, `scheduler.py`, `LibraryView.tsx`, `CatalogView.tsx` |
+| **Camada 1 — Audiovisual Discovery Core** | Domínio canônico universal (`IMDbCatalogShow` com `279.362` obras e `4.529.748` episódios + `MediaWork` em `data/mainstream.db`), taxonomia canônica unificada (`canonical_taxonomy.py`: 31 categorias PT-BR, 25 streamings normalizados, 8 formatos, 8 fontes de dados), busca bilíngue PT-BR/EN-US via `FTS5` (`shows_fts` sem acentos) com ranking de correspondência exata/similaridade, motor SQL Pushdown (`DiscoveryEngineRepository`), facetas exatas materializadas (`global_facets_v2`), descoberta por filmografia/colaborações e cruzamento instantâneo com a base EZTV (`has_eztv`, `eztv_available`, `eztv_show_id`). | `canonical_taxonomy.py`, `catalog_domain.py`, `entity_resolution.py`, `federated_catalog.py`, `discovery_engine.py`, `explore.py`, `ExplorerView.tsx`, `ShowBadges.tsx`, `EztvBadge.tsx` |
+| **Camada 2 — Personal Media Ecosystem** | Arquitetura Dual-SSOT (`data/mainstream.db` + `data/sources.db`), biblioteca pessoal (`ShowRecord`), progresso por episódio (`EpisodeWatchRecord`), disponibilidade SMB (`LocalMediaRecord`), catálogo dedicado de séries/episódios e torrents P2P da EZTV (`EZTVShow` `860` séries / `140.571` episódios, `CatalogShow`, `CatalogRelease`) em `data/sources.db` com `shows_fts` e propagação bidirecional de selos e disponibilidade para `mainstream.db`, e alertas assíncronos em segundo plano (`BackgroundSyncService`). | `db.py`, `eztv_db.py`, `cache.py`, `library.py`, `catalog.py`, `notification.py`, `catalog_indexer.py`, `scheduler.py`, `LibraryView.tsx`, `CatalogView.tsx` |
 | **Camada 3 — Personalization & Intelligence** | Motor objetivo de similaridade multi-critério (interseção de gêneros, diretores/criadores, elenco, formato e proximidade temporal com justificativa explícita), coleções inteligentes (`CollectionRecord` + `filter_criteria`) e exclusão de títulos já assistidos. | `discovery_engine.py`, `collections.py`, `CollectionsView.tsx` |
 
 ---
@@ -61,9 +61,9 @@ flowchart TD
         ResDisc["ResilientDiscoveryService (TMDB 2.0s -> Fallback TVMaze)"]
     end
 
-    subgraph Storage["Persistência Relacional (SQLite / SQLModel)"]
-        DB_L1[("Camada 1: media_works, external_identifiers, data_provenance, people, work_credits, genres, streaming_availability, work_relations, release_calendar_events")]
-        DB_L2[("Camada 2 & 3: shows, seasons, episodes, episode_watches, local_media, catalog_shows, catalog_releases, release_notifications, tags, collections")]
+    subgraph Storage["Persistência Dual-SSOT (SQLite / SQLModel + WAL + FTS5)"]
+        DB_L1[("Base Canônica (data/mainstream.db): shows (279k+ IMDb/TMDB/TVMaze), episodes_catalog (4.5M+), mediawork, biblioteca pessoal, shows_fts, global_facets_v2")]
+        DB_L2[("Base de Recursos Externos (data/sources.db): shows EZTV (860), episodes_catalog (140k+), catalogshow, catalogrelease, shows_fts")]
     end
 
     UI -->|"HTTP / JSON"| API
@@ -102,16 +102,16 @@ flowchart TD
   - Cálculo determinístico de obras similares com justificativa transparente (`shared_reasons`) e relações explícitas (`remake_of`, `spin_off_of`, `sequel_to`, `adapted_from`).
 - **Calendário Unificado de Lançamentos:** Eventos de estreia mundial, episódios inéditos, lançamentos em streaming e finais de temporada (`/api/explore/calendar`).
 
-### 3.2. Camada 2 — Personal Media Ecosystem & Performance Dual-SQLite (`ADR-001` a `ADR-007`, `ADR-009`, `ADR-010`)
-- **Arquitetura Dual-Database (`ADR-009`):** Isolamento físico entre `data/tv_pirata.db` (descoberta multi-provedor, biblioteca pessoal, progresso, notificações e telemetria P2P) e `data/eztv_metadata.db` (`860` séries em `shows` e `140.571` episódios em `episodes_catalog`), com entrelaçamento determinístico por `imdb_id`/`slug` e badges visuais permanentes de status (`StatusBadge`), provedor de streaming (`ProviderBadge`) e disponibilidade EZTV (`EztvBadge`) em todos os canais da UI.
+### 3.2. Arquitetura Dual-SSOT, Motor SQL Pushdown & Taxonomia Canônica (`ADR-009`, `ADR-010`, `ADR-011`)
+- **Separação Dual-SSOT (`ADR-011`):**
+  - **Base Canônica (`data/mainstream.db`):** Consolida o catálogo universal IMDb (`279.362` obras e `4.529.748` episódios em `shows`/`episodes_catalog`), metadados PT-BR/EN-US TMDB/TVMaze, modelos relacionais `MediaWork` e a biblioteca pessoal (`ShowRecord`, `EpisodeWatchRecord`, `LocalMediaRecord`, `CollectionRecord`). Inclui índices de cobertura (`idx_shows_filter_cover`, `idx_shows_score_cover`, `idx_shows_facets_cover`), tabela virtual `FTS5` bilíngue (`shows_fts` com `unicode61 remove_diacritics 2`) e controles de atualização incremental direto na interface (`/api/explore/update-mainstream`).
+  - **Base de Recursos Externos (`data/sources.db`):** Concentra o acervo P2P da EZTV (`860` séries em `shows`, `140.571` episódios em `episodes_catalog`, `catalogshow` e `catalogrelease`), 100% cruzado e refletido em `mainstream.db` com `has_eztv = 1` (`878` obras marcadas) e badges visuais (`EztvBadge`, `StatusBadge`, `ProviderBadge`).
+- **Taxonomia Canônica & Disponibilidade Real de Streaming (`canonical_taxonomy.py`):**
+  - Unifica `genres` e `genres_ptbr` em **31 categorias canônicas PT-BR**, **8 formatos audiovisuais** (`Filme`, `Série de TV`, `Minissérie`, `Telefilme`, `Documentário`, `Animação`, `Especial & Reality`, `Curta-Metragem`), **8 fontes de dados** (`EZTV P2P`, `Torrents c/ Seeds Ativos`, `IMDb Universal`, `TMDB Hidratado`, `Sinopse PT-BR`, `Com Trailer YouTube`, `TVMaze Séries`, `Minha Biblioteca`) e **25 serviços/redes de streaming** hidratados via TMDB `/3/discover` (`BR`/`US`) com correspondência exata de tokens CSV (`_csv_token_in`) e snapshot global em `sync_state` (`global_facets_v2`).
+- **Busca Bilíngue (PT-BR & EN-US) com Ranking de Similaridade:** Consultas em `/api/discovery/search` e `/api/explore/works` toleram ausência de acentos (ex.: *senhor dos aneis*) e ordenam correspondências exatas e por similaridade (`score_title_pair_relevance`) no topo.
 - **Engenharia de Alta Performance Dual-SQLite (`ADR-010`):**
-  - Listener automático de conexão SQLAlchemy aplicando `PRAGMA journal_mode=WAL`, `synchronous=NORMAL`, `temp_store=MEMORY`, `cache_size=-64000` (64 MB) e `mmap_size=268435456` (256 MB).
-  - Estatísticas materializadas de episódios (`episodes_count`, `max_season`, `max_episode`) em `shows`, índice virtual invertido `FTS5` (`shows_fts`) sincronizado por triggers e `EngineScopedCache` com fingerprint de versão de tabela, reduzindo a latência de `list_shows` e `get_curated_sections` em mais de **98%** ($965\text{ ms} \rightarrow 15\text{ ms}$ e $692\text{ ms} \rightarrow 4,7\text{ ms}$).
-- **Provedores Online com Fallback Transparente (`ResilientDiscoveryService`):** Consulta primária ao **TMDB** (timeout estrito de `2.0s`) com fallback automático para **TVMaze** sem interrupção para o usuário.
-- **Biblioteca Pessoal e Progresso Granular (`LibraryRepository`):** Acompanhamento por status (`watching`, `plan_to_watch`, `completed`, `paused`, `abandoned`), notas pessoais, histórico imutável de episódios assistidos (`EpisodeWatchRecord`) e mapeamento de arquivos locais via **SMB** (`LocalMediaRecord`).
-- **Catálogo Persistente P2P da EZTV (`EZTVIndexerService`):** Ingestão multi-página de torrents com enriquecimento de metadados, filtros de saúde (`min_seeds`) e disparo em 1 clique de links `magnet:?`.
-- **Crawler Multi-Provedor Resiliente a Cloudflare (`scripts/eztv-metadata-catalog.py`):** Utilitário CLI resumível em SQLite (`WAL`) com detecção automática de desafios Cloudflare, fallback nativo para a API JSON oficial (`/api/get-torrents`) e enriquecimento cruzado em cascata (EZTV + TVMaze por IMDb/nome + TMDB Watch Providers).
-- **Auto-Sync Assíncrono & Release Notifier (`BackgroundSyncService`):** Agendador nativo em `asyncio.Task` integrado ao `lifespan` do FastAPI com jitter de $\pm 10\%$, backoff exponencial, parada graciosa em $\le 3.0\text{s}$ e geração idempotente de alertas (`ReleaseNotificationRecord`) quando novos episódios de séries acompanhadas ganham sementes na EZTV.
+  - Tuning automático via listener SQLAlchemy (`PRAGMA journal_mode=WAL`, `synchronous=NORMAL`, `temp_store=MEMORY`, `cache_size=-64000`, `mmap_size=268435456`) e `EngineScopedCache` com fingerprint de versão de tabela.
+- **Provedores Online, Auto-Sync e Crawlers Resilientes:** `ResilientDiscoveryService` (`TMDB 2.0s -> TVMaze`), `BackgroundSyncService` no `lifespan`, e pipeline CLI completo (`scripts/imdb-metadata-catalog.py`, `scripts/sync-eztv-bade.py`, `scripts/sync_canonical_facets_and_providers.py`, `scripts/eztv-metadata-catalog.py`).
 
 ---
 
@@ -132,8 +132,9 @@ tv-pirata/
 │   │   │   └── collections.py          # Camada 3: /api/collections (Tags & Smart Collections)
 │   │   ├── core/
 │   │   │   ├── cache.py                # EngineScopedCache thread-safe com fingerprint (ADR-010)
+│   │   │   ├── canonical_taxonomy.py   # SSOT: 31 categorias, 25 streamings, 8 formatos, 8 fontes
 │   │   │   ├── config.py               # Configurações tipadas (Pydantic Settings)
-│   │   │   └── database.py             # Engines dual-SQLite (tv_pirata.db + eztv_metadata.db), PRAGMAs e FTS5
+│   │   │   └── database.py             # Engines Dual-SSOT (mainstream.db + sources.db), PRAGMAs e FTS5
 │   │   ├── models/
 │   │   │   ├── catalog_domain.py       # Camada 1: 10 entidades SQLModel (MediaWork, DataProvenance, etc.)
 │   │   │   ├── db.py                   # Camada 2/3: 11 entidades SQLModel (ShowRecord, CatalogShow, etc.)
@@ -177,15 +178,18 @@ tv-pirata/
 │       │   └── App.tsx                 # Roteamento de abas e estado global da SPA
 │       └── package.json
 ├── scripts/
-│   ├── quality_gate.sh                 # Gate determinístico pré-commit (Ruff + Pytest)
-│   ├── sync_catalog.py                 # CLI para ingestão de páginas de releases da EZTV
-│   └── eztv-metadata-catalog.py        # Crawler concorrente de 3 níveis (EZTV Showlist + Ficha + TVMaze)
+│   ├── quality_gate.sh                      # Gate determinístico pré-commit (Ruff + Pytest)
+│   ├── imdb-metadata-catalog.py             # Hidratação IMDb + TMDB (dumps TSV + /changes + watch/providers)
+│   ├── sync-eztv-bade.py                    # Propagação de badges & status sources.db -> mainstream.db
+│   ├── sync_canonical_facets_and_providers.py # Harvest TMDB /discover, normalização e global_facets_v2
+│   ├── sync_catalog.py                      # CLI para ingestão de páginas de releases da EZTV
+│   └── eztv-metadata-catalog.py             # Crawler concorrente EZTV Showlist + Ficha + TVMaze
 ├── tests/
-│   ├── fixtures/                       # Payloads JSON determinísticos (TMDB, TVMaze, EZTV)
-│   ├── unit/                           # Testes unitários (modelos, entity resolution, discovery engine, scheduler)
-│   └── integration/                    # Testes de integração REST (/api/explore, /api/catalog, /api/notifications, etc.)
+│   ├── fixtures/                            # Payloads JSON determinísticos (TMDB, TVMaze, EZTV)
+│   ├── unit/                                # Testes unitários (modelos, entity resolution, discovery engine, scheduler)
+│   └── integration/                         # Testes REST (/api/explore, /api/catalog, Dual-SSOT mainstream/sources)
 ├── docs/
-│   ├── adr/                            # Architecture Decision Records (ADR-001 a ADR-008 + ADR-INDEX.md)
+│   ├── adr/                                 # Architecture Decision Records (ADR-001 a ADR-011 + ADR-INDEX.md)
 │   ├── governance/                     # Registro estruturado de débitos técnicos (tech-debt-registry.json)
 │   ├── reports/                        # Relatórios de auditoria e arquivamento de ADRs
 │   └── DOCUMENTATION_AUDIT_REPORT.md   # Relatório de conformidade dos 6 Pilares SOTA
@@ -234,7 +238,7 @@ Acesse no navegador:
 | `make build-front` | Compila a SPA React 19 + TypeScript + Tailwind para `src/backend/static/dist/` |
 | `make dev-front` | Inicia o servidor Vite com Hot Module Replacement (HMR) em `http://127.0.0.1:5173` |
 | `make sync-catalog` | Sincroniza e enriquece as páginas mais recentes de torrents da EZTV no banco local |
-| `make test` | Executa a suíte completa de **63 testes automatizados** (100% offline/herméticos) |
+| `make test` | Executa a suíte completa de **64 testes automatizados** (100% offline/herméticos) |
 | `make lint` | Executa análise estática de código Python via `ruff check src/ tests/` |
 | `make format` | Formata automaticamente o código-fonte com `ruff format src/ tests/` |
 | `make setup-hooks` | Instala o `scripts/quality_gate.sh` como hook `pre-commit` do Git |
@@ -244,7 +248,7 @@ Acesse no navegador:
 
 ## 7. 🏛️ Governança Arquitetural (ADRs)
 
-Todas as decisões estruturais estão documentadas e auditadas em [docs/adr/ADR-INDEX.md](./docs/adr/ADR-INDEX.md) com Certificados de Evidência (`ADR-001-ER.md` a `ADR-010-ER.md`):
+Todas as decisões estruturais estão documentadas e auditadas em [docs/adr/ADR-INDEX.md](./docs/adr/ADR-INDEX.md) com Certificados de Evidência (`ADR-001-ER.md` a `ADR-011-ER.md`):
 - **ADR-001 a ADR-004 (Consolidadas/Arquivadas):** Fundação SMB, provedores TMDB/TVMaze com fallback de 2.0s, integração EZTV e persistência SQLModel + FastAPI.
 - **ADR-005 (Consolidada/Arquivada):** Frontend Cinemático SPA (React 19 + Tailwind CSS) com Design System OLED-Safe (`#090a0f`).
 - **ADR-006 (Consolidada/Arquivada):** Catálogo Local Persistente da EZTV e Motor de Ingestão P2P.
@@ -252,3 +256,4 @@ Todas as decisões estruturais estão documentadas e auditadas em [docs/adr/ADR-
 - **ADR-008 (Consolidada/Arquivada):** Fundação do Audiovisual Discovery Core (Camada 1): Domínio Canônico Multi-Formato, Resolução de Identidade com Procedência e Motor de Descoberta.
 - **ADR-009 (Consolidada/Arquivada):** Separação de Bases (`tv_pirata.db` vs `eztv_metadata.db`), Entrelaçamento EZTV e Sistema Universal de Badges (`StatusBadge`, `ProviderBadge`, `EztvBadge`).
 - **ADR-010 (Consolidada/Arquivada):** Otimização de Desempenho de Leitura Dual-SQLite (`PRAGMA`s WAL/mmap), Estatísticas Materializadas, `EngineScopedCache` com Fingerprint e Índice Virtual `FTS5`.
+- **ADR-011 (Consolidada/Arquivada):** Consolidação Dual-SSOT (`data/mainstream.db` + `data/sources.db`), IMDb como Âncora Universal (`279k+` Títulos / `4.5M+` Episódios), Busca Bilíngue `FTS5`, Taxonomia Canônica (`31` Categorias / `25` Streamings / `8` Fontes) e Motor SQL Pushdown.
