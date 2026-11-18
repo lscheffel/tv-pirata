@@ -38,6 +38,9 @@ export interface UnifiedShow {
   streaming_providers?: string[];
   eztv_available?: boolean;
   eztv_show_id?: number | null;
+  has_media?: boolean;
+  media_sources?: string[];
+  sources_count?: number;
   source_provider: string;
   seasons: UnifiedSeason[];
 }
@@ -239,6 +242,9 @@ export interface MediaWorkSummary {
   p2p_max_seeds: number;
   eztv_available?: boolean;
   eztv_show_id?: number | null;
+  has_media?: boolean;
+  media_sources?: string[];
+  sources_count?: number;
 }
 
 export interface FacetBucket {
@@ -403,4 +409,106 @@ export interface SharedCollaborationResponse {
     person_a_role: string;
     person_b_role: string;
   }[];
+}
+
+// --- ADR-012: Multi-Source Catalog & Interactive Preferences ---
+
+export type ProviderBadgeAction = "filter_provider" | "open_details" | "open_provider_info";
+export type MediaBadgeAction = "open_sources_modal" | "filter_has_media" | "open_details";
+
+export interface UserExplorePreferences {
+  schema_version: 1;
+  badge_provider_action: ProviderBadgeAction;
+  badge_media_action: MediaBadgeAction;
+  auto_apply_filters: boolean;
+  show_all_genres: boolean;
+  filter_panel_expanded: boolean;
+}
+
+export interface ExternalSourceSummary {
+  source_key: string;
+  display_name: string;
+  kind: string;
+  media_types: string[];
+  base_url?: string | null;
+  enabled: boolean;
+  status: "ready" | "syncing" | "degraded" | "idle" | string;
+  last_sync_at?: string | null;
+  last_error?: string | null;
+  total_titles: number;
+  total_releases: number;
+}
+
+export interface SourcesSummaryResponse {
+  sources: ExternalSourceSummary[];
+  totals: {
+    total_sources: number;
+    active_sources: number;
+    total_titles: number;
+    total_releases: number;
+  };
+}
+
+export interface SourceReleaseItem {
+  id: number | string;
+  source_key: string;
+  source_name: string;
+  release_type: "magnet" | "torrent" | "link" | string;
+  hash: string;
+  filename: string;
+  title: string;
+  season: number;
+  episode: number;
+  quality: string;
+  seeds: number;
+  peers: number;
+  size_bytes: number;
+  magnet_url: string;
+  torrent_url?: string | null;
+  external_url?: string | null;
+}
+
+export interface SourceReleasesResponse {
+  imdb_id: string;
+  total: number;
+  available_sources: string[];
+  by_source: Record<string, SourceReleaseItem[]>;
+  items: SourceReleaseItem[];
+}
+
+export interface SourceCatalogItem {
+  id: string;
+  source_key: string;
+  source_name: string;
+  release_type: string;
+  eztv_show_id?: number;
+  tvmaze_id?: number | null;
+  imdb_id: string;
+  title: string;
+  original_title?: string | null;
+  overview: string;
+  poster_url?: string | null;
+  backdrop_url?: string | null;
+  rating: number;
+  genres: string;
+  first_air_date?: string | null;
+  status?: string | null;
+  network?: string | null;
+  streaming_providers?: string[];
+  episodes_count?: number;
+  total_torrents: number;
+  max_seeds: number;
+  latest_season: number;
+  latest_episode: number;
+  latest_release_date?: string | null;
+  is_enriched: boolean;
+}
+
+export interface SourcesCatalogResponse {
+  items: SourceCatalogItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  available_sources: ExternalSourceSummary[];
 }

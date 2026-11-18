@@ -123,6 +123,9 @@ class UnifiedShow(BaseModel):
     network: Optional[str] = None
     streaming_providers: list[str] = Field(default_factory=list)
     eztv_available: bool = False
+    has_media: bool = False
+    media_sources: list[str] = Field(default_factory=list)
+    sources_count: int = 0
     source_provider: str = "tmdb"
     seasons: list[UnifiedSeason] = Field(default_factory=list)
 

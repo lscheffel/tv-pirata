@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] — ADR-012 (2026-11-17)
+
+### Added
+- **Unified `Explorar` Experience & Hybrid Filter Engine (`ADR-012`, `DEC-001`, `DEC-005`):**
+  - Merged `Descobrir` and `Explorar Universo` into the unified `Explorar` tab (`Navbar.tsx` reduced to 4 main tabs + dedicated Status/Sync/Config trigger) with Adaptive Mode: renders `HeroBanner`, Quick-Intent bar, 3-item contrastive Roulette (*Roleta de Descoberta*), and curated carousels while idle, collapsing smoothly during search/filtering.
+  - Added `RequestAbortChannel` (`AbortController`), `350ms` text debounce, top-10 expandable genre accordion (`show_all_genres`), non-destructive linear progress bar keeping grid mounted, and hybrid `"Aplicar Filtros"` / optional `"Auto-aplicar"` toggle.
+- **Multi-Provider `Fontes de Dados` Layer & Unified `MediaBadge` (`DEC-002`):**
+  - Added isolated `sources_metadata` models (`ExternalSourceRecord`, `ExternalRelease`) in `src/backend/models/sources_db.py`, polymorphic registry `SourcesRegistryService` (`eztv`, `yify`, `1337x`) in `src/backend/services/sources_registry.py`, and `/api/sources/{summary,releases,catalog,sync}` routes in `src/backend/api/sources.py`, preserving `/api/catalog/*` and `/api/torrents/*` backwards compatibility.
+  - Replaced EZTV-coupled catalog UI with multi-provider `SourcesView.tsx` (`Fontes de Dados`), upgraded `EztvBadge.tsx` -> `MediaBadge.tsx`, generalized `TorrentModal.tsx` into provider-tabbed media sources modal, and annotated `/api/explore` & `/api/discovery` with `has_media`, `media_sources`, and `sources_count`.
+- **Central `Status, Sincronização & Config` & Hybrid Preferences (`DEC-003`):**
+  - Added `GET`/`PUT /api/explore/preferences` backed by `data/mainstream.db` `sync_state` (`ExplorePreferencesRepository`), `preferencesStorage.ts` + `PreferencesContext.tsx`, and `StatusConfigView.tsx` accessed from a `44×44px` gear + health dot button in `Navbar.tsx`.
+- **Interactive `ShowCard` Redesign & WCAG 2.2 AA Hardening (`DEC-004`, `DEC-006`):**
+  - Refactored `ShowCard.tsx` to stack all normalized streaming `ProviderBadge`s above `StatusBadge` on `>= 190px` posters (condensing automatically to `1 + N` below `190px` on `375px` mobile), display `MediaBadge` below the IMDb rating, support configurable clickable badges (`stopPropagation()` + dynamic `aria-label`/tooltip), and expose a `44×44px` expandable quick-action drawer.
+  - Added `:focus-visible` outline and `@media (prefers-reduced-motion: reduce)` in `index.css`, explicit `<label>` on global search in `Navbar.tsx`, and 5 new tests in `tests/integration/test_sources_and_preferences_api.py` (`69 passed`).
+
+---
+
 ## [0.7.0] - 2026-11-17
 
 ### Added

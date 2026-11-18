@@ -19,6 +19,7 @@ from src.backend.api import (
     explore_router,
     library_router,
     notifications_router,
+    sources_router,
     torrents_router,
     watches_router,
 )
@@ -73,6 +74,7 @@ if (DIST_DIR / "assets").exists():
 app.include_router(explore_router, prefix="/api")
 app.include_router(discovery_router, prefix="/api")
 app.include_router(catalog_router, prefix="/api")
+app.include_router(sources_router, prefix="/api")
 app.include_router(library_router, prefix="/api")
 app.include_router(watches_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")

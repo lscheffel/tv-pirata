@@ -7,13 +7,13 @@
 
 ## 1. 📍 Contexto e Fase Ativa
 
-- **Versão Atual:** `v0.7.0`
-- **Branch Ativa:** `main` / `develop` / `imdb` (Sincronizadas para Release `v0.7.0`)
+- **Versão Atual:** `v0.7.0` (`+ ADR-012 Consolidada`)
+- **Branch Ativa:** `UI-UX`
 - **Posicionamento Arquitetural:** **Audiovisual Discovery Platform & Personal Media Ecosystem (Discovery-First)** estruturada em 3 camadas e arquitetura **Dual-SSOT** (`data/mainstream.db` + `data/sources.db`):
-  - **Camada 1 — Base Canônica & Audiovisual Discovery Core (`data/mainstream.db`):** Catálogo universal `IMDbCatalogShow` (`279.362` obras e `4.529.748` episódios em `IMDbEpisodeCatalog`) + `MediaWork`, taxonomia canônica (`canonical_taxonomy.py`: 31 categorias, 25 streamings normalizados via TMDB `/discover`, 8 formatos, 8 fontes de dados), índice bilíngue `FTS5` PT-BR/EN-US (`shows_fts`), motor SQL Pushdown (`DiscoveryEngineRepository`), snapshot global `global_facets_v2` e controles UI Dual-SSOT + reset de filtros (`/api/explore` + `ExplorerView.tsx`).
-  - **Camada 2 — Base de Recursos Externos & Personal Media Ecosystem (`data/sources.db` + `data/mainstream.db`):** Isolamento físico das fontes P2P/EZTV (`EZTVShow` `860` séries / `140.571` episódios, `CatalogShow`, `CatalogRelease`) em `data/sources.db` 100% cruzadas com `mainstream.db` (`has_eztv = 1`, `878` obras), biblioteca pessoal (`ShowRecord`), histórico de episódios (`EpisodeWatchRecord`), disponibilidade SMB (`LocalMediaRecord`), badges universais (`StatusBadge`, `ProviderBadge`, `EztvBadge`) e `BackgroundSyncService` + `ReleaseNotificationRecord`.
+  - **Camada 1 — Base Canônica & Audiovisual Discovery Core (`data/mainstream.db`):** Catálogo universal `IMDbCatalogShow` (`279.362` obras e `4.529.748` episódios em `IMDbEpisodeCatalog`) + `MediaWork`, taxonomia canônica (`canonical_taxonomy.py`: 31 categorias, 25 streamings normalizados via TMDB `/discover`, 8 formatos, fontes multi-provedor), índice bilíngue `FTS5` PT-BR/EN-US (`shows_fts`), motor SQL Pushdown (`DiscoveryEngineRepository`), snapshot global `global_facets_v2`, preferências híbridas (`/api/explore/preferences`) e experiência unificada **Explorar** (`ExplorerView.tsx`, Modo Adaptativo + Roleta + Filtros Híbridos com `AbortController`).
+  - **Camada 2 — Base de Recursos Externos Multi-Provedor & Personal Media Ecosystem (`data/sources.db` + `data/mainstream.db`):** Isolamento físico de indexadores multi-provedor (`EZTV`, `YIFY / YTS`, `1337x` via `sources_metadata` / `ExternalSourceRecord` / `ExternalRelease` + `EZTVShow` `860` séries / `140.571` episódios, `CatalogShow`, `CatalogRelease`) em `data/sources.db` servidos por `/api/sources/*` e `SourcesView.tsx` (**Fontes de Dados**), anotação agnóstica (`has_media`, `media_sources`, `sources_count`), `MediaBadge.tsx` + `TorrentModal.tsx` multi-fonte, Central `StatusConfigView.tsx`, biblioteca pessoal (`ShowRecord`), progresso por episódio (`EpisodeWatchRecord`), disponibilidade SMB (`LocalMediaRecord`) e `BackgroundSyncService` + `ReleaseNotificationRecord`.
   - **Camada 3 — Personalization & Intelligence:** Motor de similaridade multi-critério com justificativa explícita, coleções inteligentes (`CollectionRecord`) e exclusão de títulos já assistidos.
-- **Status do Build / Quality Gate:** **PASSING** (`64/64` testes aprovados, `ruff check` 100% limpo, bundle SPA Vite compilado em `src/backend/static/dist/`).
+- **Status do Build / Quality Gate:** **PASSING** (`69/69` testes aprovados, `ruff check` 100% limpo, `tsc --noEmit` limpo, bundle SPA Vite compilado em `src/backend/static/dist/`).
 
 ---
 
@@ -32,6 +32,7 @@
 | **ADR-009** | [Separação de Bases (tv_pirata.db vs eztv_metadata.db) + Entrelaçamento EZTV](./docs/adr/ADR-009-ER.md) | Sim | 7/7 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
 | **ADR-010** | [Otimização de Desempenho de Leitura Dual-SQLite, Estatísticas Materializadas, Cache Escopado por Engine e FTS5](./docs/adr/ADR-010-ER.md) | Sim | 21/21 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
 | **ADR-011** | [Consolidação Dual-SSOT (`data/mainstream.db` vs `data/sources.db`), IMDb Universal (`279k+` Títulos) e Motor SQL Pushdown](./docs/adr/ADR-011-ER.md) | Sim | 16/16 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
+| **ADR-012** | [Experiência Unificada `Explorar`, Camada Multi-Fonte `Fontes de Dados`, Central `StatusConfigView` e `ShowCard` Interativo](./docs/adr/ADR-012-ER.md) | Sim | 18/18 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
 
 ---
 

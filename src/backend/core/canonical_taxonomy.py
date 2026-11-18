@@ -371,6 +371,8 @@ WORK_TYPE_KEYS: tuple[str, ...] = (
 
 DATA_SOURCE_DEFINITIONS: tuple[tuple[str, str], ...] = (
     ("eztv", "EZTV P2P (sources.db)"),
+    ("yify", "YIFY / YTS (sources.db)"),
+    ("1337x", "1337x (sources.db)"),
     ("p2p_active", "Torrents / Magnets Ativos"),
     ("imdb", "IMDb Universal"),
     ("tmdb", "TMDB Hidratado"),

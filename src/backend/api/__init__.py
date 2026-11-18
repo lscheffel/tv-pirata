@@ -6,6 +6,7 @@ from src.backend.api.discovery import router as discovery_router
 from src.backend.api.explore import router as explore_router
 from src.backend.api.library import router as library_router
 from src.backend.api.notifications import router as notifications_router
+from src.backend.api.sources import router as sources_router
 from src.backend.api.torrents import router as torrents_router
 from src.backend.api.watches import router as watches_router
 
@@ -16,6 +17,7 @@ __all__ = [
     "explore_router",
     "library_router",
     "notifications_router",
+    "sources_router",
     "torrents_router",
     "watches_router",
 ]

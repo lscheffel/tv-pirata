@@ -38,6 +38,7 @@ from src.backend.models.catalog_domain import (
 )
 from src.backend.models.db import CatalogShow, ShowRecord
 from src.backend.models.eztv_db import EZTVEpisodeCatalog, EZTVShow
+from src.backend.models.sources_db import ExternalRelease
 from src.backend.models.unified import UnifiedEpisode, UnifiedSeason, UnifiedShow
 from src.backend.services.entity_resolution import EntityResolutionService
 
@@ -391,6 +392,15 @@ class DiscoveryEngineRepository:
         digits = (row.imdb_id or "").lower().lstrip("t")
         return int(digits) if digits.isdigit() else 0
 
+    @staticmethod
+    def _build_sources_media_index(
+        eztv_session: Optional[Session],
+    ) -> dict[str, list[str]]:
+        """Lazy import wrapper returning normalized_imdb_id -> source_keys from sources.db."""
+        from src.backend.services.sources_registry import SourcesRegistryService
+
+        return SourcesRegistryService.get_media_index_by_imdb(eztv_session)
+
     @classmethod
     def _serialize_imdb_summary(
         cls,
@@ -398,6 +408,7 @@ class DiscoveryEngineRepository:
         saved_library_map: dict[str, str],
         eztv_by_imdb: dict[str, int],
         p2p_seeds_by_imdb: dict[str, int],
+        media_sources_by_imdb: Optional[dict[str, list[str]]] = None,
     ) -> dict[str, Any]:
         norm_imdb = EntityResolutionService.normalize_imdb_id(row.imdb_id)
         genres = merge_canonical_genres(row.genres_ptbr, row.genres)
@@ -412,6 +423,15 @@ class DiscoveryEngineRepository:
             else (eztv_by_imdb.get(norm_imdb) if norm_imdb else None)
         )
         eztv_available = bool(row.has_eztv or eztv_show_id)
+        sources_set: set[str] = (
+            set(media_sources_by_imdb.get(norm_imdb, []))
+            if (media_sources_by_imdb and norm_imdb)
+            else set()
+        )
+        if eztv_available:
+            sources_set.add("eztv")
+        media_sources = sorted(sources_set)
+        has_media = bool(media_sources)
         rating = float(row.rating_score or 0.0)
         votes = int(row.rating_votes or 0)
         default_status = (
@@ -461,6 +481,9 @@ class DiscoveryEngineRepository:
             "p2p_max_seeds": p2p_seeds_by_imdb.get(norm_imdb, 0) if norm_imdb else 0,
             "eztv_available": eztv_available,
             "eztv_show_id": eztv_show_id,
+            "has_media": has_media,
+            "media_sources": media_sources,
+            "sources_count": len(media_sources),
         }
 
     @classmethod
@@ -477,6 +500,17 @@ class DiscoveryEngineRepository:
                     select(CatalogShow.imdb_id).where(CatalogShow.max_seeds > 0)
                 ).all()
                 for raw_id in rows:
+                    if raw_id:
+                        norm = EntityResolutionService.normalize_imdb_id(raw_id)
+                        if norm:
+                            result.add(norm)
+                ext_rows = eztv_session.exec(
+                    select(ExternalRelease.imdb_id).where(
+                        col(ExternalRelease.imdb_id).is_not(None),
+                        ExternalRelease.seeds > 0,
+                    )
+                ).all()
+                for raw_id in ext_rows:
                     if raw_id:
                         norm = EntityResolutionService.normalize_imdb_id(raw_id)
                         if norm:
@@ -692,19 +726,33 @@ class DiscoveryEngineRepository:
         scope = discovery_cache.session_scope(session)
         saved_set = saved_imdbs or set()
 
-        def _inject_personal_library(
+        def _inject_dynamic_counts(
             facets_obj: dict[str, list[dict[str, Any]]], lib_count: int
         ) -> dict[str, list[dict[str, Any]]]:
+            media_idx = cls._build_sources_media_index(eztv_session)
+            src_counts: dict[str, int] = {}
+            for src_list in media_idx.values():
+                for sk in src_list:
+                    src_counts[sk] = src_counts.get(sk, 0) + 1
+
             out = {k: list(v) for k, v in facets_obj.items()}
             ds_list = []
-            found_lib = False
+            seen_keys: set[str] = set()
             for item in out.get("data_sources", []):
-                if item["key"] == "personal_library":
+                key = item["key"]
+                seen_keys.add(key)
+                if key == "personal_library":
                     ds_list.append({"key": "personal_library", "count": lib_count})
-                    found_lib = True
+                elif key in ("yify", "1337x") and not base_filters:
+                    ds_list.append(
+                        {"key": key, "count": max(item["count"], src_counts.get(key, 0))}
+                    )
                 else:
                     ds_list.append(item)
-            if not found_lib:
+            for dyn_key in ("yify", "1337x"):
+                if dyn_key not in seen_keys:
+                    ds_list.append({"key": dyn_key, "count": src_counts.get(dyn_key, 0)})
+            if "personal_library" not in seen_keys:
                 ds_list.append({"key": "personal_library", "count": lib_count})
             out["data_sources"] = ds_list
             return out
@@ -733,7 +781,7 @@ class DiscoveryEngineRepository:
             base_global = discovery_cache.get_or_set(
                 scope, "imdb_facets_global", "default", _compute_global, ttl=120.0
             )
-            return _inject_personal_library(base_global, len(saved_set))
+            return _inject_dynamic_counts(base_global, len(saved_set))
 
         def _compute_filtered() -> dict[str, list[dict[str, Any]]]:
             if total_matches == 0:
@@ -818,6 +866,7 @@ class DiscoveryEngineRepository:
         """Execute 100% SQL Pushdown filtering, ordering, and pagination over 279k+ IMDb titles."""
         filters: list[Any] = []
         active_p2p_imdbs = cls._active_p2p_imdb_set(eztv_session)
+        media_sources_by_imdb = cls._build_sources_media_index(eztv_session)
 
         saved_library_map: dict[str, str] = {}
         watched_imdbs: list[str] = []
@@ -1033,7 +1082,33 @@ class DiscoveryEngineRepository:
         if data_sources:
             for src_key in [s.lower() for s in cls._parse_csv(data_sources)]:
                 if src_key == "eztv":
-                    filters.append(col(IMDbCatalogShow.has_eztv) == 1)
+                    eztv_imdbs = [
+                        k for k, srcs in media_sources_by_imdb.items() if "eztv" in srcs
+                    ]
+                    if eztv_imdbs:
+                        filters.append(
+                            (col(IMDbCatalogShow.has_eztv) == 1)
+                            | col(IMDbCatalogShow.imdb_id).in_(eztv_imdbs)
+                        )
+                    else:
+                        filters.append(col(IMDbCatalogShow.has_eztv) == 1)
+                elif src_key in ("yify", "1337x"):
+                    matched_imdbs = [
+                        k for k, srcs in media_sources_by_imdb.items() if src_key in srcs
+                    ]
+                    if matched_imdbs:
+                        filters.append(col(IMDbCatalogShow.imdb_id).in_(matched_imdbs))
+                    else:
+                        filters.append(col(IMDbCatalogShow.imdb_id) == f"__empty_{src_key}__")
+                elif src_key in ("media", "has_media"):
+                    all_media_imdbs = list(media_sources_by_imdb.keys())
+                    if all_media_imdbs:
+                        filters.append(
+                            (col(IMDbCatalogShow.has_eztv) == 1)
+                            | col(IMDbCatalogShow.imdb_id).in_(all_media_imdbs)
+                        )
+                    else:
+                        filters.append(col(IMDbCatalogShow.has_eztv) == 1)
                 elif src_key == "p2p_active":
                     if active_p2p_imdbs:
                         filters.append(
@@ -1199,6 +1274,7 @@ class DiscoveryEngineRepository:
             page_rows = list(session.exec(data_stmt.offset(offset).limit(page_size)).all())
 
         eztv_by_imdb, _ = cls.build_eztv_lookup_index(eztv_session)
+        media_sources_by_imdb_page = media_sources_by_imdb
         page_imdbs = [r.imdb_id for r in page_rows]
         p2p_seeds_by_imdb: dict[str, int] = {}
         if eztv_session is not None and page_imdbs:
@@ -1213,7 +1289,13 @@ class DiscoveryEngineRepository:
                 pass
 
         items = [
-            cls._serialize_imdb_summary(r, saved_library_map, eztv_by_imdb, p2p_seeds_by_imdb)
+            cls._serialize_imdb_summary(
+                r,
+                saved_library_map,
+                eztv_by_imdb,
+                p2p_seeds_by_imdb,
+                media_sources_by_imdb=media_sources_by_imdb_page,
+            )
             for r in page_rows
         ]
         facets = cls._build_imdb_facets(
@@ -1241,6 +1323,7 @@ class DiscoveryEngineRepository:
         row: IMDbCatalogShow,
         eztv_by_imdb: dict[str, int],
         seasons: Optional[list[UnifiedSeason]] = None,
+        media_sources_by_imdb: Optional[dict[str, list[str]]] = None,
     ) -> UnifiedShow:
         """Convert an IMDbCatalogShow row into a UnifiedShow contract for Descobrir."""
         norm_imdb = EntityResolutionService.normalize_imdb_id(row.imdb_id)
@@ -1250,6 +1333,15 @@ class DiscoveryEngineRepository:
             else (eztv_by_imdb.get(norm_imdb) if norm_imdb else None)
         )
         eztv_available = bool(row.has_eztv or eztv_show_id)
+        sources_set: set[str] = (
+            set(media_sources_by_imdb.get(norm_imdb, []))
+            if (media_sources_by_imdb and norm_imdb)
+            else set()
+        )
+        if eztv_available:
+            sources_set.add("eztv")
+        media_sources = sorted(sources_set)
+        has_media = bool(media_sources)
         genres = merge_canonical_genres(row.genres_ptbr, row.genres)
         providers = merge_canonical_providers(
             row.streaming_providers, row.network, keep_unknown=True
@@ -1282,6 +1374,9 @@ class DiscoveryEngineRepository:
             network=row.network,
             streaming_providers=providers,
             eztv_available=eztv_available,
+            has_media=has_media,
+            media_sources=media_sources,
+            sources_count=len(media_sources),
             source_provider="imdb",
             seasons=seasons or [],
         )
@@ -1317,8 +1412,12 @@ class DiscoveryEngineRepository:
             reverse=True,
         )
         eztv_by_imdb, _ = cls.build_eztv_lookup_index(eztv_session)
+        media_sources_by_imdb = cls._build_sources_media_index(eztv_session)
         return [
-            cls._imdb_row_to_unified(r, eztv_by_imdb) for r in candidates[:limit]
+            cls._imdb_row_to_unified(
+                r, eztv_by_imdb, media_sources_by_imdb=media_sources_by_imdb
+            )
+            for r in candidates[:limit]
         ]
 
     @classmethod
@@ -1346,7 +1445,13 @@ class DiscoveryEngineRepository:
         )
         rows = list(session.exec(stmt).all())
         eztv_by_imdb, _ = cls.build_eztv_lookup_index(eztv_session)
-        return [cls._imdb_row_to_unified(r, eztv_by_imdb) for r in rows]
+        media_sources_by_imdb = cls._build_sources_media_index(eztv_session)
+        return [
+            cls._imdb_row_to_unified(
+                r, eztv_by_imdb, media_sources_by_imdb=media_sources_by_imdb
+            )
+            for r in rows
+        ]
 
     @classmethod
     def get_unified_show_from_mainstream(
@@ -1454,7 +1559,13 @@ class DiscoveryEngineRepository:
             )
             for s_num, eps in sorted(seasons_dict.items())
         ]
-        return cls._imdb_row_to_unified(row, eztv_by_imdb, seasons=seasons_list)
+        media_sources_by_imdb = cls._build_sources_media_index(eztv_session)
+        return cls._imdb_row_to_unified(
+            row,
+            eztv_by_imdb,
+            seasons=seasons_list,
+            media_sources_by_imdb=media_sources_by_imdb,
+        )
 
     @classmethod
     def build_eztv_lookup_index(
@@ -2008,6 +2119,9 @@ class DiscoveryEngineRepository:
             "p2p_max_seeds": p2p_seeds,
             "eztv_available": eztv_available,
             "eztv_show_id": eztv_show_id,
+            "has_media": eztv_available,
+            "media_sources": ["eztv"] if eztv_available else [],
+            "sources_count": 1 if eztv_available else 0,
         }
 
     @classmethod
@@ -2052,7 +2166,11 @@ class DiscoveryEngineRepository:
                 pass
 
         summary = cls._serialize_imdb_summary(
-            row, saved_library_map, eztv_by_imdb, p2p_seeds_by_imdb
+            row,
+            saved_library_map,
+            eztv_by_imdb,
+            p2p_seeds_by_imdb,
+            media_sources_by_imdb=cls._build_sources_media_index(eztv_session),
         )
 
         # Fetch episode count and sample seasons from IMDbEpisodeCatalog

@@ -4,6 +4,23 @@ Este documento consolida os marcos de valor de negócio, evolução arquitetural
 
 ---
 
+## 🚀 Consolidação UI/UX & Multi-Fonte — ADR-012 (Branch `UI-UX`, 2026-11-17)
+
+### 🌟 Destaques Executivos e Evolução Arquitetural (`ADR-012`)
+1. **Explorar Unificado em Modo Adaptativo (`DEC-001`, `DEC-005`):**
+   - Fusão das antigas abas **Descobrir** e **Explorar Universo** na jornada única **Explorar** (`Navbar.tsx` com 4 abas principais + botão dedicado de Configurações): estado ocioso com `HeroBanner`, barra de Atalhos Rápidos, **Roleta de Descoberta** (3 escolhas contrastantes) e carrosséis curados, colapsando o Hero ao digitar ou ativar filtros.
+   - Motor híbrido com accordion top-10 gêneros (`show_all_genres`), `debounce 350ms`, `RequestAbortChannel` (`AbortController`), barra de progresso linear não-destrutiva e botão explícito **Aplicar Filtros** (com toggle opcional **Auto-aplicar**).
+2. **Camada Multi-Fonte `Fontes de Dados` & `MediaBadge` (`DEC-002`):**
+   - Evolução de `Catálogo EZTV` para **Fontes de Dados** (`SourcesView.tsx`), respaldada por `sources_metadata` (`ExternalSourceRecord` e `ExternalRelease` em `data/sources.db`), `SourcesRegistryService` (`eztv`, `yify`, `1337x`) e endpoints `/api/sources/{summary,releases,catalog,sync}` com retrocompatibilidade `/api/catalog/*` e `/api/torrents/*`.
+   - Substituição de `EztvBadge.tsx` por [MediaBadge.tsx](file:///home/loupan/projetosVS/tv-pirata/src/frontend/src/components/MediaBadge.tsx) (abaixo da nota IMDb) e generalização de `TorrentModal.tsx` para abas por provedor (magnets + links externos).
+3. **Central `Status, Sincronização & Config` & Preferências Híbridas (`DEC-003`):**
+   - Nova tela [StatusConfigView.tsx](file:///home/loupan/projetosVS/tv-pirata/src/frontend/src/components/StatusConfigView.tsx) acessível por botão `44×44px` + indicador de saúde na barra superior, concentrando controles Dual-SSOT (`mainstream.db` + `sources.db`) e preferências persistidas em `localStorage` + `GET`/`PUT /api/explore/preferences` (`sync_state`).
+4. **`ShowCard` Interativo Responsivo & WCAG 2.2 AA (`DEC-004`, `DEC-006`):**
+   - Empilhamento vertical de **todos** os `ProviderBadge`s acima da `StatusBadge` (`>= 190px`) com salvaguarda `1 + N` abaixo de `190px` (`375px` mobile), `MediaBadge` abaixo da nota IMDb, badges clicáveis configuráveis (`stopPropagation()` + `aria-label` dinâmico), botão rápido expansível `44×44px`, `:focus-visible` e `@media (prefers-reduced-motion: reduce)`.
+   - Suíte hermética ampliada para **69 testes aprovados** (`test_sources_and_preferences_api.py`), `ruff check` limpo, `tsc --noEmit` + `vite build` compilados e `ADR-012` arquivada (`18/18` — [ADR-012-ER.md](file:///home/loupan/projetosVS/tv-pirata/docs/adr/ADR-012-ER.md)).
+
+---
+
 ## 🚀 Release v0.7.0 — Consolidação Dual-SSOT (`mainstream.db` & `sources.db`), Busca Bilíngue FTS5, Taxonomia Canônica e Refatoração do Motor de Filtros (2026-11-17)
 
 ### 🌟 Destaques Executivos e Valor de Produto

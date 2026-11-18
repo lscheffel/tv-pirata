@@ -189,13 +189,16 @@ Para manter a **Base Canônica (`data/mainstream.db`)** e a **Base de Recursos (
 
 ---
 
-## 5. 🧪 Pirâmide de Testes e Qualidade (`64 Testes`)
+## 5. 🧪 Pirâmide de Testes e Qualidade (`69 Testes`)
 
 Todos os testes automatizados são **100% herméticos e offline**, utilizando `respx` para interceptação determinística de chamadas HTTP e `SQLite :memory:` com isolamento por `Engine`.
 
 ```bash
-# 1. Executar toda a suíte (64 testes unitários e de integração)
+# 1. Executar toda a suíte (69 testes unitários e de integração)
 make test
+
+# 2. Executar testes multi-fonte, preferências e contratos ADR-012
+.venv/bin/pytest tests/integration/test_sources_and_preferences_api.py -v
 
 # 2. Executar testes Dual-SSOT, SQL Pushdown, Taxonomia e Busca Bilíngue (ADR-011)
 .venv/bin/pytest tests/integration/test_mainstream_sources_ssot.py tests/integration/test_dual_db_eztv.py tests/unit/test_db_performance.py -v

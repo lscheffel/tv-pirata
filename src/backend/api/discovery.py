@@ -16,6 +16,7 @@ from src.backend.providers.tvmaze import TVMazeProvider
 from src.backend.repositories.catalog import CatalogRepository
 from src.backend.repositories.discovery_engine import DiscoveryEngineRepository
 from src.backend.services.entity_resolution import EntityResolutionService
+from src.backend.services.sources_registry import SourcesRegistryService
 
 router = APIRouter(prefix="/discovery", tags=["Discovery"])
 
@@ -54,6 +55,9 @@ def _catalog_item_to_unified(
         network=network,
         streaming_providers=providers,
         eztv_available=True,
+        has_media=True,
+        media_sources=["eztv"],
+        sources_count=1,
         source_provider="eztv-catalog",
         seasons=[],
     )
@@ -62,20 +66,29 @@ def _catalog_item_to_unified(
 def _mark_eztv_availability(
     shows: list[UnifiedShow], eztv_session: Session
 ) -> list[UnifiedShow]:
-    """Annotate online discovery shows with EZTV availability from eztv_metadata.db."""
+    """Annotate online discovery shows with multi-source media availability from sources.db."""
     if not shows:
         return shows
     by_imdb, by_slug = DiscoveryEngineRepository.build_eztv_lookup_index(eztv_session)
-    if not by_imdb and not by_slug:
+    media_by_imdb = SourcesRegistryService.get_media_index_by_imdb(eztv_session)
+    if not by_imdb and not by_slug and not media_by_imdb:
         return shows
     for show in shows:
         norm_imdb = EntityResolutionService.normalize_imdb_id(show.imdb_id)
+        sources = set(media_by_imdb.get(norm_imdb, [])) if norm_imdb else set()
         if norm_imdb and norm_imdb in by_imdb:
+            sources.add("eztv")
             show.eztv_available = True
-            continue
-        slug = DiscoveryEngineRepository._slugify(show.title)
-        if slug and slug in by_slug:
-            show.eztv_available = True
+        else:
+            slug = DiscoveryEngineRepository._slugify(show.title)
+            if slug and slug in by_slug:
+                sources.add("eztv")
+                show.eztv_available = True
+        if sources:
+            sorted_sources = sorted(sources)
+            show.has_media = True
+            show.media_sources = sorted_sources
+            show.sources_count = len(sorted_sources)
     return shows
 
 

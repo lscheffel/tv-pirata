@@ -10,6 +10,10 @@ from sqlmodel import Session
 from src.backend.core.cache import catalog_cache, discovery_cache
 from src.backend.core.database import get_eztv_session, get_session
 from src.backend.repositories.discovery_engine import DiscoveryEngineRepository
+from src.backend.repositories.preferences import (
+    ExplorePreferencesRepository,
+    UserExplorePreferences,
+)
 from src.backend.services.federated_catalog import FederatedCatalogService
 
 router = APIRouter(prefix="/explore", tags=["Audiovisual Discovery Engine"])
@@ -234,3 +238,20 @@ async def update_mainstream_database(
     discovery_cache.invalidate()
     catalog_cache.invalidate()
     return result
+
+
+@router.get("/preferences", response_model=UserExplorePreferences)
+def get_explore_preferences(
+    session: Session = Depends(get_session),
+) -> UserExplorePreferences:
+    """Retrieve persisted UI/interaction preferences from data/mainstream.db sync_state."""
+    return ExplorePreferencesRepository.get_preferences(session)
+
+
+@router.put("/preferences", response_model=UserExplorePreferences)
+def update_explore_preferences(
+    prefs: UserExplorePreferences,
+    session: Session = Depends(get_session),
+) -> UserExplorePreferences:
+    """Validate and persist UI/interaction preferences into data/mainstream.db sync_state."""
+    return ExplorePreferencesRepository.save_preferences(session, prefs)

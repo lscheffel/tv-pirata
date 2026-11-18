@@ -87,35 +87,66 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, compact = fals
 interface ProviderBadgeProps {
   provider?: string | null;
   compact?: boolean;
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  title?: string;
+  ariaLabel?: string;
 }
 
 function getProviderStyle(provider: string): string {
   const p = provider.toLowerCase();
-  if (p.includes("netflix")) return "bg-red-950/90 text-red-300 border-red-500/45";
+  if (p.includes("netflix")) return "bg-red-950/90 text-red-200 border-red-500/50";
   if (p.includes("prime") || p.includes("amazon"))
-    return "bg-sky-950/90 text-sky-300 border-sky-500/45";
-  if (p.includes("paramount")) return "bg-indigo-950/90 text-indigo-300 border-indigo-500/45";
-  if (p.includes("apple")) return "bg-zinc-900/95 text-zinc-100 border-zinc-400/45";
+    return "bg-sky-950/90 text-sky-200 border-sky-500/50";
+  if (p.includes("paramount")) return "bg-indigo-950/90 text-indigo-200 border-indigo-500/50";
+  if (p.includes("apple")) return "bg-zinc-900/95 text-zinc-100 border-zinc-400/50";
   if (p.includes("max") || p.includes("hbo"))
-    return "bg-violet-950/90 text-violet-300 border-violet-500/45";
-  if (p.includes("disney")) return "bg-blue-950/90 text-blue-300 border-blue-500/45";
-  if (p.includes("hulu")) return "bg-emerald-950/90 text-emerald-300 border-emerald-500/45";
-  return "bg-cyan-950/90 text-cyan-300 border-cyan-500/40";
+    return "bg-violet-950/90 text-violet-200 border-violet-500/50";
+  if (p.includes("disney")) return "bg-blue-950/90 text-blue-200 border-blue-500/50";
+  if (p.includes("hulu")) return "bg-emerald-950/90 text-emerald-200 border-emerald-500/50";
+  return "bg-cyan-950/90 text-cyan-200 border-cyan-500/45";
 }
 
-export const ProviderBadge: React.FC<ProviderBadgeProps> = ({ provider, compact = false }) => {
+export const ProviderBadge: React.FC<ProviderBadgeProps> = ({
+  provider,
+  compact = false,
+  onClick,
+  title,
+  ariaLabel,
+}) => {
   if (!provider) return null;
   const style = getProviderStyle(provider);
+  const resolvedTitle = title || `Serviço / Rede: ${provider}`;
+  const classes = `inline-flex items-center gap-1 rounded-md border backdrop-blur-md font-bold tracking-wide transition-all ${style} ${
+    compact ? "px-1.5 py-0.5 text-[9px]" : "px-2 py-0.5 text-[10px]"
+  } ${onClick ? "cursor-pointer hover:brightness-125 active:scale-95" : ""}`;
 
-  return (
-    <span
-      title={`Serviço / Rede: ${provider}`}
-      className={`inline-flex items-center gap-1 rounded-md border backdrop-blur-md font-bold tracking-wide ${style} ${
-        compact ? "px-1.5 py-0.5 text-[9px]" : "px-2 py-0.5 text-[10px]"
-      }`}
-    >
+  const content = (
+    <>
       <Tv className={compact ? "w-2.5 h-2.5 shrink-0" : "w-3 h-3 shrink-0"} />
       <span className="truncate max-w-[96px]">{provider}</span>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick(e);
+        }}
+        title={resolvedTitle}
+        aria-label={ariaLabel || resolvedTitle}
+        className={classes}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <span title={resolvedTitle} className={classes}>
+      {content}
     </span>
   );
 };

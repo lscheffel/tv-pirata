@@ -264,9 +264,12 @@ def init_mainstream_db(target_engine=None) -> None:
 
 
 def init_eztv_db(target_engine=None) -> None:
-    """Initialize sources.db tables (EZTV + P2P catalog), stats, indexes, and FTS5."""
+    """Initialize sources.db tables (EZTV + multi-source + P2P), stats, indexes, and FTS5."""
+    from src.backend.models.sources_db import sources_metadata
+
     active_engine = target_engine or sources_engine
     eztv_metadata.create_all(active_engine)
+    sources_metadata.create_all(active_engine)
     from src.backend.models.db import CatalogRelease, CatalogShow
 
     SQLModel.metadata.create_all(

@@ -16,22 +16,49 @@ import {
   SharedCollaborationResponse,
   ShowProgress,
   ShowRecord,
+  SourceReleasesResponse,
+  SourcesCatalogResponse,
+  SourcesSummaryResponse,
   TagRecord,
   TorrentRelease,
   UnifiedShow,
   UnreadNotificationCount,
+  UserExplorePreferences,
 } from "../types";
 
 const BASE_URL = "/api";
 
+export function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === "AbortError";
+}
+
+export class RequestAbortChannel {
+  private controller: AbortController | null = null;
+
+  nextSignal(): AbortSignal {
+    if (this.controller) {
+      this.controller.abort();
+    }
+    this.controller = new AbortController();
+    return this.controller.signal;
+  }
+
+  abort(): void {
+    if (this.controller) {
+      this.controller.abort();
+      this.controller = null;
+    }
+  }
+}
+
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${BASE_URL}${endpoint}`;
   const response = await fetch(url, {
+    ...options,
     headers: {
       "Content-Type": "application/json",
       ...options.headers,
     },
-    ...options,
   });
 
   if (!response.ok) {
@@ -71,7 +98,8 @@ export const api = {
         sort_by?: string;
         page?: number;
         page_size?: number;
-      } = {}
+      } = {},
+      options: { signal?: AbortSignal } = {}
     ) => {
       const query = new URLSearchParams();
       Object.entries(params).forEach(([k, v]) => {
@@ -79,8 +107,16 @@ export const api = {
           query.append(k, String(v));
         }
       });
-      return request<ExploreWorksResponse>(`/explore/works?${query.toString()}`);
+      return request<ExploreWorksResponse>(`/explore/works?${query.toString()}`, {
+        signal: options.signal,
+      });
     },
+    getPreferences: () => request<UserExplorePreferences>("/explore/preferences"),
+    updatePreferences: (prefs: UserExplorePreferences) =>
+      request<UserExplorePreferences>("/explore/preferences", {
+        method: "PUT",
+        body: JSON.stringify(prefs),
+      }),
     getWorkDossier: (workId: number | string) =>
       request<MediaWorkDossier>(`/explore/works/${encodeURIComponent(String(workId))}`),
     getPeople: (q?: string, department?: string) => {
@@ -147,7 +183,10 @@ export const api = {
 
   discovery: {
     getTrending: () => request<UnifiedShow[]>("/discovery/trending"),
-    search: (q: string) => request<UnifiedShow[]>(`/discovery/search?q=${encodeURIComponent(q)}`),
+    search: (q: string, options: { signal?: AbortSignal } = {}) =>
+      request<UnifiedShow[]>(`/discovery/search?q=${encodeURIComponent(q)}`, {
+        signal: options.signal,
+      }),
     getShowDetails: (id: number, provider?: string, imdbId?: string) => {
       const query = new URLSearchParams();
       if (provider) query.append("provider", provider);
@@ -155,6 +194,53 @@ export const api = {
       const qStr = query.toString();
       return request<UnifiedShow>(`/discovery/shows/${id}${qStr ? `?${qStr}` : ""}`);
     },
+  },
+
+  sources: {
+    getSummary: () => request<SourcesSummaryResponse>("/sources/summary"),
+    getReleases: (
+      imdbId: string,
+      source?: string,
+      options: { signal?: AbortSignal; includeLive?: boolean } = {}
+    ) => {
+      const query = new URLSearchParams({ imdb_id: imdbId });
+      if (source && source !== "all") query.append("source", source);
+      if (options.includeLive !== undefined) {
+        query.append("include_live", String(options.includeLive));
+      }
+      return request<SourceReleasesResponse>(`/sources/releases?${query.toString()}`, {
+        signal: options.signal,
+      });
+    },
+    getCatalog: (
+      params: {
+        source?: string;
+        search?: string;
+        genre?: string;
+        min_seeds?: number;
+        sort_by?: string;
+        page?: number;
+        page_size?: number;
+      } = {},
+      options: { signal?: AbortSignal } = {}
+    ) => {
+      const query = new URLSearchParams();
+      if (params.source && params.source !== "all") query.append("source", params.source);
+      if (params.search) query.append("search", params.search);
+      if (params.genre) query.append("genre", params.genre);
+      if (params.min_seeds !== undefined) query.append("min_seeds", String(params.min_seeds));
+      if (params.sort_by) query.append("sort_by", params.sort_by);
+      if (params.page) query.append("page", String(params.page));
+      if (params.page_size) query.append("page_size", String(params.page_size));
+      return request<SourcesCatalogResponse>(`/sources/catalog?${query.toString()}`, {
+        signal: options.signal,
+      });
+    },
+    sync: (source = "eztv", pages = 5, enrich = true) =>
+      request<{ status: string; results: Record<string, any> }>(
+        `/sources/sync?source=${encodeURIComponent(source)}&pages=${pages}&enrich=${enrich}`,
+        { method: "POST" }
+      ),
   },
 
   library: {
