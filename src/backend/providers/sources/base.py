@@ -8,7 +8,7 @@ import unicodedata
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional, TypeVar
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
 
 from pydantic import BaseModel, Field
 from sqlmodel import Session
@@ -19,6 +19,67 @@ SourceKind = Literal["torrent_mirrorable", "unique_web_source"]
 DiagnosticStatus = Literal["ok", "challenge_required", "cooldown", "timeout", "error"]
 
 SECRET_MASK_PREFIX = "••••"
+
+OFFICIAL_YTS_TRACKERS: tuple[str, ...] = (
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://tracker.torrent.eu.org:451/announce",
+    "udp://tracker.dler.org:6969/announce",
+    "udp://open.stealth.si:80/announce",
+    "udp://open.demonii.com:1337/announce",
+    "https://tracker.moeblog.cn:443/announce",
+    "udp://open.dstud.io:6969/announce",
+    "udp://tracker.srv00.com:6969/announce",
+    "https://tracker.zhuqiy.com:443/announce",
+    "https://tracker.pmman.tech:443/announce",
+)
+
+
+def build_official_magnet(
+    info_hash: Optional[str],
+    title: str,
+    trackers: Optional[list[str] | tuple[str, ...]] = None,
+) -> Optional[str]:
+    """Construct URL-safe official magnet link with quote_plus(dn) and 10 recommended trackers."""
+    clean_hash = re.sub(r"[^a-fA-F0-9]", "", str(info_hash or "").strip())
+    if len(clean_hash) < 32:
+        return None
+    dn = quote_plus((title or "release").strip())
+    active_trackers = trackers if trackers is not None else OFFICIAL_YTS_TRACKERS
+    tr_params = "".join(f"&tr={tr}" for tr in active_trackers if tr)
+    return validate_safe_url(f"magnet:?xt=urn:btih:{clean_hash}&dn={dn}{tr_params}", ("magnet",))
+
+
+def parse_release_title_and_year(
+    raw_title: str,
+) -> tuple[str, Optional[int], int, int, str]:
+    """Extract (clean_title, year, season, episode, quality) from a raw torrent release title."""
+    text = (raw_title or "").strip()
+    year, season, episode = extract_release_year_and_se(text)
+    low = text.lower()
+    if "2160p" in low or "4k" in low or "uhd" in low:
+        quality = "2160p"
+    elif "1080p" in low and ("x265" in low or "hevc" in low):
+        quality = "1080p.x265"
+    elif "1080p" in low:
+        quality = "1080p"
+    elif "720p" in low:
+        quality = "720p"
+    elif "480p" in low:
+        quality = "480p"
+    else:
+        quality = "Unknown"
+
+    normalized = re.sub(r"[._\[\]\(\)]+", " ", text)
+    head = re.split(
+        r"\b(?:19\d{2}|20\d{2}|[sS]\d{1,2}[eE]\d{1,3}|[sS]eason\s*\d+|2160p|1080p|720p|480p|4k|uhd|bluray|bdrip|brrip|webrip|web-dl|web|hdtv|dvdrip|x264|x265|hevc|h264|h265|aac|ddp5|proper|repack)\b",
+        normalized,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    clean_title = re.sub(r"\s+", " ", head).strip(" -:")
+    if not clean_title:
+        clean_title = re.sub(r"\s+", " ", normalized).strip()[:80]
+    return clean_title, year, season, episode, quality
 
 
 def utc_now() -> datetime:

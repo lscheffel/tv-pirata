@@ -9,11 +9,15 @@ from pathlib import Path
 from src.backend.providers.sources.base import (
     ADAPTER_LOAD_ERRORS,
     ADAPTER_REGISTRY,
+    OFFICIAL_YTS_TRACKERS,
     AdapterSearchOutcome,
     BaseSourceAdapter,
     NormalizedReleaseCandidate,
     SourceDiagnostic,
     SourceQueryContext,
+    build_official_magnet,
+    compute_title_match_confidence,
+    parse_release_title_and_year,
     register_source_adapter,
     validate_safe_url,
 )
@@ -46,12 +50,16 @@ def discover_source_adapters(force: bool = False) -> dict[str, BaseSourceAdapter
 __all__ = [
     "ADAPTER_LOAD_ERRORS",
     "ADAPTER_REGISTRY",
+    "OFFICIAL_YTS_TRACKERS",
     "AdapterSearchOutcome",
     "BaseSourceAdapter",
     "NormalizedReleaseCandidate",
     "SourceDiagnostic",
     "SourceQueryContext",
+    "build_official_magnet",
+    "compute_title_match_confidence",
     "discover_source_adapters",
+    "parse_release_title_and_year",
     "register_source_adapter",
     "validate_safe_url",
 ]

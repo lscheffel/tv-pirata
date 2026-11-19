@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Download,
   ExternalLink,
@@ -10,15 +12,22 @@ import {
   RefreshCw,
   Search,
   ShieldAlert,
+  Sparkles,
   X,
 } from "lucide-react";
-import { SourceDiagnosticInfo, SourceReleaseItem, UnifiedShow } from "../types";
+import {
+  SourceDiagnosticInfo,
+  SourceReleaseItem,
+  UnifiedShow,
+  YifyMovieEnrichment,
+} from "../types";
 import { api, isAbortError } from "../services/api";
 import { useToast } from "../context/ToastContext";
 
 interface TorrentModalProps {
   show: UnifiedShow | null;
   onClose: () => void;
+  onSelectSuggestedShow?: (show: UnifiedShow) => void;
 }
 
 function isSafeHttpUrl(url?: string | null): boolean {
@@ -31,14 +40,21 @@ function isSafeMagnetUrl(url?: string | null): boolean {
   return url.toLowerCase().startsWith("magnet:?xt=urn:");
 }
 
-export const TorrentModal: React.FC<TorrentModalProps> = ({ show, onClose }) => {
+export const TorrentModal: React.FC<TorrentModalProps> = ({
+  show,
+  onClose,
+  onSelectSuggestedShow,
+}) => {
   const { showToast } = useToast();
   const [releases, setReleases] = useState<SourceReleaseItem[]>([]);
   const [approxMatches, setApproxMatches] = useState<SourceReleaseItem[]>([]);
   const [diagnostics, setDiagnostics] = useState<Record<string, SourceDiagnosticInfo>>({});
   const [availableSources, setAvailableSources] = useState<string[]>([]);
-  const [activeSource, setActiveSource] = useState<string>("all");
+  const [yifyIntel, setYifyIntel] = useState<YifyMovieEnrichment | null>(null);
+  const [intelOpen, setIntelOpen] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [revalidating, setRevalidating] = useState(false);
+  const [activeSource, setActiveSource] = useState<string>("all");
   const [copiedId, setCopiedId] = useState<string | number | null>(null);
   const [filterSeason, setFilterSeason] = useState<number | "ALL">("ALL");
 
@@ -47,23 +63,28 @@ export const TorrentModal: React.FC<TorrentModalProps> = ({ show, onClose }) => 
 
   const fetchReleases = useCallback(
     (
-      liveMode: "auto" | "force",
+      liveMode: "auto" | "cache" | "force",
       qOverride: string,
       targetSrc?: string,
-      signal?: AbortSignal
+      signal?: AbortSignal,
+      isBackgroundSWR = false
     ) => {
       if (!show || !show.imdb_id) {
         setReleases([]);
         setApproxMatches([]);
         setDiagnostics({});
         setAvailableSources([]);
-        return;
+        return Promise.resolve(null);
       }
 
-      setLoading(true);
+      if (isBackgroundSWR) {
+        setRevalidating(true);
+      } else {
+        setLoading(true);
+      }
       const yr = show.first_air_date ? parseInt(String(show.first_air_date).slice(0, 4), 10) : undefined;
 
-      api.sources
+      return api.sources
         .getReleases(show.imdb_id, targetSrc, {
           signal,
           live: liveMode,
@@ -82,28 +103,33 @@ export const TorrentModal: React.FC<TorrentModalProps> = ({ show, onClose }) => 
             ])
           );
           setAvailableSources(srcKeys);
+          return data;
         })
         .catch(async (err) => {
-          if (isAbortError(err)) return;
-          try {
-            const legacy = await api.torrents.getByImdb(show.imdb_id!);
-            const mapped: SourceReleaseItem[] = legacy.map((r) => ({
-              ...r,
-              source_key: "eztv",
-              source_name: "EZTV",
-              release_type: "magnet",
-              external_url: null,
-            }));
-            setReleases(mapped);
-            setAvailableSources(mapped.length > 0 ? ["eztv"] : []);
-          } catch {
-            showToast("Erro ao buscar fontes de mídia disponíveis", "error");
-            setReleases([]);
+          if (isAbortError(err)) return null;
+          if (!isBackgroundSWR) {
+            try {
+              const legacy = await api.torrents.getByImdb(show.imdb_id!);
+              const mapped: SourceReleaseItem[] = legacy.map((r) => ({
+                ...r,
+                source_key: "eztv",
+                source_name: "EZTV",
+                release_type: "magnet",
+                external_url: null,
+              }));
+              setReleases(mapped);
+              setAvailableSources(mapped.length > 0 ? ["eztv"] : []);
+            } catch {
+              showToast("Erro ao buscar fontes de mídia disponíveis", "error");
+              setReleases([]);
+            }
           }
+          return null;
         })
         .finally(() => {
           if (!signal || !signal.aborted) {
             setLoading(false);
+            setRevalidating(false);
           }
         });
     },
@@ -116,8 +142,37 @@ export const TorrentModal: React.FC<TorrentModalProps> = ({ show, onClose }) => 
     setFilterSeason("ALL");
     setManualQuery(show.original_title || show.title || "");
     setAppliedQueryOverride("");
+    setYifyIntel(null);
     const controller = new AbortController();
-    fetchReleases("auto", "", undefined, controller.signal);
+
+    // Stage 2 SWR: render local Stage 1 snapshot in 0ms, then JIT revalidate live in background
+    fetchReleases("cache", "", undefined, controller.signal, false).then((cacheData) => {
+      if (controller.signal.aborted) return;
+      fetchReleases(
+        "auto",
+        "",
+        undefined,
+        controller.signal,
+        Boolean(cacheData && cacheData.items.length > 0)
+      );
+    });
+
+    const isLikelyTv = Boolean(
+      (show.seasons && show.seasons.length > 0) ||
+        show.eztv_available ||
+        show.source_provider === "eztv"
+    );
+    if (show.imdb_id && !isLikelyTv) {
+      api.sources
+        .getYifyEnrichment(show.imdb_id, { signal: controller.signal })
+        .then((intel) => {
+          if (!controller.signal.aborted && intel?.status === "ok") {
+            setYifyIntel(intel);
+          }
+        })
+        .catch(() => {});
+    }
+
     return () => controller.abort();
   }, [show, fetchReleases]);
 
@@ -331,6 +386,117 @@ export const TorrentModal: React.FC<TorrentModalProps> = ({ show, onClose }) => 
 
         {/* Content List */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {revalidating && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-200">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400 shrink-0" />
+              <span>Etapa 2 JIT: Revalidando torrents e seeds ao vivo em segundo plano...</span>
+            </div>
+          )}
+
+          {/* YTS Intelligence Strip (Parental Guides, RT Score & 4 Clickable Suggestions) */}
+          {yifyIntel &&
+            (yifyIntel.parental_guides.length > 0 || yifyIntel.suggestions.length > 0) && (
+              <div className="rounded-xl bg-surface/80 border border-cyan-500/25 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setIntelOpen((o) => !o)}
+                  className="w-full min-h-[44px] px-4 py-2.5 flex items-center justify-between text-left hover:bg-white/5 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+                    <span className="text-xs font-extrabold text-white">
+                      Inteligência YTS (movies-api.accel.li)
+                    </span>
+                    {yifyIntel.details?.rt_critics_score ? (
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-200 text-[10px] font-black">
+                        🍅 RT Crítica {yifyIntel.details.rt_critics_score}%
+                      </span>
+                    ) : null}
+                    {yifyIntel.details?.mpa_rating ? (
+                      <span className="px-2 py-0.5 rounded bg-white/10 text-slate-200 text-[10px] font-bold">
+                        {yifyIntel.details.mpa_rating}
+                      </span>
+                    ) : null}
+                  </div>
+                  {intelOpen ? (
+                    <ChevronUp className="w-4 h-4 text-slate-300" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-slate-300" />
+                  )}
+                </button>
+                {intelOpen && (
+                  <div className="px-4 pb-3.5 pt-1 space-y-3 border-t border-white/10">
+                    {yifyIntel.parental_guides.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {yifyIntel.parental_guides.map((g, i) => (
+                          <span
+                            key={`${g.type}-${i}`}
+                            className="px-2 py-1 rounded-lg bg-amber-500/15 border border-amber-400/30 text-[11px] text-amber-200"
+                            title={g.parental_guide_text}
+                          >
+                            <strong className="uppercase">{g.type}:</strong>{" "}
+                            {g.parental_guide_text}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {yifyIntel.suggestions.length > 0 && (
+                      <div className="space-y-1.5">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                          Sugestões P2P Relacionadas ({yifyIntel.suggestions.length})
+                        </span>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {yifyIntel.suggestions.map((sug, idx) => (
+                            <button
+                              type="button"
+                              key={sug.imdb_id || sug.movie_id || idx}
+                              onClick={() => {
+                                if (!onSelectSuggestedShow) return;
+                                onSelectSuggestedShow({
+                                  id: Number(sug.movie_id || idx + 1),
+                                  imdb_id: sug.work_imdb_id || sug.imdb_id || undefined,
+                                  title: sug.title_ptbr || sug.title,
+                                  original_title: sug.title,
+                                  overview: "",
+                                  poster_url: sug.poster_url || undefined,
+                                  rating: sug.rating || 0,
+                                  genres: [],
+                                  first_air_date: sug.year ? String(sug.year) : undefined,
+                                  source_provider: "yify",
+                                  has_media: true,
+                                  media_sources: ["yify"],
+                                  seasons: [],
+                                });
+                              }}
+                              className="flex items-center gap-2 p-1.5 rounded-lg bg-canvas border border-white/10 hover:border-cyan-400/60 text-left transition-colors cursor-pointer"
+                            >
+                              {sug.poster_url ? (
+                                <img
+                                  src={sug.poster_url}
+                                  alt={sug.title}
+                                  className="w-8 h-12 rounded object-cover shrink-0"
+                                />
+                              ) : (
+                                <div className="w-8 h-12 rounded bg-white/5 shrink-0" />
+                              )}
+                              <div className="min-w-0">
+                                <p className="text-[11px] font-bold text-white truncate">
+                                  {sug.title_ptbr || sug.title}
+                                </p>
+                                <p className="text-[10px] text-slate-400">
+                                  {sug.year || ""} • ★ {Number(sug.rating || 0).toFixed(1)}
+                                </p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
           {/* CAPTCHA / Anti-Bot Manual Handoff Banner (DEC-004) */}
           {activeChallenges.map((diag) => (
             <div

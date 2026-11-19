@@ -17,7 +17,7 @@ from sqlmodel import Session, col, delete, select
 
 from src.backend.core.cache import catalog_cache, discovery_cache
 from src.backend.models.catalog_domain import IMDbCatalogShow
-from src.backend.models.db import CatalogRelease, CatalogShow
+from src.backend.models.db import CatalogRelease, CatalogShow, ShowRecord
 from src.backend.models.eztv_db import EZTVShow
 from src.backend.models.sources_db import ExternalRelease, ExternalSourceRecord
 from src.backend.providers.sources import (
@@ -27,12 +27,23 @@ from src.backend.providers.sources import (
     NormalizedReleaseCandidate,
     SourceDiagnostic,
     SourceQueryContext,
+    compute_title_match_confidence,
     discover_source_adapters,
+    parse_release_title_and_year,
     validate_safe_url,
 )
 from src.backend.providers.sources.base import (
     mask_secret_config,
     merge_preserving_secrets,
+)
+from src.backend.providers.sources.torrent_api_py_adapter import (
+    TORRENT_API_PY_SITE_CATALOG,
+    TorrentApiPySourceAdapter,
+)
+from src.backend.providers.sources.yify_adapter import (
+    DEFAULT_YTS_BASE_URL,
+    DEFAULT_YTS_MIRRORS,
+    YIFYSourceAdapter,
 )
 from src.backend.repositories.catalog import CatalogRepository
 from src.backend.services.entity_resolution import EntityResolutionService
@@ -72,6 +83,8 @@ DEFAULT_SOURCE_INSTANCES: tuple[dict[str, Any], ...] = (
         "priority": 10,
         "config": {
             "base_url": "https://eztvx.to",
+            "rss_url": "https://myrss.org/eztv",
+            "status_url": "https://eztvstatus.org/",
             "mirrors": ["https://eztv.re", "https://eztv1.xyz"],
             "timeout_seconds": 6.0,
             "ttl_hours": 24,
@@ -84,33 +97,42 @@ DEFAULT_SOURCE_INSTANCES: tuple[dict[str, Any], ...] = (
         "source_kind": "torrent_mirrorable",
         "kind": "movie_torrent_api",
         "media_types": "movie",
-        "base_url": "https://yts.mx/api/v2/list_movies.json",
+        "base_url": DEFAULT_YTS_BASE_URL,
         "priority": 20,
         "config": {
-            "base_url": "https://yts.mx/api/v2/list_movies.json",
-            "mirrors": ["https://yts.lt/api/v2/list_movies.json"],
+            "base_url": DEFAULT_YTS_BASE_URL,
+            "mirrors": list(DEFAULT_YTS_MIRRORS),
+            "default_quality": "All",
+            "minimum_rating": 0,
+            "sort_by": "date_added",
+            "with_rt_ratings": True,
             "timeout_seconds": 8.0,
             "ttl_hours": 24,
         },
     },
-    {
-        "source_key": "1337x",
-        "display_name": "1337x",
-        "adapter_key": "torrent_api_py",
-        "source_kind": "torrent_mirrorable",
-        "kind": "scrape_index",
-        "media_types": "movie,tvSeries,animation",
-        "base_url": "http://127.0.0.1:8009",
-        "priority": 30,
-        "config": {
+    *(
+        {
+            "source_key": site_key,
+            "display_name": TORRENT_API_PY_SITE_CATALOG[site_key]["display_name"],
+            "adapter_key": "torrent_api_py",
+            "source_kind": "torrent_mirrorable",
+            "kind": "scrape_index",
+            "media_types": TORRENT_API_PY_SITE_CATALOG[site_key]["media_types"],
             "base_url": "http://127.0.0.1:8009",
-            "site": "1337x",
-            "mirrors": [],
-            "public_web_Search_url": "https://1337x.to/search/{query}/1/",
-            "timeout_seconds": 5.0,
-            "ttl_hours": 24,
-        },
-    },
+            "priority": idx,
+            "config": {
+                "base_url": "http://127.0.0.1:8009",
+                "site": site_key,
+                "mirrors": [],
+                "public_web_Search_url": TORRENT_API_PY_SITE_CATALOG[site_key][
+                    "public_web_Search_url"
+                ],
+                "timeout_seconds": 5.0,
+                "ttl_hours": 24,
+            },
+        }
+        for idx, site_key in ((30, "tgx"), (35, "nyaasi"), (40, "bitsearch"), (45, "glodls"))
+    ),
 )
 
 
@@ -147,7 +169,7 @@ class SourcesRegistryService:
 
     @classmethod
     def ensure_sources_registered(cls, sources_session: Session) -> None:
-        """Idempotently seed default source instances into external_sources."""
+        """Idempotently seed default source instances and migrate ADR-014 protocol endpoints."""
         cls.get_adapters_map()
         changed = False
         for spec in DEFAULT_SOURCE_INSTANCES:
@@ -176,6 +198,49 @@ class SourcesRegistryService:
                 if not getattr(rec, "config_json", None) or rec.config_json == "{}":
                     rec.config_json = json.dumps(spec["config"], ensure_ascii=False)
                     changed = True
+
+                # Idempotent ADR-014 YTS URL migration (yts.mx/yts.gg -> movies-api.accel.li)
+                if spec["source_key"] == "yify":
+                    try:
+                        cfg_data = json.loads(rec.config_json or "{}")
+                    except Exception:
+                        cfg_data = {}
+                    cur_url = str(rec.base_url or cfg_data.get("base_url") or "")
+                    if any(old in cur_url for old in ("yts.mx", "yts.gg", "yts.lt")):
+                        rec.base_url = DEFAULT_YTS_BASE_URL
+                        cfg_data["base_url"] = DEFAULT_YTS_BASE_URL
+                        cfg_data["mirrors"] = list(DEFAULT_YTS_MIRRORS)
+                        rec.config_json = json.dumps(cfg_data, ensure_ascii=False)
+                        changed = True
+
+                # Idempotent ADR-014 EZTV RSS & health status enrichment
+                if spec["source_key"] == "eztv":
+                    try:
+                        cfg_data = json.loads(rec.config_json or "{}")
+                    except Exception:
+                        cfg_data = {}
+                    if not cfg_data.get("rss_url") or not cfg_data.get("status_url"):
+                        cfg_data.setdefault("rss_url", "https://myrss.org/eztv")
+                        cfg_data.setdefault("status_url", "https://eztvstatus.org/")
+                        rec.config_json = json.dumps(cfg_data, ensure_ascii=False)
+                        changed = True
+
+        # If legacy 1337x seed exists with 0 persisted releases, keep it disabled by default
+        legacy_1337 = sources_session.get(ExternalSourceRecord, "1337x")
+        if legacy_1337 is not None and legacy_1337.enabled:
+            cnt = int(
+                sources_session.exec(
+                    select(func.count(ExternalRelease.id)).where(
+                        ExternalRelease.source_key == "1337x"
+                    )
+                ).one()
+                or 0
+            )
+            if cnt == 0:
+                legacy_1337.enabled = False
+                sources_session.add(legacy_1337)
+                changed = True
+
         if changed:
             sources_session.commit()
 
@@ -599,12 +664,38 @@ class SourcesRegistryService:
         source_key: str,
         norm_imdb: str,
         candidates: list[NormalizedReleaseCandidate],
+        *,
+        replace_on_success: bool = False,
     ) -> tuple[list[ExternalRelease], list[dict[str, Any]]]:
-        """Write-through candidates with match_confidence >= 0.85; keep 0.60-0.84 ephemeral."""
+        """Write-through candidates with confidence >= 0.85; keep 0.60-0.84 ephemeral."""
         persisted: list[ExternalRelease] = []
         approx_ephemeral: list[dict[str, Any]] = []
         now = _utc_now()
         wrote_any = False
+
+        verified_ext_ids: set[str] = set()
+        for cand in candidates:
+            if cand.match_confidence >= 0.85:
+                mag = validate_safe_url(cand.magnet_url, ("magnet",))
+                tor = validate_safe_url(cand.torrent_url, ("http", "https"))
+                ext = validate_safe_url(cand.external_url, ("http", "https"))
+                if mag or tor or ext:
+                    verified_ext_ids.add(cand.external_id)
+
+        # Atomic Replace-on-Success (RT14-01): prune stale/dead releases of this work
+        if replace_on_success and verified_ext_ids:
+            stale_rows = list(
+                sources_session.exec(
+                    select(ExternalRelease).where(
+                        ExternalRelease.source_key == source_key,
+                        ExternalRelease.imdb_id == norm_imdb,
+                    )
+                ).all()
+            )
+            for stale in stale_rows:
+                if stale.external_id not in verified_ext_ids:
+                    sources_session.delete(stale)
+                    wrote_any = True
 
         for cand in candidates:
             mag = validate_safe_url(cand.magnet_url, ("magnet",))
@@ -762,12 +853,29 @@ class SourcesRegistryService:
             limit=limit,
         )
 
-        # 2. Determine which instances need live Lazy-Search
+        # 2. Determine which instances need live Lazy-Search (Stage 2 JIT with Format Routing)
         to_query_live: list[tuple[ExternalSourceRecord, BaseSourceAdapter, int]] = []
         for inst in instances:
             adapter = adapters.get(inst.adapter_key)
             if not adapter or not adapter.supports_search:
                 continue
+
+            # Format-aware routing when querying "all" sources (RT14-03)
+            if target_src is None and not q_override and query_ctx.work_type:
+                wt = query_ctx.work_type
+                inst_mt = {m.strip() for m in (inst.media_types or "").split(",") if m.strip()}
+                is_movie_work = wt in ("movie", "tvMovie", "short", "documentary")
+                is_tv_work = wt in ("tvSeries", "tvMiniSeries", "tv_show", "mini_series")
+                if (
+                    is_movie_work
+                    and inst_mt
+                    and "movie" not in inst_mt
+                    and "animation" not in inst_mt
+                ):
+                    continue
+                if is_tv_work and inst_mt == {"movie"}:
+                    continue
+
             cfg = cls._parse_instance_config(inst, adapter)
             ttl_hours = int(cfg.get("ttl_hours") or 24)
             src_cached = cached_by_src.get(inst.source_key, [])
@@ -908,6 +1016,7 @@ class SourcesRegistryService:
                         inst.source_key,
                         norm_imdb,
                         outcome.releases,
+                        replace_on_success=True,
                     )
                     if persisted:
                         cached_by_src[inst.source_key] = persisted
@@ -1033,6 +1142,28 @@ class SourcesRegistryService:
         }
 
     @classmethod
+    def _hydrator_map(
+        cls,
+        mainstream_session: Optional[Session],
+        imdb_ids: list[str],
+    ) -> dict[str, IMDbCatalogShow]:
+        """Batch Sovereign Join lookup in mainstream.db (RT14-02)."""
+        if mainstream_session is None or not imdb_ids:
+            return {}
+        clean_ids = [i for i in {i.strip() for i in imdb_ids if i} if i.startswith("tt")]
+        if not clean_ids:
+            return {}
+        try:
+            rows = list(
+                mainstream_session.exec(
+                    select(IMDbCatalogShow).where(col(IMDbCatalogShow.imdb_id).in_(clean_ids))
+                ).all()
+            )
+            return {r.imdb_id: r for r in rows}
+        except Exception:
+            return {}
+
+    @classmethod
     def list_catalog(
         cls,
         sources_session: Session,
@@ -1046,7 +1177,7 @@ class SourcesRegistryService:
         page: int = 1,
         page_size: int = 24,
     ) -> dict[str, Any]:
-        """List unified multi-source items across EZTV and all dynamic ExternalRelease instances."""
+        """List multi-source items with canonical imdb_id deduplication and Batch Sovereign Join."""
         cls.ensure_sources_registered(sources_session)
         target_src = source.strip().lower() if source and source.strip().lower() != "all" else None
         inst_map = {
@@ -1081,6 +1212,8 @@ class SourcesRegistryService:
                         "id": r.imdb_id or r.external_id,
                         "source_key": r.source_key,
                         "source_name": disp_name,
+                        "media_sources": [r.source_key],
+                        "qualities": [r.quality] if r.quality and r.quality != "Unknown" else [],
                         "release_type": r.release_type,
                         "imdb_id": r.imdb_id or "",
                         "title": r.title,
@@ -1108,6 +1241,8 @@ class SourcesRegistryService:
                     entry["max_seeds"] = max(entry["max_seeds"], r.seeds)
                     entry["latest_season"] = max(entry["latest_season"], r.season)
                     entry["latest_episode"] = max(entry["latest_episode"], r.episode)
+                    if r.quality and r.quality != "Unknown" and r.quality not in entry["qualities"]:
+                        entry["qualities"].append(r.quality)
             combined.extend(grouped.values())
 
         if target_src in (None, "eztv"):
@@ -1128,9 +1263,50 @@ class SourcesRegistryService:
                         "id": item.get("imdb_id") or str(item.get("eztv_show_id") or ""),
                         "source_key": "eztv",
                         "source_name": "EZTV",
+                        "media_sources": ["eztv"],
+                        "qualities": [],
                         "release_type": "magnet",
                     }
                 )
+
+        # Canonical IMDb deduplication across sources when source="all" (R1: 9D)
+        if target_src is None:
+            merged_by_imdb: dict[str, dict[str, Any]] = {}
+            no_imdb_items: list[dict[str, Any]] = []
+            for item in combined:
+                norm_id = EntityResolutionService.normalize_imdb_id(item.get("imdb_id"))
+                if not norm_id:
+                    no_imdb_items.append(item)
+                    continue
+                if norm_id not in merged_by_imdb:
+                    merged_by_imdb[norm_id] = {
+                        **item,
+                        "imdb_id": norm_id,
+                        "media_sources": list(item.get("media_sources") or [item["source_key"]]),
+                        "qualities": list(item.get("qualities") or []),
+                    }
+                else:
+                    ex = merged_by_imdb[norm_id]
+                    ex["total_torrents"] = int(ex.get("total_torrents") or 0) + int(
+                        item.get("total_torrents") or 0
+                    )
+                    if int(item.get("max_seeds") or 0) > int(ex.get("max_seeds") or 0):
+                        ex["max_seeds"] = int(item.get("max_seeds") or 0)
+                        ex["source_key"] = item["source_key"]
+                    for sk in item.get("media_sources") or [item["source_key"]]:
+                        if sk not in ex["media_sources"]:
+                            ex["media_sources"].append(sk)
+                    for q in item.get("qualities") or []:
+                        if q not in ex["qualities"]:
+                            ex["qualities"].append(q)
+                    ex["media_sources"].sort()
+                    ex["source_name"] = " + ".join(s.upper() for s in ex["media_sources"])
+                    ex["poster_url"] = ex.get("poster_url") or item.get("poster_url")
+                    ex["overview"] = ex.get("overview") or item.get("overview")
+                    ex["rating"] = max(
+                        float(ex.get("rating") or 0.0), float(item.get("rating") or 0.0)
+                    )
+            combined = [*merged_by_imdb.values(), *no_imdb_items]
 
         if sort_by == "name":
             combined.sort(key=lambda x: str(x.get("title") or "").lower())
@@ -1162,6 +1338,32 @@ class SourcesRegistryService:
         offset = (page - 1) * page_size
         page_items = combined[offset : offset + page_size]
 
+        # Batch Sovereign Join against mainstream.db (Layer 1 owns rich metadata)
+        hydrator = cls._hydrator_map(
+            mainstream_session,
+            [str(it.get("imdb_id") or "") for it in page_items],
+        )
+        for it in page_items:
+            row = hydrator.get(str(it.get("imdb_id") or ""))
+            if not row:
+                continue
+            it["title"] = row.title_ptbr or row.primary_title or it["title"]
+            it["original_title"] = row.original_title or row.primary_title
+            it["overview"] = row.synopsis_ptbr or row.synopsis or it.get("overview") or ""
+            it["poster_url"] = row.poster_url or it.get("poster_url")
+            it["backdrop_url"] = row.backdrop_url or it.get("backdrop_url")
+            it["rating"] = float(row.rating_score or it.get("rating") or 0.0)
+            it["genres"] = row.genres_ptbr or row.genres or it.get("genres") or ""
+            if row.start_year:
+                it["first_air_date"] = str(row.start_year)
+            it["status"] = row.status or it.get("status")
+            it["network"] = row.network or it.get("network")
+            if row.streaming_providers:
+                it["streaming_providers"] = [
+                    p.strip() for p in row.streaming_providers.split(",") if p.strip()
+                ]
+            it["is_enriched"] = True
+
         summary = cls.get_summary(sources_session)
         return {
             "items": page_items,
@@ -1173,6 +1375,258 @@ class SourcesRegistryService:
         }
 
     @classmethod
+    def _resolve_imdb_id_against_mainstream(
+        cls,
+        mainstream_session: Optional[Session],
+        raw_title: str,
+        release_year: Optional[int] = None,
+        work_type: Optional[str] = None,
+    ) -> tuple[Optional[str], float, str]:
+        """Resolve clean release title against sovereign IMDbCatalogShow in mainstream.db."""
+        if mainstream_session is None or not raw_title.strip():
+            return None, 0.0, "unresolved"
+        clean_title, ext_year, _s, _e, _q = parse_release_title_and_year(raw_title)
+        eff_year = release_year or ext_year
+        probe = clean_title or raw_title
+        if len(probe) < 2:
+            return None, 0.0, "unresolved"
+
+        try:
+            tokens = [t for t in probe.split() if len(t) >= 2]
+            fuzzy_pat = f"%{'%'.join(tokens)}%" if tokens else f"%{probe}%"
+            head_pat = f"%{tokens[0]}%" if tokens else fuzzy_pat
+            rows = list(
+                mainstream_session.exec(
+                    select(IMDbCatalogShow)
+                    .where(
+                        col(IMDbCatalogShow.primary_title).ilike(fuzzy_pat)
+                        | col(IMDbCatalogShow.original_title).ilike(fuzzy_pat)
+                        | col(IMDbCatalogShow.title_ptbr).ilike(fuzzy_pat)
+                        | col(IMDbCatalogShow.primary_title).ilike(head_pat)
+                        | col(IMDbCatalogShow.original_title).ilike(head_pat)
+                    )
+                    .limit(25)
+                ).all()
+            )
+        except Exception:
+            return None, 0.0, "unresolved"
+
+        best_id: Optional[str] = None
+        best_conf = 0.0
+        for row in rows:
+            conf = compute_title_match_confidence(
+                query_title=row.primary_title,
+                query_original_title=row.original_title,
+                query_year=row.start_year,
+                query_work_type=row.title_type,
+                candidate_title=raw_title,
+                candidate_year=eff_year,
+            )
+            if conf > best_conf:
+                best_conf = conf
+                best_id = row.imdb_id
+
+        if best_id and best_conf >= 0.85:
+            return best_id, best_conf, "canonical_title_match"
+        return None, best_conf, "unresolved"
+
+    @classmethod
+    def _recompute_source_counters(cls, sources_session: Session) -> None:
+        """Recompute ExternalSourceRecord total_titles and total_releases accurately."""
+        rows = sources_session.exec(
+            select(
+                ExternalRelease.source_key,
+                func.count(ExternalRelease.id),
+                func.count(func.distinct(ExternalRelease.imdb_id)),
+            ).group_by(ExternalRelease.source_key)
+        ).all()
+        counts = {str(s): (int(rel or 0), int(tit or 0)) for s, rel, tit in rows}
+        for rec in sources_session.exec(select(ExternalSourceRecord)).all():
+            if rec.source_key == "eztv":
+                continue
+            rel_cnt, tit_cnt = counts.get(rec.source_key, (0, 0))
+            rec.total_releases = rel_cnt
+            rec.total_titles = tit_cnt
+            sources_session.add(rec)
+        sources_session.commit()
+
+    @classmethod
+    def prune_obsolete_releases(
+        cls,
+        sources_session: Session,
+        mainstream_session: Optional[Session] = None,
+        *,
+        source_key: Optional[str] = None,
+        min_seeds_floor: int = 1,
+        max_zero_seed_hours: int = 48,
+        max_stale_days: int = 14,
+    ) -> dict[str, Any]:
+        """Prune dead (0 seeds) or stale semi-ephemeral releases and propagate presence."""
+        now = _utc_now()
+        zero_cutoff = now - timedelta(hours=max(0, max_zero_seed_hours))
+        stale_cutoff = now - timedelta(days=max(1, max_stale_days))
+
+        stmt = select(ExternalRelease)
+        if source_key and source_key != "all":
+            stmt = stmt.where(ExternalRelease.source_key == source_key.lower())
+
+        removed = 0
+        for rel in sources_session.exec(stmt).all():
+            checked_at = _as_utc(rel.last_checked_at or rel.created_at) or now
+            is_dead = rel.seeds < max(1, min_seeds_floor) and (
+                max_zero_seed_hours == 0 or checked_at <= zero_cutoff
+            )
+            is_stale = checked_at <= stale_cutoff and rel.seeds < 5
+            if is_dead or is_stale:
+                sources_session.delete(rel)
+                removed += 1
+
+        if removed > 0:
+            sources_session.commit()
+            cls._recompute_source_counters(sources_session)
+            catalog_cache.invalidate()
+            discovery_cache.invalidate()
+
+        return {
+            "status": "ok",
+            "removed_releases": removed,
+            "min_seeds_floor": min_seeds_floor,
+            "max_zero_seed_hours": max_zero_seed_hours,
+        }
+
+    @classmethod
+    async def get_yify_enrichment_for_imdb(
+        cls,
+        sources_session: Session,
+        mainstream_session: Optional[Session],
+        imdb_id: str,
+    ) -> dict[str, Any]:
+        """Fetch official YTS v2 details, 4 suggestions, and parental guides."""
+        cls.ensure_sources_registered(sources_session)
+        rec = sources_session.get(ExternalSourceRecord, "yify")
+        adapter = cls.get_adapters_map().get("yify")
+        if rec is None or not isinstance(adapter, YIFYSourceAdapter):
+            return {
+                "status": "unavailable",
+                "imdb_id": imdb_id,
+                "details": None,
+                "suggestions": [],
+                "parental_guides": [],
+            }
+        data = await adapter.fetch_movie_enrichment(rec, imdb_id=imdb_id)
+        if mainstream_session is not None and data.get("suggestions"):
+            s_ids = [s.get("imdb_id") for s in data["suggestions"] if s.get("imdb_id")]
+            hydrator = cls._hydrator_map(mainstream_session, s_ids)
+            for s in data["suggestions"]:
+                row = hydrator.get(str(s.get("imdb_id") or ""))
+                if row:
+                    s["work_imdb_id"] = row.imdb_id
+                    s["title_ptbr"] = row.title_ptbr or row.primary_title
+                    s["poster_url"] = row.poster_url or s.get("poster_url")
+        return data
+
+    @classmethod
+    async def live_ingest_query(
+        cls,
+        sources_session: Session,
+        mainstream_session: Optional[Session],
+        *,
+        query: str,
+        source_key: Optional[str] = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """Search active sources live from Fontes de Dados and ingest verified releases (4D)."""
+        cls.ensure_sources_registered(sources_session)
+        adapters = cls.get_adapters_map()
+        q_clean = query.strip()
+        if not q_clean:
+            return {
+                "status": "empty",
+                "ingested_count": 0,
+                "matched_imdb_ids": [],
+                "diagnostics": {},
+            }
+
+        instances = list(
+            sources_session.exec(
+                select(ExternalSourceRecord).where(ExternalSourceRecord.enabled == True)  # noqa: E712
+            ).all()
+        )
+        if source_key and source_key != "all":
+            instances = [r for r in instances if r.source_key == source_key.lower()]
+
+        ctx_imdb = EntityResolutionService.normalize_imdb_id(q_clean)
+        q_ctx = SourceQueryContext(
+            imdb_id=ctx_imdb, title=q_clean, custom_query=q_clean, limit=limit
+        )
+        ingested = 0
+        matched_imdbs: set[str] = set()
+        diagnostics: dict[str, Any] = {}
+
+        for inst in instances:
+            adapter = adapters.get(inst.adapter_key)
+            if not adapter or not adapter.supports_search:
+                continue
+            cfg = cls._parse_instance_config(inst, adapter)
+            host_k = _host_key(cfg.get("base_url") or inst.base_url)
+            host_cd = _as_utc(_HOST_COOLDOWN_UNTIL.get(host_k or ""))
+            if host_cd and host_cd > _utc_now():
+                diagnostics[inst.source_key] = {"status": "cooldown", "message": "Sidecar offline."}
+                continue
+            try:
+                outcome = await adapter.search(
+                    inst,
+                    q_ctx,
+                    sources_session=sources_session,
+                    mainstream_session=mainstream_session,
+                )
+            except httpx.ConnectError:
+                if host_k:
+                    _HOST_COOLDOWN_UNTIL[host_k] = _utc_now() + timedelta(seconds=120)
+                diagnostics[inst.source_key] = {"status": "offline", "message": "Host inacessível."}
+                continue
+            except Exception as exc:
+                diagnostics[inst.source_key] = {"status": "error", "message": str(exc)}
+                continue
+
+            diagnostics[inst.source_key] = {
+                "status": outcome.status,
+                "found": len(outcome.releases),
+            }
+            if outcome.status != "ok":
+                continue
+
+            for cand in outcome.releases:
+                eff_imdb = cand.imdb_id
+                eff_conf = cand.match_confidence
+                if not eff_imdb:
+                    r_imdb, r_conf, _ = cls._resolve_imdb_id_against_mainstream(
+                        mainstream_session, cand.title, cand.year, cand.work_type
+                    )
+                    if r_imdb:
+                        eff_imdb = r_imdb
+                        eff_conf = max(eff_conf, r_conf)
+                if eff_conf >= 0.85 and eff_imdb and cand.seeds >= 1:
+                    cand.imdb_id = eff_imdb
+                    cand.match_confidence = eff_conf
+                    persisted, _ = cls._persist_verified_candidates(
+                        sources_session, inst.source_key, eff_imdb, [cand], replace_on_success=False
+                    )
+                    if persisted:
+                        ingested += len(persisted)
+                        matched_imdbs.add(eff_imdb)
+
+        catalog_cache.invalidate()
+        discovery_cache.invalidate()
+        return {
+            "status": "completed",
+            "query": q_clean,
+            "ingested_count": ingested,
+            "matched_imdb_ids": sorted(matched_imdbs),
+            "diagnostics": diagnostics,
+        }
+
+    @classmethod
     async def sync_source(
         cls,
         sources_session: Session,
@@ -1181,10 +1635,65 @@ class SourcesRegistryService:
         source_key: str = "eztv",
         pages: int = 5,
         enrich: bool = True,
+        mode: str = "incremental",
+        quality: Optional[str] = None,
+        minimum_rating: Optional[int] = None,
+        sort_by: Optional[str] = None,
+        genre: Optional[str] = None,
+        min_seeds_floor: int = 1,
+        prune_after: bool = True,
     ) -> dict[str, Any]:
-        """Trigger batch sync for a specific source instance or 'all' enabled instances."""
+        """Stage 1 Bipartite Sync: incremental, baseline, library, or prune."""
         cls.ensure_sources_registered(sources_session)
         adapters = cls.get_adapters_map()
+        eff_mode = (mode or "incremental").strip().lower()
+
+        if eff_mode == "prune":
+            prune_res = cls.prune_obsolete_releases(
+                sources_session,
+                mainstream_session,
+                source_key=source_key,
+                min_seeds_floor=min_seeds_floor,
+                max_zero_seed_hours=0,
+            )
+            return {"status": "completed", "mode": "prune", "prune": prune_res, "results": {}}
+
+        if eff_mode == "library":
+            if mainstream_session is None:
+                return {"status": "completed", "mode": "library", "results": {}}
+            shows = list(mainstream_session.exec(select(ShowRecord)).all())
+            synced_titles = 0
+            total_found = 0
+            for show in shows[:30]:
+                if not show.imdb_id:
+                    continue
+                res = await cls.get_releases_for_imdb(
+                    sources_session,
+                    mainstream_session,
+                    show.imdb_id,
+                    source=None if source_key == "all" else source_key,
+                    live_mode="force",
+                    title=show.title,
+                )
+                synced_titles += 1
+                total_found += int(res.get("total") or 0)
+            catalog_cache.invalidate()
+            discovery_cache.invalidate()
+            return {
+                "status": "completed",
+                "mode": "library",
+                "titles_scanned": synced_titles,
+                "releases_found": total_found,
+                "results": {
+                    source_key: {
+                        "status": "success",
+                        "telemetry": {
+                            "titles_scanned": synced_titles,
+                            "releases_indexed": total_found,
+                        },
+                    }
+                },
+            }
 
         if source_key == "all":
             instances = list(
@@ -1207,14 +1716,73 @@ class SourcesRegistryService:
                     "error": f"Adapter '{inst.adapter_key}' não encontrado.",
                 }
                 continue
+
+            cfg = cls._parse_instance_config(inst, adapter)
+            host_k = _host_key(cfg.get("base_url") or inst.base_url)
+            host_cd = _as_utc(_HOST_COOLDOWN_UNTIL.get(host_k or ""))
+            if host_cd and host_cd > _utc_now() and inst.adapter_key == "torrent_api_py":
+                results[inst.source_key] = {
+                    "status": "skipped_offline",
+                    "error": f"Sidecar {host_k} offline (fast-skip).",
+                }
+                continue
+
             try:
-                telemetry = await adapter.sync(
-                    inst,
-                    sources_session,
-                    mainstream_session,
-                    pages=pages,
-                    enrich=enrich,
-                )
+                if isinstance(adapter, YIFYSourceAdapter):
+                    telemetry = await adapter.sync(
+                        inst,
+                        sources_session,
+                        mainstream_session,
+                        pages=pages,
+                        enrich=enrich,
+                        mode=eff_mode,
+                        quality=quality,
+                        minimum_rating=minimum_rating,
+                        sort_by=sort_by,
+                        genre=genre,
+                    )
+                elif isinstance(adapter, TorrentApiPySourceAdapter):
+                    recent_cands = await adapter.fetch_recent_candidates(
+                        inst, pages=min(pages, 3), limit=35
+                    )
+                    indexed = 0
+                    matched_canonical = 0
+                    for cand in recent_cands:
+                        if cand.seeds < min_seeds_floor:
+                            continue
+                        imdb = cand.imdb_id
+                        conf = cand.match_confidence
+                        if not imdb:
+                            r_id, r_conf, _ = cls._resolve_imdb_id_against_mainstream(
+                                mainstream_session, cand.title, cand.year, cand.work_type
+                            )
+                            if r_id:
+                                imdb = r_id
+                                conf = max(conf, r_conf)
+                                matched_canonical += 1
+                        if imdb and conf >= 0.85:
+                            cand.imdb_id = imdb
+                            cand.match_confidence = conf
+                            p_rows, _ = cls._persist_verified_candidates(
+                                sources_session, inst.source_key, imdb, [cand]
+                            )
+                            indexed += len(p_rows)
+                    telemetry = {
+                        "source": inst.source_key,
+                        "mode": eff_mode,
+                        "candidates_scanned": len(recent_cands),
+                        "canonical_matched": matched_canonical,
+                        "releases_indexed": indexed,
+                    }
+                else:
+                    telemetry = await adapter.sync(
+                        inst,
+                        sources_session,
+                        mainstream_session,
+                        pages=pages,
+                        enrich=enrich,
+                    )
+
                 inst.status = "ready"
                 inst.last_error = None
                 inst.cooldown_until = None
@@ -1222,6 +1790,17 @@ class SourcesRegistryService:
                 sources_session.add(inst)
                 sources_session.commit()
                 results[inst.source_key] = {"status": "success", "telemetry": telemetry}
+            except httpx.ConnectError as exc:
+                if host_k:
+                    _HOST_COOLDOWN_UNTIL[host_k] = _utc_now() + timedelta(seconds=120)
+                inst.status = "degraded"
+                inst.last_error = f"Sidecar / Host {host_k or inst.base_url} offline."
+                sources_session.add(inst)
+                sources_session.commit()
+                results[inst.source_key] = {
+                    "status": "skipped_offline",
+                    "error": str(exc),
+                }
             except Exception as exc:
                 inst.status = "degraded"
                 inst.last_error = str(exc)
@@ -1229,6 +1808,22 @@ class SourcesRegistryService:
                 sources_session.commit()
                 results[inst.source_key] = {"status": "error", "error": str(exc)}
 
+        prune_summary = None
+        if prune_after:
+            prune_summary = cls.prune_obsolete_releases(
+                sources_session,
+                mainstream_session,
+                source_key=source_key,
+                min_seeds_floor=min_seeds_floor,
+                max_zero_seed_hours=48,
+            )
+
+        cls._recompute_source_counters(sources_session)
         catalog_cache.invalidate()
         discovery_cache.invalidate()
-        return {"status": "completed", "results": results}
+        return {
+            "status": "completed",
+            "mode": eff_mode,
+            "prune": prune_summary,
+            "results": results,
+        }

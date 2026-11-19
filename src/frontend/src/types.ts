@@ -516,6 +516,8 @@ export interface SourceCatalogItem {
   id: string;
   source_key: string;
   source_name: string;
+  media_sources?: string[];
+  qualities?: string[];
   release_type: string;
   eztv_show_id?: number;
   tvmaze_id?: number | null;
@@ -538,6 +540,43 @@ export interface SourceCatalogItem {
   latest_episode: number;
   latest_release_date?: string | null;
   is_enriched: boolean;
+}
+
+export type SyncRecipeMode = "incremental" | "baseline" | "library" | "prune";
+
+export interface YifyMovieEnrichment {
+  status: string;
+  endpoint?: string;
+  imdb_id: string;
+  movie_id?: number | null;
+  details?: {
+    title?: string;
+    year?: number;
+    rating?: number;
+    runtime?: number;
+    download_count?: number;
+    like_count?: number;
+    mpa_rating?: string;
+    yt_trailer_code?: string;
+    rt_critics_score?: number | null;
+    rt_audience_score?: number | null;
+    cast?: { name: string; character_name?: string }[];
+  } | null;
+  suggestions: {
+    movie_id?: number;
+    imdb_id?: string | null;
+    work_imdb_id?: string | null;
+    title: string;
+    title_ptbr?: string;
+    year?: number;
+    rating: number;
+    poster_url?: string | null;
+    qualities?: string[];
+  }[];
+  parental_guides: {
+    type: string;
+    parental_guide_text: string;
+  }[];
 }
 
 export interface SourcesCatalogResponse {

@@ -1,7 +1,8 @@
-"""YIFY / YTS v2 movie torrent adapter with mirror rotation and on-demand search."""
+"""YIFY / YTS v2 official movie torrent adapter (movies-api.accel.li/api/v2/) (ADR-014)."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Optional
 
@@ -15,6 +16,7 @@ from src.backend.providers.sources.base import (
     BaseSourceAdapter,
     NormalizedReleaseCandidate,
     SourceQueryContext,
+    build_official_magnet,
     compute_title_match_confidence,
     is_antibot_challenge,
     register_source_adapter,
@@ -23,27 +25,43 @@ from src.backend.providers.sources.base import (
 )
 from src.backend.services.entity_resolution import EntityResolutionService
 
-_TRACKERS = (
-    "&tr=udp://open.demonii.com:1337/announce"
-    "&tr=udp://tracker.openbittorrent.com:80"
-    "&tr=udp://tracker.coppersurfer.tk:6969"
-    "&tr=udp://tracker.opentrackr.org:1337/announce"
-)
+DEFAULT_YTS_BASE_URL = "https://movies-api.accel.li/api/v2/list_movies.json"
+DEFAULT_YTS_API_ROOT = "https://movies-api.accel.li/api/v2"
+DEFAULT_YTS_MIRRORS: list[str] = [
+    "https://yts.gg/api/v2/list_movies.json",
+    "https://yts.mx/api/v2/list_movies.json",
+    "https://yts.lt/api/v2/list_movies.json",
+]
 
 
 class YIFYAdapterConfig(BaseModel):
-    """Configuration schema for YIFY / YTS JSON API v2."""
+    """Configuration schema for YIFY / YTS JSON API v2 (movies-api.accel.li)."""
 
     base_url: str = Field(
-        default="https://yts.mx/api/v2/list_movies.json",
-        title="Endpoint YTS API v2",
+        default=DEFAULT_YTS_BASE_URL,
+        title="Endpoint YTS API v2 (movies-api.accel.li)",
     )
     mirrors: list[str] = Field(
-        default_factory=lambda: [
-            "https://yts.lt/api/v2/list_movies.json",
-            "https://yts.am/api/v2/list_movies.json",
-        ],
+        default_factory=lambda: list(DEFAULT_YTS_MIRRORS),
         title="Mirrors YTS Alternativos",
+    )
+    default_quality: str = Field(
+        default="All",
+        title="Filtro de Qualidade Padrão (All, 2160p, 1080p, 1080p.x265, 720p, 480p, 3D)",
+    )
+    minimum_rating: int = Field(
+        default=0,
+        ge=0,
+        le=9,
+        title="Nota Mínima IMDb (0-9)",
+    )
+    sort_by: str = Field(
+        default="date_added",
+        title="Ordenação Padrão (date_added, seeds, download_count, rating, year, title)",
+    )
+    with_rt_ratings: bool = Field(
+        default=True,
+        title="Incluir Notas Rotten Tomatoes (with_rt_ratings)",
     )
     timeout_seconds: float = Field(default=8.0, ge=1.0, le=30.0, title="Timeout (s)")
     ttl_hours: int = Field(default=24, ge=1, le=720, title="TTL do Cache (Horas)")
@@ -51,12 +69,13 @@ class YIFYAdapterConfig(BaseModel):
 
 @register_source_adapter
 class YIFYSourceAdapter(BaseSourceAdapter):
-    """YIFY / YTS movie indexer supporting both batch sync and on-demand lookup."""
+    """YIFY / YTS movie indexer supporting 4 official v2 endpoints & 10-tracker magnet builder."""
 
     adapter_key = "yify"
-    display_name = "YIFY / YTS (Filmes P2P)"
+    display_name = "YIFY / YTS (movies-api.accel.li v2)"
     description = (
-        "API JSON v2 oficial do YTS para filmes em 720p, 1080p e 2160p/4K com rotação de mirrors."
+        "API JSON v2 oficial do YTS (movies-api.accel.li/api/v2/) com list_movies, "
+        "movie_details, movie_suggestions, movie_parental_guides e 10 trackers oficiais."
     )
     default_source_kind = "torrent_mirrorable"
     default_media_types = "movie"
@@ -79,13 +98,19 @@ class YIFYSourceAdapter(BaseSourceAdapter):
 
     @staticmethod
     def _candidate_endpoints(cfg: YIFYAdapterConfig) -> list[str]:
-        urls = [cfg.base_url, *cfg.mirrors]
+        urls = [cfg.base_url, *cfg.mirrors, DEFAULT_YTS_BASE_URL]
         out: list[str] = []
         for u in urls:
             safe = validate_safe_url(u, ("http", "https"))
             if safe and safe not in out:
                 out.append(safe)
-        return out or ["https://yts.mx/api/v2/list_movies.json"]
+        return out or [DEFAULT_YTS_BASE_URL]
+
+    @staticmethod
+    def _api_root_from_endpoint(endpoint: str) -> str:
+        if "/api/v2" in endpoint:
+            return endpoint.split("/api/v2")[0] + "/api/v2"
+        return DEFAULT_YTS_API_ROOT
 
     @staticmethod
     def _movies_to_candidates(
@@ -134,16 +159,15 @@ class YIFYSourceAdapter(BaseSourceAdapter):
 
             for tor in movie.get("torrents") or []:
                 info_hash = str(tor.get("hash") or "").strip()
-                quality = str(tor.get("quality") or "Unknown")
-                ext_id = f"yts:{movie.get('id')}:{quality}:{info_hash[:12]}"
-                magnet = (
-                    validate_safe_url(
-                        f"magnet:?xt=urn:btih:{info_hash}&dn={title}{_TRACKERS}",
-                        ("magnet",),
-                    )
-                    if info_hash
-                    else None
+                raw_quality = str(tor.get("quality") or "Unknown")
+                codec = str(tor.get("video_codec") or "").lower()
+                quality = (
+                    "1080p.x265"
+                    if raw_quality == "1080p" and ("x265" in codec or "hevc" in codec)
+                    else raw_quality
                 )
+                ext_id = f"yts:{movie.get('id')}:{quality}:{info_hash[:12]}"
+                magnet = build_official_magnet(info_hash, title) if info_hash else None
                 tor_url = validate_safe_url(tor.get("url"), ("http", "https"))
                 out.append(
                     NormalizedReleaseCandidate(
@@ -178,21 +202,50 @@ class YIFYSourceAdapter(BaseSourceAdapter):
         *,
         pages: int = 2,
         enrich: bool = False,
+        mode: str = "incremental",
+        quality: Optional[str] = None,
+        minimum_rating: Optional[int] = None,
+        sort_by: Optional[str] = None,
+        order_by: str = "desc",
+        genre: Optional[str] = None,
     ) -> dict[str, Any]:
         cfg = self._parse_cfg(instance)
         endpoints = self._candidate_endpoints(cfg)
         indexed = 0
+        updated = 0
         movies_seen = 0
         last_err: Optional[Exception] = None
+
+        eff_quality = (quality or cfg.default_quality or "All").strip()
+        eff_min_rating = (
+            minimum_rating if minimum_rating is not None else int(cfg.minimum_rating or 0)
+        )
+        if sort_by:
+            eff_sort = sort_by
+        elif mode == "baseline":
+            eff_sort = "seeds"
+        else:
+            eff_sort = cfg.sort_by or "date_added"
 
         async with httpx.AsyncClient(timeout=cfg.timeout_seconds) as client:
             for endpoint in endpoints:
                 try:
-                    for page in range(1, max(1, min(pages, 10)) + 1):
-                        resp = await client.get(
-                            endpoint,
-                            params={"limit": 50, "page": page, "sort_by": "date_added"},
-                        )
+                    for page in range(1, max(1, min(pages, 20)) + 1):
+                        params: dict[str, Any] = {
+                            "limit": 50,
+                            "page": page,
+                            "sort_by": eff_sort,
+                            "order_by": order_by if order_by in ("desc", "asc") else "desc",
+                            "with_rt_ratings": "true" if cfg.with_rt_ratings else "false",
+                        }
+                        if eff_quality and eff_quality.lower() != "all":
+                            params["quality"] = eff_quality
+                        if eff_min_rating > 0:
+                            params["minimum_rating"] = min(9, max(0, eff_min_rating))
+                        if genre and genre.strip().lower() != "all":
+                            params["genre"] = genre.strip()
+
+                        resp = await client.get(endpoint, params=params)
                         resp.raise_for_status()
                         payload = resp.json()
                         movies = payload.get("data", {}).get("movies") or []
@@ -209,9 +262,10 @@ class YIFYSourceAdapter(BaseSourceAdapter):
                             if existing:
                                 existing.seeds = cand.seeds
                                 existing.peers = cand.peers
-                                existing.magnet_url = existing.magnet_url or cand.magnet_url
+                                existing.magnet_url = cand.magnet_url or existing.magnet_url
                                 existing.last_checked_at = utc_now()
                                 sources_session.add(existing)
+                                updated += 1
                             else:
                                 sources_session.add(
                                     ExternalRelease(
@@ -243,8 +297,13 @@ class YIFYSourceAdapter(BaseSourceAdapter):
                     return {
                         "source": instance.source_key,
                         "endpoint": endpoint,
+                        "mode": mode,
+                        "sort_by": eff_sort,
+                        "quality": eff_quality,
+                        "minimum_rating": eff_min_rating,
                         "movies_seen": movies_seen,
                         "releases_indexed": indexed,
+                        "releases_updated": updated,
                     }
                 except Exception as exc:
                     last_err = exc
@@ -252,7 +311,12 @@ class YIFYSourceAdapter(BaseSourceAdapter):
 
         if last_err:
             raise last_err
-        return {"source": instance.source_key, "movies_seen": 0, "releases_indexed": 0}
+        return {
+            "source": instance.source_key,
+            "movies_seen": 0,
+            "releases_indexed": 0,
+            "releases_updated": 0,
+        }
 
     async def search(
         self,
@@ -263,9 +327,10 @@ class YIFYSourceAdapter(BaseSourceAdapter):
     ) -> AdapterSearchOutcome:
         cfg = self._parse_cfg(instance)
         endpoints = self._candidate_endpoints(cfg)
+        norm_imdb = EntityResolutionService.normalize_imdb_id(query_ctx.imdb_id)
         q_term = (
             query_ctx.custom_query
-            or EntityResolutionService.normalize_imdb_id(query_ctx.imdb_id)
+            or norm_imdb
             or query_ctx.original_title
             or query_ctx.title
         )
@@ -276,7 +341,11 @@ class YIFYSourceAdapter(BaseSourceAdapter):
                 try:
                     resp = await client.get(
                         endpoint,
-                        params={"query_term": q_term, "limit": min(query_ctx.limit, 50)},
+                        params={
+                            "query_term": q_term,
+                            "limit": min(query_ctx.limit, 50),
+                            "with_rt_ratings": "true" if cfg.with_rt_ratings else "false",
+                        },
                     )
                     if is_antibot_challenge(resp.status_code, resp.text, dict(resp.headers)):
                         last_error_msg = f"Anti-bot Challenge em {endpoint}"
@@ -284,6 +353,23 @@ class YIFYSourceAdapter(BaseSourceAdapter):
                     resp.raise_for_status()
                     payload = resp.json()
                     movies = payload.get("data", {}).get("movies") or []
+
+                    # Fallback to movie_details.json?imdb_id=... when list_movies returns empty
+                    if not movies and norm_imdb and not query_ctx.custom_query:
+                        api_root = self._api_root_from_endpoint(endpoint)
+                        det_resp = await client.get(
+                            f"{api_root}/movie_details.json",
+                            params={
+                                "imdb_id": norm_imdb,
+                                "with_images": "true",
+                                "with_cast": "true",
+                            },
+                        )
+                        if det_resp.status_code == 200:
+                            det_movie = det_resp.json().get("data", {}).get("movie") or {}
+                            if det_movie and det_movie.get("torrents"):
+                                movies = [det_movie]
+
                     candidates = self._movies_to_candidates(movies, query_ctx=query_ctx)
                     return AdapterSearchOutcome(status="ok", releases=candidates)
                 except httpx.TimeoutException:
@@ -296,3 +382,149 @@ class YIFYSourceAdapter(BaseSourceAdapter):
             message=last_error_msg or "Todos os mirrors YTS falharam.",
             releases=[],
         )
+
+    async def fetch_movie_enrichment(
+        self,
+        instance: ExternalSourceRecord,
+        imdb_id: str,
+        movie_id: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """Fetch official YTS v2 movie_details, movie_suggestions, and movie_parental_guides."""
+        cfg = self._parse_cfg(instance)
+        endpoints = self._candidate_endpoints(cfg)
+        norm_imdb = EntityResolutionService.normalize_imdb_id(imdb_id) or imdb_id.strip()
+
+        async with httpx.AsyncClient(timeout=min(cfg.timeout_seconds, 5.0)) as client:
+            for endpoint in endpoints:
+                api_root = self._api_root_from_endpoint(endpoint)
+                try:
+                    yts_id = movie_id
+                    seed_movie: dict[str, Any] = {}
+                    if not yts_id:
+                        list_resp = await client.get(
+                            endpoint,
+                            params={
+                                "query_term": norm_imdb,
+                                "limit": 1,
+                                "with_rt_ratings": "true",
+                            },
+                        )
+                        list_resp.raise_for_status()
+                        movies = list_resp.json().get("data", {}).get("movies") or []
+                        if movies:
+                            seed_movie = movies[0]
+                            yts_id = int(seed_movie.get("id") or 0) or None
+
+                    if not yts_id:
+                        return {
+                            "status": "not_found",
+                            "imdb_id": norm_imdb,
+                            "movie_id": None,
+                            "details": None,
+                            "suggestions": [],
+                            "parental_guides": [],
+                        }
+
+                    async def _get_json(path: str, params: dict[str, Any]) -> dict[str, Any]:
+                        try:
+                            r = await client.get(f"{api_root}/{path}", params=params)
+                            r.raise_for_status()
+                            return r.json().get("data") or {}
+                        except Exception:
+                            return {}
+
+                    details_data, suggestions_data, guides_data = await asyncio.gather(
+                        _get_json(
+                            "movie_details.json",
+                            {
+                                "movie_id": yts_id,
+                                "with_images": "true",
+                                "with_cast": "true",
+                            },
+                        ),
+                        _get_json("movie_suggestions.json", {"movie_id": yts_id}),
+                        _get_json("movie_parental_guides.json", {"movie_id": yts_id}),
+                    )
+
+                    det_movie = details_data.get("movie") or seed_movie or {}
+                    raw_suggestions = suggestions_data.get("movies") or []
+                    raw_guides = guides_data.get("parental_guides") or []
+
+                    suggestions = [
+                        {
+                            "movie_id": s.get("id"),
+                            "imdb_id": EntityResolutionService.normalize_imdb_id(
+                                s.get("imdb_code")
+                            ),
+                            "title": s.get("title"),
+                            "year": s.get("year"),
+                            "rating": float(s.get("rating") or 0.0),
+                            "poster_url": validate_safe_url(
+                                s.get("medium_cover_image"), ("http", "https")
+                            ),
+                            "qualities": sorted(
+                                {
+                                    str(t.get("quality"))
+                                    for t in (s.get("torrents") or [])
+                                    if t.get("quality")
+                                }
+                            ),
+                        }
+                        for s in raw_suggestions
+                        if isinstance(s, dict) and s.get("title")
+                    ]
+
+                    parental_guides = [
+                        {
+                            "type": str(g.get("type") or "Info").strip(),
+                            "parental_guide_text": str(g.get("parental_guide_text") or "").strip(),
+                        }
+                        for g in raw_guides
+                        if isinstance(g, dict) and g.get("parental_guide_text")
+                    ]
+
+                    return {
+                        "status": "ok",
+                        "endpoint": api_root,
+                        "imdb_id": norm_imdb,
+                        "movie_id": yts_id,
+                        "details": {
+                            "title": det_movie.get("title") or seed_movie.get("title"),
+                            "year": det_movie.get("year") or seed_movie.get("year"),
+                            "rating": float(
+                                det_movie.get("rating") or seed_movie.get("rating") or 0.0
+                            ),
+                            "runtime": int(
+                                det_movie.get("runtime") or seed_movie.get("runtime") or 0
+                            ),
+                            "download_count": int(det_movie.get("download_count") or 0),
+                            "like_count": int(det_movie.get("like_count") or 0),
+                            "mpa_rating": det_movie.get("mpa_rating") or "",
+                            "yt_trailer_code": det_movie.get("yt_trailer_code") or "",
+                            "rt_critics_score": seed_movie.get("rt_critics_score")
+                            or det_movie.get("rt_critics_score"),
+                            "rt_audience_score": seed_movie.get("rt_audience_score")
+                            or det_movie.get("rt_audience_score"),
+                            "cast": [
+                                {
+                                    "name": c.get("name"),
+                                    "character_name": c.get("character_name"),
+                                }
+                                for c in (det_movie.get("cast") or [])[:6]
+                                if isinstance(c, dict) and c.get("name")
+                            ],
+                        },
+                        "suggestions": suggestions[:4],
+                        "parental_guides": parental_guides,
+                    }
+                except Exception:
+                    continue
+
+        return {
+            "status": "error",
+            "imdb_id": norm_imdb,
+            "movie_id": movie_id,
+            "details": None,
+            "suggestions": [],
+            "parental_guides": [],
+        }

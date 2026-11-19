@@ -1,4 +1,4 @@
-"""HTTP Sidecar adapter for Ryuk-me/Torrent-Api-py multi-site torrent search."""
+"""HTTP Sidecar adapter for Ryuk-me/Torrent-Api-py (12 sites + /recent & /search) (ADR-014)."""
 
 from __future__ import annotations
 
@@ -18,24 +18,128 @@ from src.backend.providers.sources.base import (
     BaseSourceAdapter,
     NormalizedReleaseCandidate,
     SourceQueryContext,
+    build_official_magnet,
     compute_title_match_confidence,
-    extract_release_year_and_se,
     is_antibot_challenge,
+    parse_release_title_and_year,
     register_source_adapter,
     validate_safe_url,
 )
 from src.backend.services.entity_resolution import EntityResolutionService
 
 TorrentApiPySite = Literal[
-    "1337x",
     "tgx",
     "nyaasi",
-    "piratebay",
     "bitsearch",
-    "kickass",
+    "glodls",
+    "magnetdl",
     "limetorrent",
     "torlock",
+    "kickass",
+    "zooqle",
+    "yts",
+    "1337x",
+    "piratebay",
 ]
+
+TORRENT_API_PY_SITE_CATALOG: dict[str, dict[str, Any]] = {
+    "tgx": {
+        "site": "tgx",
+        "display_name": "TorrentGalaxy (TGx)",
+        "tier": "recommended",
+        "media_types": "movie,tvSeries",
+        "public_web_Search_url": "https://torrentgalaxy.to/torrents.php?search={query}",
+        "supports_recent": True,
+    },
+    "nyaasi": {
+        "site": "nyaasi",
+        "display_name": "Nyaa.si (Anime & Donghua)",
+        "tier": "recommended",
+        "media_types": "animation,tvSeries,movie",
+        "public_web_Search_url": "https://nyaa.si/?f=0&c=0_0&q={query}",
+        "supports_recent": True,
+    },
+    "bitsearch": {
+        "site": "bitsearch",
+        "display_name": "BitSearch (DHT Meta-Index)",
+        "tier": "recommended",
+        "media_types": "movie,tvSeries,animation",
+        "public_web_Search_url": "https://bitsearch.to/search?q={query}",
+        "supports_recent": True,
+    },
+    "glodls": {
+        "site": "glodls",
+        "display_name": "GloDLS (GloTorrents)",
+        "tier": "recommended",
+        "media_types": "movie,tvSeries",
+        "public_web_Search_url": "https://glodls.to/search_results.php?search={query}",
+        "supports_recent": True,
+    },
+    "magnetdl": {
+        "site": "magnetdl",
+        "display_name": "MagnetDL",
+        "tier": "extended",
+        "media_types": "movie,tvSeries",
+        "public_web_Search_url": "https://www.magnetdl.com/search/?q={query}",
+        "supports_recent": True,
+    },
+    "limetorrent": {
+        "site": "limetorrent",
+        "display_name": "LimeTorrents",
+        "tier": "extended",
+        "media_types": "movie,tvSeries",
+        "public_web_Search_url": "https://www.limetorrents.lol/search/all/{query}/",
+        "supports_recent": True,
+    },
+    "torlock": {
+        "site": "torlock",
+        "display_name": "Torlock (Verified Torrents)",
+        "tier": "extended",
+        "media_types": "movie,tvSeries,animation",
+        "public_web_Search_url": "https://www.torlock.com/all/torrents/{query}.html",
+        "supports_recent": True,
+    },
+    "kickass": {
+        "site": "kickass",
+        "display_name": "KickassTorrents",
+        "tier": "extended",
+        "media_types": "movie,tvSeries",
+        "public_web_Search_url": "https://kickasstorrents.to/usearch/{query}/",
+        "supports_recent": True,
+    },
+    "zooqle": {
+        "site": "zooqle",
+        "display_name": "Zooqle",
+        "tier": "extended",
+        "media_types": "movie,tvSeries",
+        "public_web_Search_url": "https://zooqle.com/search?q={query}",
+        "supports_recent": True,
+    },
+    "yts": {
+        "site": "yts",
+        "display_name": "YTS (via Sidecar)",
+        "tier": "extended",
+        "media_types": "movie",
+        "public_web_Search_url": "https://movies-api.accel.li/api/v2/list_movies.json?query_term={query}",
+        "supports_recent": True,
+    },
+    "1337x": {
+        "site": "1337x",
+        "display_name": "1337x (Scraper Legado / Cloudflare)",
+        "tier": "legacy_cloudflare",
+        "media_types": "movie,tvSeries,animation",
+        "public_web_Search_url": "https://1337x.to/search/{query}/1/",
+        "supports_recent": True,
+    },
+    "piratebay": {
+        "site": "piratebay",
+        "display_name": "ThePirateBay (Scraper Legado / Cloudflare)",
+        "tier": "legacy_cloudflare",
+        "media_types": "movie,tvSeries",
+        "public_web_Search_url": "https://thepiratebay.org/search.php?q={query}",
+        "supports_recent": True,
+    },
+}
 
 
 def _parse_human_size(raw: Any) -> int:
@@ -57,33 +161,35 @@ def _parse_human_size(raw: Any) -> int:
 def _infer_quality(name: str) -> str:
     low = (name or "").lower()
     if "2160p" in low or "4k" in low:
-        return "4K"
+        return "2160p"
+    if "1080p" in low and ("x265" in low or "hevc" in low):
+        return "1080p.x265"
     if "1080p" in low:
         return "1080p"
     if "720p" in low:
         return "720p"
     if "480p" in low or "hdtv" in low:
-        return "SD"
+        return "480p"
     return "Unknown"
 
 
 class TorrentApiPyConfig(BaseModel):
-    """Configuration schema for Torrent-Api-py sidecar instances."""
+    """Configuration schema for Torrent-Api-py sidecar instances (12 sites)."""
 
     base_url: str = Field(
         default="http://127.0.0.1:8009",
         title="URL do Sidecar Torrent-Api-py",
     )
     site: TorrentApiPySite = Field(
-        default="1337x",
-        title="Indexador / Site no Sidecar",
+        default="tgx",
+        title="Indexador / Site no Sidecar (tgx, nyaasi, bitsearch, glodls...)",
     )
     mirrors: list[str] = Field(
         default_factory=list,
         title="Mirrors Alternativos do Sidecar",
     )
     public_web_Search_url: str = Field(
-        default="https://1337x.to/search/{query}/1/",
+        default="https://torrentgalaxy.to/torrents.php?search={query}",
         title="URL Web Pública para Fallback Manual no Navegador",
     )
     api_key: str = Field(
@@ -100,19 +206,26 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
     """Adapter connecting TV Pirata to a Ryuk-me/Torrent-Api-py compatible HTTP sidecar."""
 
     adapter_key = "torrent_api_py"
-    display_name = "Torrent-Api-py Sidecar (1337x, TGx, Nyaa...)"
+    display_name = "Torrent-Api-py Sidecar (TGx, Nyaa, BitSearch, GloDLS + 8 sites)"
     description = (
-        "Conector HTTP enxuto para instâncias do Ryuk-me/Torrent-Api-py "
-        "suportando múltiplos indexadores (1337x, TorrentGalaxy, Nyaa, PirateBay)."
+        "Conector HTTP 1:N para o Ryuk-me/Torrent-Api-py cobrindo 12 provedores "
+        "(tgx, nyaasi, bitsearch, glodls, magnetdl, limetorrent, torlock, kickass, zooqle, "
+        "yts, 1337x, piratebay) com suporte dual a /api/v1/recent e /api/v1/search."
     )
     default_source_kind = "torrent_mirrorable"
     default_media_types = "movie,tvSeries,animation"
-    supports_sync = False
+    supports_sync = True
     supports_search = True
 
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return TorrentApiPyConfig
+
+    @classmethod
+    def config_json_schema(cls) -> dict[str, Any]:
+        schema = super().config_json_schema()
+        schema["site_catalog"] = list(TORRENT_API_PY_SITE_CATALOG.values())
+        return schema
 
     @staticmethod
     def _parse_cfg(instance: ExternalSourceRecord) -> TorrentApiPyConfig:
@@ -122,15 +235,168 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
             raw = {}
         if instance.base_url and not raw.get("base_url"):
             raw["base_url"] = instance.base_url
-        if not raw.get("site") and instance.source_key in (
-            "1337x",
-            "tgx",
-            "nyaasi",
-            "piratebay",
-            "bitsearch",
-        ):
+        if not raw.get("site") and instance.source_key in TORRENT_API_PY_SITE_CATALOG:
             raw["site"] = instance.source_key
+        site_key = str(raw.get("site") or "tgx")
+        if site_key not in TORRENT_API_PY_SITE_CATALOG:
+            raw["site"] = "tgx"
+            site_key = "tgx"
+        if not raw.get("public_web_Search_url"):
+            raw["public_web_Search_url"] = TORRENT_API_PY_SITE_CATALOG[site_key][
+                "public_web_Search_url"
+            ]
         return TorrentApiPyConfig.model_validate(raw)
+
+    @staticmethod
+    def _normalize_item(
+        item: dict[str, Any],
+        site: str,
+        query_ctx: Optional[SourceQueryContext] = None,
+    ) -> Optional[NormalizedReleaseCandidate]:
+        name = str(item.get("name") or item.get("title") or "").strip()
+        if not name:
+            return None
+        raw_magnet = validate_safe_url(item.get("magnet"), ("magnet",))
+        tor_url = validate_safe_url(item.get("torrent"), ("http", "https"))
+        ext_url = validate_safe_url(item.get("url"), ("http", "https"))
+
+        info_hash = str(item.get("hash") or "").strip() or None
+        if not info_hash and raw_magnet:
+            hm = re.search(r"btih:([a-fA-F0-9]{32,40})", raw_magnet)
+            if hm:
+                info_hash = hm.group(1).lower()
+
+        # Enrich magnet with official 10 trackers if hash is known and trackers are missing
+        if info_hash and (not raw_magnet or "&tr=" not in raw_magnet):
+            magnet = build_official_magnet(info_hash, name) or raw_magnet
+        else:
+            magnet = raw_magnet
+
+        if not (magnet or tor_url or ext_url):
+            return None
+
+        clean_title, yr, season, episode, parsed_qual = parse_release_title_and_year(name)
+        item_imdb = EntityResolutionService.normalize_imdb_id(item.get("imdb_id"))
+        target_imdb = (
+            EntityResolutionService.normalize_imdb_id(query_ctx.imdb_id)
+            if query_ctx and query_ctx.imdb_id
+            else None
+        )
+
+        if item_imdb and target_imdb and item_imdb == target_imdb:
+            matched_by = "exact_imdb"
+            conf = 1.0
+        elif query_ctx:
+            matched_by = "title_year_match"
+            conf = compute_title_match_confidence(
+                query_title=query_ctx.title,
+                query_original_title=query_ctx.original_title,
+                query_year=query_ctx.year,
+                query_work_type=query_ctx.work_type,
+                candidate_title=name,
+                candidate_year=yr,
+            )
+        else:
+            matched_by = "recent_feed"
+            conf = 0.90 if item_imdb else 0.85
+
+        digest = hashlib.sha1(f"{site}:{info_hash or ext_url or name}".encode("utf-8")).hexdigest()[
+            :16
+        ]
+        seed_val = int(str(item.get("seeders") or item.get("seeds") or 0).replace(",", "") or 0)
+        peer_val = int(str(item.get("leechers") or item.get("peers") or 0).replace(",", "") or 0)
+        rel_type: Literal["magnet", "torrent", "link"] = (
+            "magnet" if magnet else ("torrent" if tor_url else "link")
+        )
+        w_type = (
+            "tvSeries"
+            if season > 0
+            else ((query_ctx.work_type if query_ctx else None) or "movie")
+        )
+        return NormalizedReleaseCandidate(
+            external_id=f"{site}:{digest}",
+            imdb_id=target_imdb if (query_ctx and conf >= 0.85) else item_imdb,
+            title=clean_title if not query_ctx and clean_title else name,
+            work_type=w_type,
+            season=season,
+            episode=episode,
+            quality=parsed_qual if parsed_qual != "Unknown" else _infer_quality(name),
+            seeds=seed_val,
+            peers=peer_val,
+            size_bytes=_parse_human_size(item.get("size")),
+            release_type=rel_type,
+            magnet_url=magnet,
+            torrent_url=tor_url,
+            external_url=ext_url,
+            info_hash=info_hash,
+            year=yr,
+            matched_by=matched_by,
+            match_confidence=conf,
+        )
+
+    async def fetch_recent_candidates(
+        self,
+        instance: ExternalSourceRecord,
+        pages: int = 1,
+        limit: int = 35,
+    ) -> list[NormalizedReleaseCandidate]:
+        """Fetch Stage 1 recent releases from /api/v1/recent (with fallback to /api/v1/search)."""
+        cfg = self._parse_cfg(instance)
+        hosts = [cfg.base_url, *cfg.mirrors]
+        valid_hosts = [
+            u.rstrip("/")
+            for u in (validate_safe_url(h, ("http", "https")) for h in hosts)
+            if u
+        ] or ["http://127.0.0.1:8009"]
+
+        headers: dict[str, str] = {}
+        if cfg.api_key:
+            headers["Authorization"] = f"Bearer {cfg.api_key}"
+
+        candidates: list[NormalizedReleaseCandidate] = []
+        last_exc: Optional[Exception] = None
+
+        async with httpx.AsyncClient(timeout=cfg.timeout_seconds) as client:
+            for host in valid_hosts:
+                try:
+                    for page in range(1, max(1, min(pages, 5)) + 1):
+                        resp = await client.get(
+                            f"{host}/api/v1/recent",
+                            params={"site": cfg.site, "limit": min(limit, 50), "page": page},
+                            headers=headers,
+                        )
+                        if resp.status_code == 404:
+                            resp = await client.get(
+                                f"{host}/api/v1/search",
+                                params={
+                                    "site": cfg.site,
+                                    "query": "1080p",
+                                    "limit": min(limit, 50),
+                                    "page": page,
+                                },
+                                headers=headers,
+                            )
+                        resp.raise_for_status()
+                        payload = resp.json()
+                        raw_items = (
+                            payload.get("data")
+                            if isinstance(payload, dict)
+                            else (payload if isinstance(payload, list) else [])
+                        ) or []
+                        for raw in raw_items:
+                            if not isinstance(raw, dict):
+                                continue
+                            cand = self._normalize_item(raw, cfg.site, query_ctx=None)
+                            if cand:
+                                candidates.append(cand)
+                    return candidates
+                except Exception as exc:
+                    last_exc = exc
+                    continue
+
+        if last_exc:
+            raise last_exc
+        return candidates
 
     async def search(
         self,
@@ -159,7 +425,6 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
         if cfg.api_key:
             headers["Authorization"] = f"Bearer {cfg.api_key}"
 
-        target_imdb = EntityResolutionService.normalize_imdb_id(query_ctx.imdb_id)
         manual_url = validate_safe_url(
             cfg.public_web_Search_url.replace("{query}", quote_plus(query_str)),
             ("http", "https"),
@@ -205,74 +470,9 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
                     for item in raw_items:
                         if not isinstance(item, dict):
                             continue
-                        name = str(item.get("name") or item.get("title") or "").strip()
-                        if not name:
-                            continue
-                        magnet = validate_safe_url(item.get("magnet"), ("magnet",))
-                        tor_url = validate_safe_url(item.get("torrent"), ("http", "https"))
-                        ext_url = validate_safe_url(item.get("url"), ("http", "https"))
-                        if not (magnet or tor_url or ext_url):
-                            continue
-
-                        info_hash = str(item.get("hash") or "").strip() or None
-                        if not info_hash and magnet:
-                            hm = re.search(r"btih:([a-fA-F0-9]{32,40})", magnet)
-                            if hm:
-                                info_hash = hm.group(1).lower()
-
-                        yr, season, episode = extract_release_year_and_se(name)
-                        item_imdb = EntityResolutionService.normalize_imdb_id(item.get("imdb_id"))
-                        if item_imdb and target_imdb and item_imdb == target_imdb:
-                            matched_by = "exact_imdb"
-                            conf = 1.0
-                        else:
-                            matched_by = "title_year_match"
-                            conf = compute_title_match_confidence(
-                                query_title=query_ctx.title,
-                                query_original_title=query_ctx.original_title,
-                                query_year=query_ctx.year,
-                                query_work_type=query_ctx.work_type,
-                                candidate_title=name,
-                                candidate_year=yr,
-                            )
-
-                        digest = hashlib.sha1(
-                            f"{cfg.site}:{info_hash or ext_url or name}".encode("utf-8")
-                        ).hexdigest()[:16]
-                        seed_val = int(
-                            str(item.get("seeders") or item.get("seeds") or 0).replace(",", "")
-                            or 0
-                        )
-                        peer_val = int(
-                            str(item.get("leechers") or item.get("peers") or 0).replace(",", "")
-                            or 0
-                        )
-                        rel_type: Literal["magnet", "torrent", "link"] = (
-                            "magnet" if magnet else ("torrent" if tor_url else "link")
-                        )
-                        w_type = "tvSeries" if season > 0 else (query_ctx.work_type or "movie")
-                        releases.append(
-                            NormalizedReleaseCandidate(
-                                external_id=f"{cfg.site}:{digest}",
-                                imdb_id=target_imdb if conf >= 0.85 else item_imdb,
-                                title=name,
-                                work_type=w_type,
-                                season=season,
-                                episode=episode,
-                                quality=_infer_quality(name),
-                                seeds=seed_val,
-                                peers=peer_val,
-                                size_bytes=_parse_human_size(item.get("size")),
-                                release_type=rel_type,
-                                magnet_url=magnet,
-                                torrent_url=tor_url,
-                                external_url=ext_url,
-                                info_hash=info_hash,
-                                year=yr,
-                                matched_by=matched_by,
-                                match_confidence=conf,
-                            )
-                        )
+                        cand = self._normalize_item(item, cfg.site, query_ctx=query_ctx)
+                        if cand:
+                            releases.append(cand)
                     return AdapterSearchOutcome(status="ok", releases=releases)
                 except httpx.TimeoutException:
                     last_status = "timeout"

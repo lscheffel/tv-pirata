@@ -222,6 +222,7 @@ function AppShell() {
         <TorrentModal
           show={selectedTorrentShow}
           onClose={() => setSelectedTorrentShow(null)}
+          onSelectSuggestedShow={(nextShow) => setSelectedTorrentShow(nextShow)}
         />
       )}
     </div>

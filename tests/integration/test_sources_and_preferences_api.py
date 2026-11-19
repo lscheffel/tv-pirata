@@ -178,10 +178,10 @@ def test_sources_summary_catalog_and_releases_multisource(dual_client):
     assert summary_res.status_code == 200
     summary = summary_res.json()
     by_key = {s["source_key"]: s for s in summary["sources"]}
-    assert set(by_key.keys()) >= {"eztv", "yify", "1337x"}
+    assert set(by_key.keys()) >= {"eztv", "yify", "tgx", "nyaasi", "bitsearch", "glodls"}
+    assert by_key["yify"]["base_url"] == "https://movies-api.accel.li/api/v2/list_movies.json"
     assert by_key["eztv"]["total_titles"] >= 1
     assert by_key["yify"]["total_releases"] == 1
-    assert by_key["1337x"]["total_releases"] == 1
 
     # Multi-source releases for The Matrix (yify + 1337x)
     rel_res = client.get("/api/sources/releases?imdb_id=tt0133093&include_live=false")
@@ -192,13 +192,21 @@ def test_sources_summary_catalog_and_releases_multisource(dual_client):
     assert len(rel_data["by_source"]["yify"]) == 1
     assert len(rel_data["by_source"]["1337x"]) == 1
 
-    # Paginated multi-source catalog filterable by source
+    # Paginated multi-source catalog filterable by source + Sovereign Batch Join from mainstream.db
     cat_yify = client.get("/api/sources/catalog?source=yify")
     assert cat_yify.status_code == 200
     yify_items = cat_yify.json()["items"]
     assert len(yify_items) == 1
     assert yify_items[0]["source_key"] == "yify"
     assert yify_items[0]["imdb_id"] == "tt0133093"
+    assert yify_items[0]["is_enriched"] is True
+
+    # Canonical IMDb deduplication in "all" mode aggregates sources for tt0133093
+    cat_all = client.get("/api/sources/catalog?source=all")
+    assert cat_all.status_code == 200
+    by_imdb = {it["imdb_id"]: it for it in cat_all.json()["items"]}
+    assert by_imdb["tt0133093"]["media_sources"] == ["1337x", "yify"]
+    assert by_imdb["tt0133093"]["total_torrents"] == 2
 
 
 def test_explore_preferences_hybrid_persistence(dual_client):
@@ -270,7 +278,7 @@ def test_explore_and_discovery_annotate_has_media_and_filter_sources(dual_client
 def test_sources_sync_yify_and_invalid_provider(dual_client):
     client, _main_e, _src_e = dual_client
 
-    respx.get("https://yts.mx/api/v2/list_movies.json").mock(
+    respx.get("https://movies-api.accel.li/api/v2/list_movies.json").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -280,19 +288,19 @@ def test_sources_sync_yify_and_invalid_provider(dual_client):
                         {
                             "id": 55501,
                             "imdb_code": "tt0816692",
-                            "title": "Interstellar",
+                            "title": "Interstellar Odyssey",
                             "year": 2014,
                             "rating": 8.7,
                             "genres": ["Adventure", "Drama", "Sci-Fi"],
-                            "url": "https://yts.mx/movies/interstellar-2014",
+                            "url": "https://movies-api.accel.li/movies/interstellar-2014",
                             "torrents": [
                                 {
-                                    "hash": "abc123def456",
+                                    "hash": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
                                     "quality": "1080p",
                                     "seeds": 740,
                                     "peers": 80,
                                     "size_bytes": 2400000000,
-                                    "url": "https://yts.mx/torrent/download/abc123def456",
+                                    "url": "https://movies-api.accel.li/torrent/download/abc",
                                 }
                             ],
                         }
@@ -302,16 +310,23 @@ def test_sources_sync_yify_and_invalid_provider(dual_client):
         )
     )
 
-    sync_res = client.post("/api/sources/sync?source=yify&pages=1&enrich=false")
+    sync_res = client.post("/api/sources/sync?source=yify&pages=1&enrich=false&mode=baseline")
     assert sync_res.status_code == 200
     payload = sync_res.json()
     assert payload["results"]["yify"]["status"] == "success"
     assert payload["results"]["yify"]["telemetry"]["releases_indexed"] == 1
+    assert (
+        payload["results"]["yify"]["telemetry"]["endpoint"]
+        == "https://movies-api.accel.li/api/v2/list_movies.json"
+    )
 
     rel_res = client.get("/api/sources/releases?imdb_id=tt0816692&source=yify&include_live=false")
     assert rel_res.status_code == 200
     assert rel_res.json()["total"] == 1
-    assert rel_res.json()["items"][0]["source_key"] == "yify"
+    item = rel_res.json()["items"][0]
+    assert item["source_key"] == "yify"
+    assert "dn=Interstellar+Odyssey" in item["magnet_url"]
+    assert "tracker.zhuqiy.com" in item["magnet_url"]
 
     bad_res = client.post("/api/sources/sync?source=unknown_provider")
     assert bad_res.status_code == 400

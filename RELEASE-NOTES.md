@@ -4,6 +4,22 @@ Este documento consolida os marcos de valor de negócio, evolução arquitetural
 
 ---
 
+## 🚀 Alinhamento `sources-apis.md`, Curadoria `Torrent-Api-py` (12 Sites), Sincronia Bipartida em 2 Etapas & Sync Command Deck — ADR-014 (Branch `UI-UX`, 2026-11-19)
+
+### 🌟 Destaques Executivos e Evolução Arquitetural (`ADR-014`)
+1. **Especificações Oficiais YTS v2 (`movies-api.accel.li`) & EZTV (`eztvx.to`) (`DEC-001`, `DEC-002`):**
+   - `YIFYSourceAdapter` migrado com migração idempotente para `https://movies-api.accel.li/api/v2/` consumindo os 4 endpoints oficiais (`list_movies.json`, `movie_details.json`, `movie_suggestions.json`, `movie_parental_guides.json`) e montando magnet links URL-safe (`quote_plus(dn)`) com os **10 trackers oficiais** (`build_official_magnet`).
+   - `EZTVSourceAdapter` e `EZTVProvider` padronizados com `?imdb_id=<num_sem_tt>` e `limit=100`, parser RSS oficial (`https://myrss.org/eztv`) e diagnóstico `https://eztvstatus.org/`.
+2. **Catálogo de 12 Provedores `Torrent-Api-py` + Quarteto Resiliente Default (`DEC-003`):**
+   - Substituição do seed `1337x` pelo quarteto pré-configurado **`tgx` (TorrentGalaxy)**, **`nyaasi` (Nyaa.si)**, **`bitsearch` (BitSearch)** e **`glodls` (GloDLS)** sobre um catálogo completo de 12 indexadores com modo dual (`/api/v1/recent` + `/api/v1/search`) e *fast-skip* quando o sidecar `:8009` estiver offline.
+3. **Sincronia Bipartida em 2 Etapas & Sync Command Deck (`DEC-004`, `DEC-005`, `DEC-006`):**
+   - **Etapa 1 (Presença Estrutural + Poda):** Modos `incremental`, `baseline`, `library` (*Minha Biblioteca*) e `prune` (`POST /api/sources/prune` para remover torrents mortos com `0 seeds`) com Match Canônico automático contra `mainstream.db`.
+   - **Etapa 2 (Hidratação Efêmera JIT no `TorrentModal.tsx`):** Padrão *Stale-While-Revalidate (SWR)* em `0ms`, roteamento por formato (`movie` vs `tv_show`), transação atômica `Replace-on-Success` e faixa colapsável **Inteligência YTS** (Guia Parental, Nota RT e 4 Sugestões Clicáveis).
+   - **Batch Join Soberano & Sync Command Deck (`SourcesView.tsx`):** Cards de **Fontes de Dados** deduplicados por `imdb_id` e hidratados em lote por `IMDbCatalogShow` (`mainstream.db`), Deck com 5 Receitas de 1 clique, gaveta de Ajuste Fino, **Onda Card a Card** com progresso orbital e gatilho **`⚡ Buscar & Ingerir ao Vivo`**.
+   - Suíte hermética ampliada para **73 testes aprovados** e `ADR-014` arquivada (`16/16` — [ADR-014-ER.md](file:///home/loupan/projetosVS/tv-pirata/docs/adr/ADR-014-ER.md)).
+
+---
+
 ## 🚀 Sistema Extensível de Plugins para Fontes Externas — ADR-013 (Branch `UI-UX`, 2026-11-19)
 
 ### 🌟 Destaques Executivos e Evolução Arquitetural (`ADR-013`)

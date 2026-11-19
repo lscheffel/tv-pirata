@@ -1,8 +1,9 @@
-"""EZTV public torrent distribution provider implementation."""
+"""EZTV public torrent distribution provider implementation (sources-apis.md spec)."""
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import Optional
 
 import httpx
@@ -13,30 +14,37 @@ logger = logging.getLogger(__name__)
 
 
 class EZTVProvider:
-    """Client for EZTV public torrent metadata API."""
+    """Client for EZTV public torrent metadata API (https://eztvx.to/api/get-torrents)."""
 
     def __init__(
         self,
         base_url: str = "https://eztvx.to/api",
         client: Optional[httpx.AsyncClient] = None,
     ) -> None:
-        self.base_url = base_url.rstrip("/")
+        cleaned = base_url.rstrip("/")
+        if cleaned.endswith("/api/get-torrents"):
+            cleaned = cleaned[: -len("/get-torrents")]
+        elif not cleaned.endswith("/api"):
+            cleaned = f"{cleaned}/api"
+        self.base_url = cleaned
         self._client = client
 
     def _sanitize_imdb_id(self, imdb_id: str) -> str:
-        """Strip 'tt' prefix if present since EZTV expects numeric IMDB ID."""
-        return imdb_id.strip().lower().lstrip("tt")
+        """Strip 'tt' prefix and non-digits since EZTV expects numeric IMDB ID (e.g. 6048596)."""
+        return re.sub(r"\D", "", (imdb_id or "").strip())
 
     async def get_torrents_by_imdb(
-        self, imdb_id: str, limit: int = 50, page: int = 1
+        self, imdb_id: str, limit: int = 100, page: int = 1
     ) -> list[TorrentRelease]:
-        """Fetch available torrent releases for a given IMDB ID."""
+        """Fetch available torrent releases for a given IMDB ID (limit 1..100, page 1..100)."""
         clean_id = self._sanitize_imdb_id(imdb_id)
         if not clean_id:
             return []
 
+        safe_limit = max(1, min(int(limit or 100), 100))
+        safe_page = max(1, min(int(page or 1), 100))
         url = f"{self.base_url}/get-torrents"
-        params = {"imdb_id": clean_id, "limit": limit, "page": page}
+        params = {"imdb_id": clean_id, "limit": safe_limit, "page": safe_page}
         client = self._client or httpx.AsyncClient(timeout=10.0)
 
         should_close = self._client is None
@@ -44,9 +52,8 @@ class EZTVProvider:
             response = await client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
-            raw_torrents = data.get("torrents", [])
+            raw_torrents = data.get("torrents", []) or []
             releases = [TorrentRelease.from_eztv(t) for t in raw_torrents]
-            # Order by seeds descending for highest quality/health
             releases.sort(key=lambda r: r.seeds, reverse=True)
             return releases
         except Exception as exc:

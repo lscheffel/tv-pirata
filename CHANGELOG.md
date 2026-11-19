@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] — ADR-014 (2026-11-19)
+
+### Added & Changed
+- **Official `sources-apis.md` Alignment, `Torrent-Api-py` 12-Site Catalog, Two-Stage Bipartite Sync & Sync Command Deck (`ADR-014`, `DEC-001`..`DEC-006`):**
+  - **YTS API v2 Canonical (`DEC-001`):** Migrated `YIFYSourceAdapter` (`yify_adapter.py`) and `DEFAULT_SOURCE_INSTANCES` (with idempotent migration in `ensure_sources_registered`) to `https://movies-api.accel.li/api/v2/list_movies.json`, supporting native filters (`quality`, `minimum_rating`, `sort_by`, `order_by`, `genre`, `with_rt_ratings`), full v2 enrichment (`movie_details.json`, `movie_suggestions.json`, `movie_parental_guides.json` via `GET /api/sources/yify/enrichment/{imdb_id}`), and `build_official_magnet(info_hash, title)` with URL-encoded `quote_plus(dn)` and all 10 official announce trackers.
+  - **EZTV Strict Alignment (`DEC-002`):** Normalized numeric `imdb_id` lookup without `tt` prefix (`?imdb_id=6048596`) and `limit=1..100` in `eztv_adapter.py` and `eztv.py`, added official RSS pulse parser (`https://myrss.org/eztv`) using stdlib `xml.etree.ElementTree`, and surfaced `https://eztvstatus.org/` in adapter diagnostics and UI cockpit cards.
+  - **12-Site `Torrent-Api-py` Curation (`DEC-003`):** Expanded `TorrentApiPySourceAdapter` to 12 sites (`tgx`, `nyaasi`, `bitsearch`, `glodls`, `magnetdl`, `limetorrent`, `torlock`, `kickass`, `zooqle`, `yts`, `1337x`, `piratebay`), enabled `supports_sync = True` via `/api/v1/recent` (Stage 1) and `/api/v1/search` (Stage 2), and replaced the `1337x` default seed with the resilient quartet (`tgx`, `nyaasi`, `bitsearch`, `glodls`).
+  - **Two-Stage Bipartite Sync (`DEC-004`, `DEC-005`):** Split Stage 1 structural presence sync (`incremental`, `baseline`, `library`, `prune`, canonical title matching against `mainstream.db`, and dead-seed pruning `POST /api/sources/prune`) from Stage 2 Just-in-Time SWR modal hydration (`TorrentModal.tsx` with format-aware `movie` vs `tv_show` routing, atomic `Replace-on-Success`, and YTS Intelligence strip).
+  - **Batch Sovereign Join & Sync Command Deck UI (`DEC-006`):** Enriched `GET /api/sources/catalog` via batch `WHERE imdb_id IN (...)` lookup against `IMDbCatalogShow` (`mainstream.db`) with canonical IMDb deduplication in `"all"` mode; redesigned `SourcesView.tsx` with 5 Sync Recipes, Fine-Tuning drawer, sequential Card-by-Card Orbital Wave (`Sidecar :8009 Offline` fast-skip), Cockpit Cards, and `⚡ Buscar & Ingerir ao Vivo` (`POST /api/sources/live-ingest`).
+  - Expanded hermetic integration tests in `tests/integration/test_source_plugins_contract.py` and `tests/integration/test_sources_and_preferences_api.py` (**73 passed**).
+
+---
+
 ## [Unreleased] — ADR-013 (2026-11-19)
 
 ### Added

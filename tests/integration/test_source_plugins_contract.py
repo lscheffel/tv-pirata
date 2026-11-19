@@ -17,12 +17,17 @@ from src.backend.core.database import (
 )
 from src.backend.main import app
 from src.backend.models.catalog_domain import IMDbCatalogShow
+from src.backend.models.sources_db import ExternalRelease
 from src.backend.providers.sources import discover_source_adapters
 from src.backend.providers.sources.base import (
+    OFFICIAL_YTS_TRACKERS,
+    build_official_magnet,
     compute_title_match_confidence,
     merge_preserving_secrets,
     validate_safe_url,
 )
+from src.backend.providers.sources.eztv_adapter import EZTVSourceAdapter
+from src.backend.providers.sources.torrent_api_py_adapter import TORRENT_API_PY_SITE_CATALOG
 
 
 @pytest.fixture
@@ -194,16 +199,15 @@ def test_dynamic_instance_crud_and_secret_masking(plugin_client):
 def test_lazy_cache_torrent_api_py_torznab_and_captcha_challenge(plugin_client):
     client, _main_e, _src_e = plugin_client
 
-    # Register a custom TorrentGalaxy instance (torrent_api_py) & a Unique Web Source
-    client.post(
-        "/api/sources",
+    # Point default tgx instance to mocked sidecar.local:8009 & register a Unique Web Source
+    patch_tgx = client.patch(
+        "/api/sources/tgx",
         json={
-            "adapter_key": "torrent_api_py",
-            "source_key": "tgx",
             "display_name": "TorrentGalaxy",
             "config": {"base_url": "http://sidecar.local:8009", "site": "tgx"},
         },
     )
+    assert patch_tgx.status_code == 200
     client.post(
         "/api/sources",
         json={
@@ -281,3 +285,202 @@ def test_lazy_cache_torrent_api_py_torznab_and_captcha_challenge(plugin_client):
     ddl_diag = ddl_res.json()["source_diagnostics"]["cinema_ddl"]
     assert ddl_diag["status"] == "challenge_required"
     assert ddl_diag["challenge_url"].startswith("https://ddl.example.org/search?q=")
+
+
+@respx.mock
+def test_adr014_yts_accel_enrichment_eztv_rss_numeric_imdb_and_bipartite_prune(plugin_client):
+    client, _main_e, src_e = plugin_client
+
+    # 1. Official 10-tracker magnet builder & 12-site Torrent-Api-py catalog
+    assert len(OFFICIAL_YTS_TRACKERS) == 10
+    mag = build_official_magnet("f1e2d3c4b5a6f1e2d3c4b5a6f1e2d3c4b5a6f1e2", "Dune: Part One")
+    assert mag is not None
+    assert "dn=Dune%3A+Part+One" in mag
+    assert mag.count("&tr=") == 10
+    assert set(TORRENT_API_PY_SITE_CATALOG.keys()) == {
+        "tgx",
+        "nyaasi",
+        "bitsearch",
+        "glodls",
+        "magnetdl",
+        "limetorrent",
+        "torlock",
+        "kickass",
+        "zooqle",
+        "yts",
+        "1337x",
+        "piratebay",
+    }
+
+    # 2. Official EZTV RSS parser & numeric imdb_id lookup without 'tt'
+    rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <rss version="2.0" xmlns:torrent="http://xmlns.ezrss.it/0.1/">
+      <channel>
+        <item>
+          <title>Severance S02E01 1080p WEB</title>
+          <link>https://eztvx.to/ep/12345</link>
+          <torrent:magnetURI>magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</torrent:magnetURI>
+        </item>
+      </channel>
+    </rss>"""
+    rss_cands = EZTVSourceAdapter.parse_rss_xml(rss_xml)
+    assert len(rss_cands) == 1
+    assert rss_cands[0].season == 2
+    assert rss_cands[0].episode == 1
+
+    eztv_route = respx.get("https://eztvx.to/api/get-torrents").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "torrents": [
+                    {
+                        "id": 7711,
+                        "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        "filename": "Game.of.Thrones.S01E01.1080p.mkv",
+                        "title": "Game of Thrones S01E01",
+                        "imdb_id": "6048596",
+                        "season": "1",
+                        "episode": "1",
+                        "seeds": 220,
+                        "peers": 18,
+                        "size_bytes": 1500000000,
+                        "magnet_url": (
+                            "magnet:?xt=urn:btih:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                        ),
+                    }
+                ]
+            },
+        )
+    )
+    eztv_rel = client.get("/api/sources/releases?imdb_id=tt6048596&source=eztv&live=force")
+    assert eztv_rel.status_code == 200
+    assert eztv_rel.json()["total"] == 1
+    assert eztv_route.calls[0].request.url.params["imdb_id"] == "6048596"
+
+    # 3. Official YTS v2 enrichment (movies-api.accel.li details, suggestions, parental_guides)
+    respx.get("https://movies-api.accel.li/api/v2/list_movies.json").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": "ok",
+                "data": {
+                    "movies": [
+                        {
+                            "id": 9001,
+                            "imdb_code": "tt1160419",
+                            "title": "Dune",
+                            "year": 2021,
+                            "rating": 8.0,
+                            "rt_critics_score": 83,
+                            "torrents": [],
+                        }
+                    ]
+                },
+            },
+        )
+    )
+    respx.get("https://movies-api.accel.li/api/v2/movie_details.json").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": "ok",
+                "data": {
+                    "movie": {
+                        "id": 9001,
+                        "title": "Dune",
+                        "year": 2021,
+                        "runtime": 155,
+                        "mpa_rating": "PG-13",
+                        "cast": [{"name": "Timothee Chalamet", "character_name": "Paul Atreides"}],
+                    }
+                },
+            },
+        )
+    )
+    respx.get("https://movies-api.accel.li/api/v2/movie_suggestions.json").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": "ok",
+                "data": {
+                    "movies": [
+                        {
+                            "id": 9002,
+                            "imdb_code": "tt15239678",
+                            "title": "Dune: Part Two",
+                            "year": 2024,
+                            "rating": 8.5,
+                        }
+                    ]
+                },
+            },
+        )
+    )
+    respx.get("https://movies-api.accel.li/api/v2/movie_parental_guides.json").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": "ok",
+                "data": {
+                    "parental_guides": [
+                        {"type": "Violence", "parental_guide_text": "Intense sci-fi action"}
+                    ]
+                },
+            },
+        )
+    )
+    yts_intel = client.get("/api/sources/yify/enrichment/tt1160419")
+    assert yts_intel.status_code == 200
+    intel_json = yts_intel.json()
+    assert intel_json["status"] == "ok"
+    assert intel_json["details"]["mpa_rating"] == "PG-13"
+    assert intel_json["parental_guides"][0]["type"] == "Violence"
+    assert intel_json["suggestions"][0]["title"] == "Dune: Part Two"
+
+    # 4. Stage 1 Incremental Recent Sync + Canonical Match + Prune Dead Seeds
+    client.patch(
+        "/api/sources/tgx",
+        json={"config": {"base_url": "http://sidecar.local:8009", "site": "tgx"}},
+    )
+    respx.get("http://sidecar.local:8009/api/v1/recent").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "name": "Dune.Part.One.2021.2160p.WEB-DL",
+                        "seeders": "150",
+                        "leechers": "12",
+                        "magnet": "magnet:?xt=urn:btih:cccccccccccccccccccccccccccccccccccccccc",
+                    },
+                    {
+                        "name": "Dune.Part.One.2021.Dead.Copy",
+                        "seeders": "0",
+                        "leechers": "0",
+                        "magnet": "magnet:?xt=urn:btih:dddddddddddddddddddddddddddddddddddddddd",
+                    },
+                ]
+            },
+        )
+    )
+    sync_recent = client.post("/api/sources/sync?source=tgx&pages=1&mode=incremental")
+    assert sync_recent.status_code == 200
+    assert sync_recent.json()["results"]["tgx"]["telemetry"]["releases_indexed"] == 1
+
+    # Inject a dead 0-seed row and prune it via /api/sources/prune
+    with Session(src_e) as ss:
+        ss.add(
+            ExternalRelease(
+                source_key="tgx",
+                external_id="tgx:dead_old",
+                imdb_id="tt1160419",
+                title="Old Dead Torrent",
+                seeds=0,
+                magnet_url="magnet:?xt=urn:btih:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            )
+        )
+        ss.commit()
+
+    prune_res = client.post("/api/sources/prune?source=tgx&min_seeds_floor=1&max_zero_seed_hours=0")
+    assert prune_res.status_code == 200
+    assert prune_res.json()["removed_releases"] == 1

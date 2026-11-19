@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/python-3.14+-blue.svg)](#)
 [![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20Tailwind-38bdf8.svg)](#)
 [![Backend](https://img.shields.io/badge/backend-FastAPI%20%2B%20SQLModel-009688.svg)](#)
-[![Tests](https://img.shields.io/badge/tests-72%20passing-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-73%20passing-brightgreen.svg)](#)
 [![Governance](https://img.shields.io/badge/governance-SynPraxis%20SOTA-purple.svg)](#)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](#)
 

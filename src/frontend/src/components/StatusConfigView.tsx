@@ -564,12 +564,18 @@ export const StatusConfigView: React.FC<StatusConfigViewProps> = ({
                         onChange={(e) => setNewSite(e.target.value)}
                         className="w-full min-h-[40px] bg-surface-elevated border border-white/15 rounded-lg px-2.5 text-xs text-white"
                       >
-                        <option value="1337x">1337x</option>
                         <option value="tgx">TorrentGalaxy (tgx)</option>
-                        <option value="nyaasi">Nyaa.si</option>
-                        <option value="piratebay">ThePirateBay</option>
-                        <option value="bitsearch">BitSearch</option>
-                        <option value="kickass">KickAss</option>
+                        <option value="nyaasi">Nyaa.si (nyaasi)</option>
+                        <option value="bitsearch">BitSearch (bitsearch)</option>
+                        <option value="glodls">GloDLS (glodls)</option>
+                        <option value="magnetdl">MagnetDL (magnetdl)</option>
+                        <option value="limetorrent">LimeTorrents (limetorrent)</option>
+                        <option value="torlock">Torlock (torlock)</option>
+                        <option value="kickass">Kickass (kickass)</option>
+                        <option value="zooqle">Zooqle (zooqle)</option>
+                        <option value="yts">YTS Sidecar (yts)</option>
+                        <option value="1337x">1337x (Legado / Cloudflare)</option>
+                        <option value="piratebay">ThePirateBay (Legado / Cloudflare)</option>
                       </select>
                     </div>
                   )}

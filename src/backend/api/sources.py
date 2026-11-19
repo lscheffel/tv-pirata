@@ -142,15 +142,75 @@ def list_sources_catalog(
     )
 
 
+@router.get("/yify/enrichment/{imdb_id}")
+async def get_yify_movie_enrichment(
+    imdb_id: str,
+    sources_session: Session = Depends(get_eztv_session),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Fetch official YTS v2 details, 4 related suggestions, and parental guides."""
+    return await SourcesRegistryService.get_yify_enrichment_for_imdb(
+        sources_session=sources_session,
+        mainstream_session=session,
+        imdb_id=imdb_id,
+    )
+
+
+@router.post("/live-ingest")
+async def live_ingest_sources(
+    q: str = Query(..., min_length=2, description="Título ou IMDb ID para busca ao vivo"),
+    source: Optional[str] = Query(None, description="Fonte alvo ou all"),
+    limit: int = Query(20, ge=1, le=50),
+    sources_session: Session = Depends(get_eztv_session),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Search active remote sources live and ingest verified matches into sources.db."""
+    return await SourcesRegistryService.live_ingest_query(
+        sources_session=sources_session,
+        mainstream_session=session,
+        query=q,
+        source_key=source,
+        limit=limit,
+    )
+
+
+@router.post("/prune")
+def prune_obsolete_sources(
+    source: Optional[str] = Query(None, description="Fonte alvo ou all"),
+    min_seeds_floor: int = Query(1, ge=1, le=100),
+    max_zero_seed_hours: int = Query(0, ge=0, le=720),
+    sources_session: Session = Depends(get_eztv_session),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Prune dead (0 seeds) or stale semi-ephemeral releases and propagate flags."""
+    return SourcesRegistryService.prune_obsolete_releases(
+        sources_session=sources_session,
+        mainstream_session=session,
+        source_key=source,
+        min_seeds_floor=min_seeds_floor,
+        max_zero_seed_hours=max_zero_seed_hours,
+    )
+
+
 @router.post("/sync")
 async def sync_external_sources(
     source: str = Query("eztv", description="Fonte para sincronizar (eztv, yify, all, etc.)"),
     pages: int = Query(5, ge=1, le=100),
     enrich: bool = Query(True),
+    mode: str = Query(
+        "incremental",
+        description="Ciclo Etapa 1: incremental, baseline, library ou prune",
+    ),
+    quality: Optional[str] = Query(None, description="Filtro de qualidade YTS (2160p, 1080p...)"),
+    minimum_rating: Optional[int] = Query(None, ge=0, le=9),
+    sort_by: Optional[str] = Query(None, description="Ordenação na origem (date_added, seeds...)"),
+    genre: Optional[str] = Query(None),
+    min_seeds_floor: int = Query(1, ge=0, le=100),
+    prune_after: bool = Query(True),
     sources_session: Session = Depends(get_eztv_session),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    """Trigger on-demand synchronization for one or all external source providers."""
+    """Trigger Stage 1 structural sync (incremental, baseline, library, prune) for sources."""
     try:
         return await SourcesRegistryService.sync_source(
             sources_session=sources_session,
@@ -158,6 +218,13 @@ async def sync_external_sources(
             source_key=source,
             pages=pages,
             enrich=enrich,
+            mode=mode,
+            quality=quality,
+            minimum_rating=minimum_rating,
+            sort_by=sort_by,
+            genre=genre,
+            min_seeds_floor=min_seeds_floor,
+            prune_after=prune_after,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -20,12 +20,14 @@ import {
   SourceReleasesResponse,
   SourcesCatalogResponse,
   SourcesSummaryResponse,
+  SyncRecipeMode,
   ExternalSourceSummary,
   TagRecord,
   TorrentRelease,
   UnifiedShow,
   UnreadNotificationCount,
   UserExplorePreferences,
+  YifyMovieEnrichment,
 } from "../types";
 
 const BASE_URL = "/api";
@@ -278,10 +280,70 @@ export const api = {
         signal: options.signal,
       });
     },
-    sync: (source = "eztv", pages = 5, enrich = true) =>
-      request<{ status: string; results: Record<string, any> }>(
-        `/sources/sync?source=${encodeURIComponent(source)}&pages=${pages}&enrich=${enrich}`,
+    sync: (
+      source = "eztv",
+      pages = 5,
+      enrich = true,
+      opts: {
+        mode?: SyncRecipeMode;
+        quality?: string;
+        minimum_rating?: number;
+        sort_by?: string;
+        min_seeds_floor?: number;
+        prune_after?: boolean;
+      } = {}
+    ) => {
+      const q = new URLSearchParams({
+        source,
+        pages: String(pages),
+        enrich: String(enrich),
+      });
+      if (opts.mode) q.append("mode", opts.mode);
+      if (opts.quality && opts.quality !== "All") q.append("quality", opts.quality);
+      if (opts.minimum_rating && opts.minimum_rating > 0) {
+        q.append("minimum_rating", String(opts.minimum_rating));
+      }
+      if (opts.sort_by) q.append("sort_by", opts.sort_by);
+      if (opts.min_seeds_floor !== undefined) {
+        q.append("min_seeds_floor", String(opts.min_seeds_floor));
+      }
+      if (opts.prune_after !== undefined) {
+        q.append("prune_after", String(opts.prune_after));
+      }
+      return request<{ status: string; mode?: string; prune?: any; results: Record<string, any> }>(
+        `/sources/sync?${q.toString()}`,
         { method: "POST" }
+      );
+    },
+    prune: (source = "all", minSeedsFloor = 1) => {
+      const q = new URLSearchParams({
+        source,
+        min_seeds_floor: String(minSeedsFloor),
+        max_zero_seed_hours: "0",
+      });
+      return request<{ status: string; removed_releases: number }>(
+        `/sources/prune?${q.toString()}`,
+        { method: "POST" }
+      );
+    },
+    liveIngest: (query: string, source = "all", limit = 20) => {
+      const q = new URLSearchParams({
+        q: query,
+        source,
+        limit: String(limit),
+      });
+      return request<{
+        status: string;
+        query: string;
+        ingested_count: number;
+        matched_imdb_ids: string[];
+        diagnostics: Record<string, any>;
+      }>(`/sources/live-ingest?${q.toString()}`, { method: "POST" });
+    },
+    getYifyEnrichment: (imdbId: string, options: { signal?: AbortSignal } = {}) =>
+      request<YifyMovieEnrichment>(
+        `/sources/yify/enrichment/${encodeURIComponent(imdbId)}`,
+        { signal: options.signal }
       ),
   },
 
