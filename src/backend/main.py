@@ -26,6 +26,7 @@ from src.backend.api import (
 from src.backend.core.database import engine, init_db, init_eztv_db
 from src.backend.services.federated_catalog import FederatedCatalogService
 from src.backend.services.scheduler import scheduler
+from src.backend.sidecar import sidecar_manager
 
 STATIC_DIR = Path(__file__).parent / "static"
 DIST_DIR = STATIC_DIR / "dist"
@@ -33,16 +34,18 @@ DIST_DIR = STATIC_DIR / "dist"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan managing database initialization, auto-sync and teardown."""
+    """Application lifespan managing DB initialization, sidecar :8009, auto-sync and teardown."""
     init_db()
     init_eztv_db()
     with Session(engine) as session:
         FederatedCatalogService().ensure_federated_catalog_seeded(session)
+    await sidecar_manager.start()
     scheduler.start()
     try:
         yield
     finally:
         await scheduler.stop(timeout=3.0)
+        await sidecar_manager.stop(timeout=3.0)
 
 
 app = FastAPI(

@@ -28,6 +28,7 @@ from src.backend.providers.sources.base import (
 )
 from src.backend.providers.sources.eztv_adapter import EZTVSourceAdapter
 from src.backend.providers.sources.torrent_api_py_adapter import TORRENT_API_PY_SITE_CATALOG
+from src.backend.sidecar import sidecar_app
 
 
 @pytest.fixture
@@ -484,3 +485,12 @@ def test_adr014_yts_accel_enrichment_eztv_rss_numeric_imdb_and_bipartite_prune(p
     prune_res = client.post("/api/sources/prune?source=tgx&min_seeds_floor=1&max_zero_seed_hours=0")
     assert prune_res.status_code == 200
     assert prune_res.json()["removed_releases"] == 1
+
+    # 5. Embedded Torrent-Api-py Sidecar (:8009) contract (/health, /api/v1/sites)
+    with TestClient(sidecar_app) as sc:
+        h_res = sc.get("/health")
+        assert h_res.status_code == 200
+        assert h_res.json()["total_sites"] == 12
+        sites_res = sc.get("/api/v1/sites")
+        assert sites_res.status_code == 200
+        assert "tgx" in sites_res.json()["supported_sites"]

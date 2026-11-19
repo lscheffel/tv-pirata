@@ -13,7 +13,7 @@ PYTHON ?= $(shell if [ -f $(VENV_BIN)/python ]; then echo $(VENV_BIN)/python; el
 PYTEST ?= $(shell if [ -f $(VENV_BIN)/pytest ]; then echo $(VENV_BIN)/pytest; else which pytest 2>/dev/null || echo pytest; fi)
 RUFF   ?= $(shell if [ -f $(VENV_BIN)/ruff ]; then echo $(VENV_BIN)/ruff; else which ruff 2>/dev/null || echo ruff; fi)
 
-.PHONY: help bootstrap test lint format setup-hooks run spx-sync clean build-front dev-front sync-catalog
+.PHONY: help bootstrap test lint format setup-hooks run run-sidecar spx-sync clean build-front dev-front sync-catalog
 
 help:
 	@echo "Comandos disponíveis no workspace:"
@@ -50,6 +50,9 @@ format:
 
 run:
 	$(PYTHON) -m uvicorn src.backend.main:app --host 127.0.0.1 --port 8000 --reload
+
+run-sidecar:
+	$(PYTHON) -m uvicorn src.backend.sidecar.torrent_api_sidecar:sidecar_app --host 127.0.0.1 --port 8009 --reload
 
 build-front:
 	@echo "[+] Compilando SPA Frontend com Vite..."
