@@ -189,15 +189,18 @@ Para manter a **Base Canônica (`data/mainstream.db`)** e a **Base de Recursos (
 
 ---
 
-## 5. 🧪 Pirâmide de Testes e Qualidade (`69 Testes`)
+## 5. 🧪 Pirâmide de Testes e Qualidade (`72 Testes`)
 
 Todos os testes automatizados são **100% herméticos e offline**, utilizando `respx` para interceptação determinística de chamadas HTTP e `SQLite :memory:` com isolamento por `Engine`.
 
 ```bash
-# 1. Executar toda a suíte (69 testes unitários e de integração)
+# 1. Executar toda a suíte (72 testes unitários e de integração)
 make test
 
-# 2. Executar testes multi-fonte, preferências e contratos ADR-012
+# 2. Executar testes de plugins 1:N, Lazy-Cache, Torznab, Torrent-Api-py e CAPTCHA (ADR-013)
+.venv/bin/pytest tests/integration/test_source_plugins_contract.py -v
+
+# 3. Executar testes multi-fonte, preferências e contratos ADR-012
 .venv/bin/pytest tests/integration/test_sources_and_preferences_api.py -v
 
 # 2. Executar testes Dual-SSOT, SQL Pushdown, Taxonomia e Busca Bilíngue (ADR-011)

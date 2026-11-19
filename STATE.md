@@ -1,19 +1,19 @@
 # Estado Atual do Workspace (STATE.md)
 
 > **Persistent Agent Memory & Repository State (SSOT)**  
-> Última auditoria e reconciliação completa (6 Pilares SOTA): 2026-11-17
+> Última auditoria e reconciliação completa (6 Pilares SOTA): 2026-11-19
 
 ---
 
 ## 1. 📍 Contexto e Fase Ativa
 
-- **Versão Atual:** `v0.7.0` (`+ ADR-012 Consolidada`)
+- **Versão Atual:** `v0.7.0` (`+ ADR-012 & ADR-013 Consolidadas`)
 - **Branch Ativa:** `UI-UX`
 - **Posicionamento Arquitetural:** **Audiovisual Discovery Platform & Personal Media Ecosystem (Discovery-First)** estruturada em 3 camadas e arquitetura **Dual-SSOT** (`data/mainstream.db` + `data/sources.db`):
-  - **Camada 1 — Base Canônica & Audiovisual Discovery Core (`data/mainstream.db`):** Catálogo universal `IMDbCatalogShow` (`279.362` obras e `4.529.748` episódios em `IMDbEpisodeCatalog`) + `MediaWork`, taxonomia canônica (`canonical_taxonomy.py`: 31 categorias, 25 streamings normalizados via TMDB `/discover`, 8 formatos, fontes multi-provedor), índice bilíngue `FTS5` PT-BR/EN-US (`shows_fts`), motor SQL Pushdown (`DiscoveryEngineRepository`), snapshot global `global_facets_v2`, preferências híbridas (`/api/explore/preferences`) e experiência unificada **Explorar** (`ExplorerView.tsx`, Modo Adaptativo + Roleta + Filtros Híbridos com `AbortController`).
-  - **Camada 2 — Base de Recursos Externos Multi-Provedor & Personal Media Ecosystem (`data/sources.db` + `data/mainstream.db`):** Isolamento físico de indexadores multi-provedor (`EZTV`, `YIFY / YTS`, `1337x` via `sources_metadata` / `ExternalSourceRecord` / `ExternalRelease` + `EZTVShow` `860` séries / `140.571` episódios, `CatalogShow`, `CatalogRelease`) em `data/sources.db` servidos por `/api/sources/*` e `SourcesView.tsx` (**Fontes de Dados**), anotação agnóstica (`has_media`, `media_sources`, `sources_count`), `MediaBadge.tsx` + `TorrentModal.tsx` multi-fonte, Central `StatusConfigView.tsx`, biblioteca pessoal (`ShowRecord`), progresso por episódio (`EpisodeWatchRecord`), disponibilidade SMB (`LocalMediaRecord`) e `BackgroundSyncService` + `ReleaseNotificationRecord`.
+  - **Camada 1 — Base Canônica & Audiovisual Discovery Core (`data/mainstream.db`):** Catálogo universal `IMDbCatalogShow` (`279.362` obras e `4.529.748` episódios em `IMDbEpisodeCatalog`) + `MediaWork`, taxonomia canônica (`canonical_taxonomy.py`: 31 categorias, 25 streamings normalizados via TMDB `/discover`, 8 formatos, fontes multi-provedor dinâmicas), índice bilíngue `FTS5` PT-BR/EN-US (`shows_fts`), motor SQL Pushdown (`DiscoveryEngineRepository`), snapshot global `global_facets_v2`, preferências híbridas (`/api/explore/preferences`) e experiência unificada **Explorar** (`ExplorerView.tsx`, Modo Adaptativo + Roleta + Filtros Híbridos com `AbortController`).
+  - **Camada 2 — Base de Recursos Externos Pluggable Multi-Provedor & Personal Media Ecosystem (`data/sources.db` + `data/mainstream.db`):** Sistema extensível de plugins (`src/backend/providers/sources/`: `eztv`, `yify`, `torrent_api_py`, `torznab`, `unique_web`) com autodiscovery (`pkgutil.iter_modules`), instâncias 1:N configuráveis em `ExternalSourceRecord` / `ExternalRelease` (`sources_metadata`) + base `EZTVShow` (`860` séries / `140.571` episódios, `CatalogShow`, `CatalogRelease`) em `data/sources.db`, Lazy-Cache 24h com `EntityResolutionService` (`>= 0.85` persistido vs `0.60–0.84` `approx_matches`) e alerta manual de CAPTCHA/Challenge (`challenge_url`), servidos por `/api/sources/*`, `SourcesView.tsx` (**Fontes de Dados**), `TorrentModal.tsx` e `StatusConfigView.tsx`, além de biblioteca pessoal (`ShowRecord`), progresso por episódio (`EpisodeWatchRecord`), disponibilidade SMB (`LocalMediaRecord`) e `BackgroundSyncService` + `ReleaseNotificationRecord`.
   - **Camada 3 — Personalization & Intelligence:** Motor de similaridade multi-critério com justificativa explícita, coleções inteligentes (`CollectionRecord`) e exclusão de títulos já assistidos.
-- **Status do Build / Quality Gate:** **PASSING** (`69/69` testes aprovados, `ruff check` 100% limpo, `tsc --noEmit` limpo, bundle SPA Vite compilado em `src/backend/static/dist/`).
+- **Status do Build / Quality Gate:** **PASSING** (`72/72` testes aprovados, `ruff check` 100% limpo, `tsc --noEmit` limpo, bundle SPA Vite compilado em `src/backend/static/dist/`).
 
 ---
 
@@ -33,6 +33,7 @@
 | **ADR-010** | [Otimização de Desempenho de Leitura Dual-SQLite, Estatísticas Materializadas, Cache Escopado por Engine e FTS5](./docs/adr/ADR-010-ER.md) | Sim | 21/21 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
 | **ADR-011** | [Consolidação Dual-SSOT (`data/mainstream.db` vs `data/sources.db`), IMDb Universal (`279k+` Títulos) e Motor SQL Pushdown](./docs/adr/ADR-011-ER.md) | Sim | 16/16 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
 | **ADR-012** | [Experiência Unificada `Explorar`, Camada Multi-Fonte `Fontes de Dados`, Central `StatusConfigView` e `ShowCard` Interativo](./docs/adr/ADR-012-ER.md) | Sim | 18/18 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
+| **ADR-013** | [Sistema Extensível de Plugins para Fontes Externas (Adapters 1:N, Torrent-Api-py, Torznab, Lazy-Cache & Challenge Manual)](./docs/adr/ADR-013-ER.md) | Sim | 16/16 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
 
 ---
 

@@ -22,17 +22,22 @@ class SourcesBase(SQLModel):
 
 
 class ExternalSourceRecord(SourcesBase, table=True):
-    """Registry entry and sync telemetry for an external data/media source."""
+    """Registry entry, dynamic instance configuration, and sync telemetry for a media source."""
 
     __tablename__ = "external_sources"
 
     source_key: str = Field(primary_key=True)
     display_name: str
+    adapter_key: str = Field(default="eztv", index=True)
+    source_kind: str = Field(default="torrent_mirrorable", index=True)
     kind: str = Field(default="torrent_api")
     media_types: str = Field(default="tvSeries")
     base_url: Optional[str] = None
+    config_json: str = Field(default="{}")
+    priority: int = Field(default=100, index=True)
     enabled: bool = Field(default=True, index=True)
     status: str = Field(default="ready", index=True)
+    cooldown_until: Optional[datetime] = None
     last_sync_at: Optional[datetime] = None
     last_error: Optional[str] = None
     total_titles: int = Field(default=0)
@@ -68,5 +73,8 @@ class ExternalRelease(SourcesBase, table=True):
     genres: Optional[str] = None
     year: Optional[int] = None
     rating: float = Field(default=0.0)
+    matched_by: str = Field(default="exact_imdb")
+    match_confidence: float = Field(default=1.0)
+    last_checked_at: Optional[datetime] = Field(default_factory=_utc_now)
     published_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=_utc_now)

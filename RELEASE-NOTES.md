@@ -4,6 +4,21 @@ Este documento consolida os marcos de valor de negócio, evolução arquitetural
 
 ---
 
+## 🚀 Sistema Extensível de Plugins para Fontes Externas — ADR-013 (Branch `UI-UX`, 2026-11-19)
+
+### 🌟 Destaques Executivos e Evolução Arquitetural (`ADR-013`)
+1. **Autodiscovery de Plugins (`pkgutil.iter_modules`) & Instâncias 1:N (`DEC-001`, `DEC-003`):**
+   - Novo pacote [src/backend/providers/sources/](file:///home/loupan/projetosVS/tv-pirata/src/backend/providers/sources/__init__.py) com contrato `BaseSourceAdapter`, decorator `@register_source_adapter` e 5 adaptadores concretos: `eztv_adapter.py` (catálogo base), `yify_adapter.py` (YTS JSON API v2), `torrent_api_py_adapter.py` (sidecar 1:N `Ryuk-me/Torrent-Api-py` cobrindo `1337x`, `tgx`, `piratebay`, `nyaasi`, `bitsearch`, `limetorrent`, `yts`), `torznab_adapter.py` (conector XML Jackett/Prowlarr via stdlib `xml.etree.ElementTree`) e `unique_web_adapter.py` (fontes web únicas não-torrent).
+   - CRUD completo de instâncias 1:N (`GET /api/sources/adapters`, `POST /api/sources`, `PATCH /api/sources/{key}`, `DELETE /api/sources/{key}`, `POST /api/sources/{key}/test`) com sanitização Zero-Trust (`validate_safe_url`, `mask_secret_config`, `merge_preserving_secrets`).
+2. **Lazy-Cache 24h com `EntityResolutionService` & Alerta Manual de CAPTCHA/Challenge (`DEC-002`, `DEC-004`):**
+   - Busca sob demanda (`live=auto|force`, `q_override`) que reutiliza cache local fresco (`< 24h`) e reconcilia resultados via `compute_title_match_confidence`: correspondências com `confidence >= 0.85` são persistidas em `ExternalRelease` (alimentando `has_media` e `media_sources`), enquanto `0.60 <= confidence < 0.85` são exibidas apenas como `approx_matches` efêmeros sem poluir `data/sources.db`.
+   - Circuit breaker de 2 níveis (por instância e cooldown de 60s por host compartilhado) e banner `44×44px` de desafio manual (`challenge_url`) em [TorrentModal.tsx](file:///home/loupan/projetosVS/tv-pirata/src/frontend/src/components/TorrentModal.tsx) para fontes bloqueadas por Cloudflare/reCAPTCHA.
+3. **Deshardcoding Total de Fontes & Gerenciador Visual (`DEC-005`, `DEC-006`):**
+   - Facetas e filtros SQL dinâmicos em [discovery_engine.py](file:///home/loupan/projetosVS/tv-pirata/src/backend/repositories/discovery_engine.py) e [ExplorerView.tsx](file:///home/loupan/projetosVS/tv-pirata/src/frontend/src/components/ExplorerView.tsx), e gerenciador `+ Adicionar Fonte` / `Config` / `Testar` em [StatusConfigView.tsx](file:///home/loupan/projetosVS/tv-pirata/src/frontend/src/components/StatusConfigView.tsx).
+   - Suíte hermética ampliada para **72 testes aprovados** ([test_source_plugins_contract.py](file:///home/loupan/projetosVS/tv-pirata/tests/integration/test_source_plugins_contract.py)) e `ADR-013` arquivada (`16/16` — [ADR-013-ER.md](file:///home/loupan/projetosVS/tv-pirata/docs/adr/ADR-013-ER.md)).
+
+---
+
 ## 🚀 Consolidação UI/UX & Multi-Fonte — ADR-012 (Branch `UI-UX`, 2026-11-17)
 
 ### 🌟 Destaques Executivos e Evolução Arquitetural (`ADR-012`)

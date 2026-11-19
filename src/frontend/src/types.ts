@@ -428,15 +428,47 @@ export interface UserExplorePreferences {
 export interface ExternalSourceSummary {
   source_key: string;
   display_name: string;
+  adapter_key?: string;
+  source_kind?: "torrent_mirrorable" | "unique_web_source" | string;
   kind: string;
   media_types: string[];
   base_url?: string | null;
+  config?: Record<string, any>;
+  priority?: number;
   enabled: boolean;
-  status: "ready" | "syncing" | "degraded" | "idle" | string;
+  status: "ready" | "syncing" | "degraded" | "cooldown" | "challenge_required" | "idle" | string;
+  cooldown_until?: string | null;
   last_sync_at?: string | null;
   last_error?: string | null;
   total_titles: number;
   total_releases: number;
+  supports_sync?: boolean;
+  supports_search?: boolean;
+}
+
+export interface SourceAdapterMetadata {
+  adapter_key: string;
+  display_name: string;
+  description: string;
+  default_source_kind: "torrent_mirrorable" | "unique_web_source" | string;
+  default_media_types: string[];
+  supports_sync: boolean;
+  supports_search: boolean;
+  secret_fields: string[];
+  config_schema: Record<string, any>;
+}
+
+export interface SourceDiagnosticInfo {
+  source_key: string;
+  source_name: string;
+  adapter_key: string;
+  source_kind: "torrent_mirrorable" | "unique_web_source" | string;
+  status: "ok" | "challenge_required" | "cooldown" | "timeout" | "error" | string;
+  message?: string | null;
+  challenge_url?: string | null;
+  from_cache: boolean;
+  cached_at?: string | null;
+  latency_ms?: number;
 }
 
 export interface SourcesSummaryResponse {
@@ -466,6 +498,8 @@ export interface SourceReleaseItem {
   magnet_url: string;
   torrent_url?: string | null;
   external_url?: string | null;
+  matched_by?: string;
+  match_confidence?: number;
 }
 
 export interface SourceReleasesResponse {
@@ -474,6 +508,8 @@ export interface SourceReleasesResponse {
   available_sources: string[];
   by_source: Record<string, SourceReleaseItem[]>;
   items: SourceReleaseItem[];
+  approx_matches?: SourceReleaseItem[];
+  source_diagnostics?: Record<string, SourceDiagnosticInfo>;
 }
 
 export interface SourceCatalogItem {

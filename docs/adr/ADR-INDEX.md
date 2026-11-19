@@ -16,4 +16,5 @@
 | ADR-010 | ADR-010: Otimização de Desempenho de Leitura Dual-SQLite, Estatísticas Materializadas, Cache Escopado por Engine e FTS5 | Sim | 21/21 | CONSOLIDADA | - | ARCHIVED_OK |
 | ADR-011 | ADR-011: Consolidação Dual-SSOT (`data/mainstream.db` vs `data/sources.db`), IMDb como Âncora Universal (279k+ Títulos / 4.5M+ Episódios) e Motor SQL Pushdown | Sim | 16/16 | CONSOLIDADA | - | ARCHIVED_OK |
 | ADR-012 | Experiência Unificada de Exploração, Camada Multi-Fonte de Dados, Central Status/Sync/Config e ShowCard Interativo | Sim | 18/18 | CONSOLIDADA | ADR-008, ADR-009, ADR-010, ADR-011 | ARCHIVED_OK |
-| ADR-013 | Sistema Extensível de Plugins para Fontes Externas (Adapters 1:N, Torrent-Api-py, Torznab, Lazy-Cache & Challenge Manual) | Não | 0/16 | PENDENTE | ADR-011, ADR-012 | ACTIVE |
+| ADR-013 | Sistema Extensível de Plugins para Fontes Externas (Adapters 1:N, Torrent-Api-py, Torznab, Lazy-Cache & Challenge Manual) | Sim | 16/16 | CONSOLIDADA | ADR-011, ADR-012 | ARCHIVED_OK |
+| ADR-014 | Alinhamento Canônico com sources-apis.md (YTS movies-api.accel.li & EZTV), Curadoria Torrent-Api-py (12 Sites), Sincronia Bipartida em 2 Etapas e Sync Command Deck UI/UX | Não | 0/16 | PENDENTE | ADR-011, ADR-012, ADR-013 | ACTIVE |

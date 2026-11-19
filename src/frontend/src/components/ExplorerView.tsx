@@ -108,10 +108,7 @@ const WORK_TYPE_LABELS: Record<string, string> = {
   short: "Curta-Metragem",
 };
 
-const DATA_SOURCE_OPTIONS: Array<{ key: string; label: string; accent: string }> = [
-  { key: "eztv", label: "EZTV P2P (sources.db)", accent: "text-yellow-200 border-yellow-400/50 bg-yellow-500/20" },
-  { key: "yify", label: "YIFY / YTS (sources.db)", accent: "text-emerald-200 border-emerald-400/50 bg-emerald-500/20" },
-  { key: "1337x", label: "1337x (sources.db)", accent: "text-cyan-200 border-cyan-400/50 bg-cyan-500/20" },
+const STATIC_METADATA_SOURCES: Array<{ key: string; label: string; accent: string }> = [
   { key: "p2p_active", label: "Seeds Ativos", accent: "text-emerald-200 border-emerald-400/50 bg-emerald-500/20" },
   { key: "imdb", label: "IMDb Universal", accent: "text-amber-200 border-amber-400/50 bg-amber-500/20" },
   { key: "tmdb", label: "TMDB Hidratado", accent: "text-sky-200 border-sky-400/50 bg-sky-500/20" },
@@ -305,9 +302,41 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
   const [works, setWorks] = useState<MediaWorkSummary[]>([]);
   const [totalWorks, setTotalWorks] = useState<number>(0);
   const [facets, setFacets] = useState<DiscoveryFacets | null>(null);
+  const [dynamicPluginSources, setDynamicPluginSources] = useState<
+    Array<{ key: string; label: string; accent: string }>
+  >([]);
   const [initialLoading, setInitialLoading] = useState<boolean>(true);
   const [isRefetching, setIsRefetching] = useState<boolean>(false);
   const [selectedDossier, setSelectedDossier] = useState<MediaWorkDossier | null>(null);
+
+  useEffect(() => {
+    api.sources
+      .getSummary()
+      .then((res) => {
+        const dynamicOpts = res.sources
+          .filter((s) => s.enabled || s.total_releases > 0)
+          .map((s) => ({
+            key: s.source_key,
+            label: `${s.display_name} (sources.db)`,
+            accent: "text-emerald-200 border-emerald-400/50 bg-emerald-500/20",
+          }));
+        setDynamicPluginSources(dynamicOpts);
+      })
+      .catch(() => {});
+  }, [refreshSignal]);
+
+  const dataSourceOptions = useMemo(() => {
+    const merged: Array<{ key: string; label: string; accent: string }> = [
+      {
+        key: "media",
+        label: "Com Mídia (Qualquer Fonte)",
+        accent: "text-teal-200 border-teal-400/50 bg-teal-500/20",
+      },
+      ...dynamicPluginSources,
+      ...STATIC_METADATA_SOURCES,
+    ];
+    return merged;
+  }, [dynamicPluginSources]);
 
   // People & Calendar state
   const [peopleList, setPeopleList] = useState<PersonSummary[]>([]);
@@ -964,7 +993,7 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
                     Fontes de Dados &amp; Provedores
                   </span>
                   <div className="flex flex-wrap gap-1.5">
-                    {DATA_SOURCE_OPTIONS.map((src) => {
+                    {dataSourceOptions.map((src) => {
                       const active = draft.selectedSources.includes(src.key);
                       const count =
                         facets?.data_sources?.find((ds) => ds.key === src.key)?.count ?? 0;

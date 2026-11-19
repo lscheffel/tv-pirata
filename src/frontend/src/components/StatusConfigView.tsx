@@ -1,20 +1,26 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Activity,
+  AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Database,
+  Plus,
   RefreshCw,
   RotateCcw,
   Settings,
   Sliders,
+  Trash2,
+  Wifi,
   Zap,
-  AlertTriangle,
 } from "lucide-react";
 import {
   ExternalSourceSummary,
   MediaBadgeAction,
   ProviderBadgeAction,
   SchedulerTelemetry,
+  SourceAdapterMetadata,
 } from "../types";
 import { api } from "../services/api";
 import { useExplorePreferences } from "../context/PreferencesContext";
@@ -40,24 +46,56 @@ export const StatusConfigView: React.FC<StatusConfigViewProps> = ({
     eztv_badged_titles: number;
   } | null>(null);
   const [sources, setSources] = useState<ExternalSourceSummary[]>([]);
+  const [adapters, setAdapters] = useState<SourceAdapterMetadata[]>([]);
   const [scheduler, setScheduler] = useState<SchedulerTelemetry | null>(null);
 
   const [mainstreamMode, setMainstreamMode] = useState<"delta" | "hydrate" | "badges">("delta");
   const [updatingMainstream, setUpdatingMainstream] = useState(false);
   const [syncingSourceKey, setSyncingSourceKey] = useState<string | null>(null);
+  const [testingSourceKey, setTestingSourceKey] = useState<string | null>(null);
   const [syncingScheduler, setSyncingScheduler] = useState(false);
+
+  // Expandable source config drawer state
+  const [expandedSourceKey, setExpandedSourceKey] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<{
+    display_name: string;
+    source_kind: string;
+    priority: number;
+    base_url: string;
+    mirrors_text: string;
+    site: string;
+    api_key: string;
+    categories: string;
+    browser_search_url: string;
+    ttl_hours: number;
+  } | null>(null);
+
+  // Add Source Instance form state
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newAdapterKey, setNewAdapterKey] = useState("torrent_api_py");
+  const [newSourceKey, setNewSourceKey] = useState("");
+  const [newDisplayName, setNewDisplayName] = useState("");
+  const [newSourceKind, setNewSourceKind] = useState("torrent_mirrorable");
+  const [newBaseUrl, setNewBaseUrl] = useState("http://127.0.0.1:8009");
+  const [newSite, setNewSite] = useState("tgx");
+  const [newApiKey, setNewApiKey] = useState("");
+  const [newBrowserUrl, setNewBrowserUrl] = useState("");
 
   const loadTelemetry = useCallback(() => {
     Promise.all([
       api.explore.getMainstreamStats().catch(() => null),
       api.sources.getSummary().catch(() => null),
+      api.sources.getAdapters().catch(() => null),
       api.notifications.getSchedulerStatus().catch(() => null),
-    ]).then(([ms, src, sched]) => {
+    ]).then(([ms, src, adp, sched]) => {
       if (ms) setMainstreamStats(ms);
       if (src) setSources(src.sources);
+      if (adp) setAdapters(adp.adapters);
       if (sched) setScheduler(sched);
 
-      const hasDegraded = Boolean(src?.sources.some((s) => s.status === "degraded"));
+      const hasDegraded = Boolean(
+        src?.sources.some((s) => s.status === "degraded" || s.status === "challenge_required")
+      );
       onHealthChange?.(hasDegraded ? "degraded" : "healthy");
     });
   }, [onHealthChange]);
@@ -65,6 +103,153 @@ export const StatusConfigView: React.FC<StatusConfigViewProps> = ({
   useEffect(() => {
     loadTelemetry();
   }, [loadTelemetry]);
+
+  const handleOpenEditSource = (src: ExternalSourceSummary) => {
+    if (expandedSourceKey === src.source_key) {
+      setExpandedSourceKey(null);
+      setEditDraft(null);
+      return;
+    }
+    const cfg = src.config || {};
+    setExpandedSourceKey(src.source_key);
+    setEditDraft({
+      display_name: src.display_name,
+      source_kind: src.source_kind || "torrent_mirrorable",
+      priority: src.priority ?? 100,
+      base_url: String(cfg.base_url || src.base_url || ""),
+      mirrors_text: Array.isArray(cfg.mirrors) ? cfg.mirrors.join(", ") : "",
+      site: String(cfg.site || "1337x"),
+      api_key: String(cfg.api_key || ""),
+      categories: String(cfg.categories || "2000,5000"),
+      browser_search_url: String(cfg.browser_search_url || cfg.public_web_Search_url || ""),
+      ttl_hours: Number(cfg.ttl_hours || 24),
+    });
+  };
+
+  const handleSaveSourceConfig = async (src: ExternalSourceSummary) => {
+    if (!editDraft) return;
+    try {
+      const mirrors = editDraft.mirrors_text
+        .split(",")
+        .map((m) => m.trim())
+        .filter(Boolean);
+      const nextCfg: Record<string, any> = {
+        ...(src.config || {}),
+        base_url: editDraft.base_url.trim(),
+        mirrors,
+        ttl_hours: editDraft.ttl_hours,
+      };
+      if (src.adapter_key === "torrent_api_py") {
+        nextCfg.site = editDraft.site;
+        nextCfg.api_key = editDraft.api_key;
+        if (editDraft.browser_search_url.trim()) {
+          nextCfg.public_web_Search_url = editDraft.browser_search_url.trim();
+        }
+      } else if (src.adapter_key === "torznab") {
+        nextCfg.api_key = editDraft.api_key;
+        nextCfg.categories = editDraft.categories;
+      } else if (src.adapter_key === "unique_web") {
+        nextCfg.api_key = editDraft.api_key;
+        nextCfg.browser_search_url = editDraft.browser_search_url.trim();
+      }
+
+      await api.sources.updateSource(src.source_key, {
+        display_name: editDraft.display_name,
+        source_kind: editDraft.source_kind,
+        priority: editDraft.priority,
+        config: nextCfg,
+        clear_cooldown: true,
+      });
+      showToast(`Configurações de "${editDraft.display_name}" salvas!`, "success");
+      setExpandedSourceKey(null);
+      setEditDraft(null);
+      onDataUpdated?.();
+      loadTelemetry();
+    } catch (err: any) {
+      showToast(err?.message || "Erro ao salvar configuração da fonte", "error");
+    }
+  };
+
+  const handleToggleSourceEnabled = async (src: ExternalSourceSummary) => {
+    try {
+      await api.sources.updateSource(src.source_key, { enabled: !src.enabled });
+      showToast(
+        `Fonte ${src.display_name} ${!src.enabled ? "ativada" : "desativada"}.`,
+        "info"
+      );
+      onDataUpdated?.();
+      loadTelemetry();
+    } catch {
+      showToast("Erro ao alternar status da fonte", "error");
+    }
+  };
+
+  const handleTestSource = async (sourceKey: string) => {
+    setTestingSourceKey(sourceKey);
+    try {
+      const res = await api.sources.testSource(sourceKey);
+      if (res.status === "ok") {
+        showToast(
+          `Conexão OK (${res.latency_ms}ms) • ${res.releases_found ?? 0} resultados de teste.`,
+          "success"
+        );
+      } else if (res.status === "challenge_required") {
+        showToast(`Desafio CAPTCHA detectado (${res.latency_ms}ms): ${res.message}`, "info");
+      } else {
+        showToast(`Falha no teste (${res.latency_ms}ms): ${res.message || res.status}`, "error");
+      }
+      loadTelemetry();
+    } catch {
+      showToast("Erro ao testar conexão com a fonte", "error");
+    } finally {
+      setTestingSourceKey(null);
+    }
+  };
+
+  const handleCreateSource = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const config: Record<string, any> = { base_url: newBaseUrl.trim() };
+      if (newAdapterKey === "torrent_api_py") {
+        config.site = newSite;
+        if (newApiKey.trim()) config.api_key = newApiKey.trim();
+      } else if (newAdapterKey === "torznab") {
+        config.api_key = newApiKey.trim();
+      } else if (newAdapterKey === "unique_web") {
+        if (newApiKey.trim()) config.api_key = newApiKey.trim();
+        if (newBrowserUrl.trim()) config.browser_search_url = newBrowserUrl.trim();
+      }
+
+      await api.sources.createSource({
+        adapter_key: newAdapterKey,
+        source_key: newSourceKey.trim() || newDisplayName.trim(),
+        display_name: newDisplayName.trim() || newSourceKey.trim(),
+        source_kind: newSourceKind,
+        config,
+      });
+      showToast("Nova fonte adicionada com sucesso!", "success");
+      setShowAddForm(false);
+      setNewSourceKey("");
+      setNewDisplayName("");
+      setNewApiKey("");
+      onDataUpdated?.();
+      loadTelemetry();
+    } catch (err: any) {
+      showToast(err?.message || "Erro ao criar nova fonte", "error");
+    }
+  };
+
+  const handleDeleteSource = async (sourceKey: string) => {
+    try {
+      await api.sources.deleteSource(sourceKey);
+      showToast(`Fonte '${sourceKey}' removida.`, "info");
+      setExpandedSourceKey(null);
+      onDataUpdated?.();
+      loadTelemetry();
+    } catch (err: any) {
+      showToast(err?.message || "Erro ao remover fonte", "error");
+    }
+  };
 
   const handleUpdateMainstream = async () => {
     setUpdatingMainstream(true);
@@ -133,18 +318,17 @@ export const StatusConfigView: React.FC<StatusConfigViewProps> = ({
             </h1>
           </div>
           <p className="text-sm text-slate-300 mt-1">
-            Monitoramento Dual-SSOT (mainstream.db + sources.db) e comportamento interativo do catálogo
+            Monitoramento Dual-SSOT (mainstream.db + sources.db), plugins de fontes externas e preferências
           </p>
         </div>
 
         <span
-          className={`self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border ${
-            syncState === "synced"
-              ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-300"
-              : syncState === "syncing"
-                ? "bg-amber-950/60 border-amber-500/40 text-amber-300"
-                : "bg-surface-elevated border-white/15 text-slate-300"
-          }`}
+          className={`self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border ${syncState === "synced"
+            ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-300"
+            : syncState === "syncing"
+              ? "bg-amber-950/60 border-amber-500/40 text-amber-300"
+              : "bg-surface-elevated border-white/15 text-slate-300"
+            }`}
         >
           <CheckCircle2 className="w-3.5 h-3.5" />
           Preferências:{" "}
@@ -156,16 +340,16 @@ export const StatusConfigView: React.FC<StatusConfigViewProps> = ({
         </span>
       </div>
 
-      {/* SECTION 1: Dual-SSOT Health & Sync */}
+      {/* SECTION 1: Dual-SSOT Health, Plugins & Sync */}
       <section aria-labelledby="dual-ssot-heading" className="space-y-4">
         <div className="flex items-center gap-2">
           <Activity className="w-5 h-5 text-emerald-400" />
           <h2 id="dual-ssot-heading" className="text-lg font-extrabold text-white">
-            Saúde &amp; Sincronização Dual-SSOT
+            Saúde Dual-SSOT &amp; Plugins de Fontes Externas
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
           {/* Canonical DB Card */}
           <div className="p-5 rounded-2xl bg-surface-elevated border border-white/10 space-y-4">
             <div className="flex items-start justify-between gap-3">
@@ -242,67 +426,421 @@ export const StatusConfigView: React.FC<StatusConfigViewProps> = ({
             </div>
           </div>
 
-          {/* External Sources DB + Auto-Sync Card */}
+          {/* External Sources DB + Dynamic Plugins Card */}
           <div className="p-5 rounded-2xl bg-surface-elevated border border-white/10 space-y-4">
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
                   <Zap className="w-5 h-5 text-emerald-400" />
                   <h3 className="text-base font-bold text-white">
-                    Base de Recursos (sources.db)
+                    Base de Recursos &amp; Plugins (sources.db)
                   </h3>
                 </div>
                 <p className="text-xs text-slate-300 mt-1">
-                  Indexadores multi-provedor e serviço de auto-sync em background
+                  EZTV base + plugins 1:N (Torrent-Api-py, Torznab, YIFY, Fontes Web Únicas)
                 </p>
               </div>
-              <button
-                type="button"
-                disabled={syncingSourceKey !== null}
-                onClick={() => handleSyncSource("all")}
-                className="min-h-[44px] flex items-center gap-1.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold disabled:opacity-50 cursor-pointer"
-              >
-                <RefreshCw
-                  className={`w-3.5 h-3.5 ${syncingSourceKey === "all" ? "animate-spin" : ""}`}
-                />
-                Sincronizar Todas
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm((prev) => !prev)}
+                  className="min-h-[44px] flex items-center gap-1.5 px-3.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  + Adicionar Fonte
+                </button>
+                <button
+                  type="button"
+                  disabled={syncingSourceKey !== null}
+                  onClick={() => handleSyncSource("all")}
+                  className="min-h-[44px] flex items-center gap-1.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold disabled:opacity-50 cursor-pointer"
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${syncingSourceKey === "all" ? "animate-spin" : ""}`}
+                  />
+                  Sincronizar Todas
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              {sources.map((src) => (
-                <div
-                  key={src.source_key}
-                  className="flex items-center justify-between gap-3 p-3 rounded-xl bg-canvas border border-white/10"
-                >
+            {/* + Adicionar Fonte Drawer */}
+            {showAddForm && (
+              <form
+                onSubmit={handleCreateSource}
+                className="p-4 rounded-xl bg-canvas border border-sky-500/40 space-y-3"
+              >
+                <div className="text-xs font-extrabold uppercase tracking-wider text-sky-300">
+                  Instanciar Novo Plugin de Fonte Externa
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <div className="flex items-center gap-2">
-                      {src.status === "degraded" ? (
-                        <AlertTriangle className="w-4 h-4 text-amber-400" />
-                      ) : (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      )}
-                      <span className="text-sm font-bold text-white">{src.display_name}</span>
-                      <span className="text-[11px] text-slate-300">
-                        ({src.total_titles.toLocaleString("pt-BR")} títulos •{" "}
-                        {src.total_releases.toLocaleString("pt-BR")} releases)
-                      </span>
-                    </div>
-                    {src.last_error && (
-                      <p className="text-[11px] text-amber-300 mt-0.5">{src.last_error}</p>
-                    )}
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                      Tipo de Adapter (Plugin)
+                    </label>
+                    <select
+                      value={newAdapterKey}
+                      onChange={(e) => {
+                        const ak = e.target.value;
+                        setNewAdapterKey(ak);
+                        const found = adapters.find((a) => a.adapter_key === ak);
+                        if (found) setNewSourceKind(found.default_source_kind);
+                        if (ak === "torznab") setNewBaseUrl("http://127.0.0.1:9696/1/api");
+                        else if (ak === "torrent_api_py") setNewBaseUrl("http://127.0.0.1:8009");
+                        else if (ak === "unique_web") setNewBaseUrl("https://example.org/api/search");
+                      }}
+                      className="w-full min-h-[40px] bg-surface-elevated border border-white/15 rounded-lg px-2.5 text-xs text-white"
+                    >
+                      {adapters
+                        .filter((a) => a.adapter_key !== "eztv")
+                        .map((a) => (
+                          <option key={a.adapter_key} value={a.adapter_key}>
+                            {a.display_name}
+                          </option>
+                        ))}
+                    </select>
                   </div>
-
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                      Comportamento de Fallback
+                    </label>
+                    <select
+                      value={newSourceKind}
+                      onChange={(e) => setNewSourceKind(e.target.value)}
+                      className="w-full min-h-[40px] bg-surface-elevated border border-white/15 rounded-lg px-2.5 text-xs text-white"
+                    >
+                      <option value="torrent_mirrorable">
+                        Torrent Multi-Mirror (Rotação Automática)
+                      </option>
+                      <option value="unique_web_source">
+                        Fonte Web Única (Aviso Manual CAPTCHA)
+                      </option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                      Identificador (source_key)
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newSourceKey}
+                      onChange={(e) => setNewSourceKey(e.target.value)}
+                      placeholder="Ex: tgx, nyaasi, prowlarr_4k..."
+                      className="w-full min-h-[40px] bg-surface-elevated border border-white/15 rounded-lg px-2.5 text-xs text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                      Nome de Exibição
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newDisplayName}
+                      onChange={(e) => setNewDisplayName(e.target.value)}
+                      placeholder="Ex: TorrentGalaxy, Prowlarr..."
+                      className="w-full min-h-[40px] bg-surface-elevated border border-white/15 rounded-lg px-2.5 text-xs text-white"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                      URL Base (http:// ou https://)
+                    </label>
+                    <input
+                      type="url"
+                      required
+                      value={newBaseUrl}
+                      onChange={(e) => setNewBaseUrl(e.target.value)}
+                      className="w-full min-h-[40px] bg-surface-elevated border border-white/15 rounded-lg px-2.5 text-xs text-white"
+                    />
+                  </div>
+                  {newAdapterKey === "torrent_api_py" && (
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        Site no Torrent-Api-py
+                      </label>
+                      <select
+                        value={newSite}
+                        onChange={(e) => setNewSite(e.target.value)}
+                        className="w-full min-h-[40px] bg-surface-elevated border border-white/15 rounded-lg px-2.5 text-xs text-white"
+                      >
+                        <option value="1337x">1337x</option>
+                        <option value="tgx">TorrentGalaxy (tgx)</option>
+                        <option value="nyaasi">Nyaa.si</option>
+                        <option value="piratebay">ThePirateBay</option>
+                        <option value="bitsearch">BitSearch</option>
+                        <option value="kickass">KickAss</option>
+                      </select>
+                    </div>
+                  )}
+                  {(newAdapterKey === "torznab" ||
+                    newAdapterKey === "torrent_api_py" ||
+                    newAdapterKey === "unique_web") && (
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                          API Key / Token (Secreto)
+                        </label>
+                        <input
+                          type="password"
+                          value={newApiKey}
+                          onChange={(e) => setNewApiKey(e.target.value)}
+                          placeholder="Opcional (mascarado na API)"
+                          className="w-full min-h-[40px] bg-surface-elevated border border-white/15 rounded-lg px-2.5 text-xs text-white"
+                        />
+                      </div>
+                    )}
+                  {newAdapterKey === "unique_web" && (
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        URL Manual do Navegador p/ CAPTCHA (use {"{query}"})
+                      </label>
+                      <input
+                        type="url"
+                        value={newBrowserUrl}
+                        onChange={(e) => setNewBrowserUrl(e.target.value)}
+                        placeholder="https://example.org/search?q={query}"
+                        className="w-full min-h-[40px] bg-surface-elevated border border-white/15 rounded-lg px-2.5 text-xs text-white"
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
                   <button
                     type="button"
-                    disabled={syncingSourceKey !== null}
-                    onClick={() => handleSyncSource(src.source_key)}
-                    className="min-h-[44px] px-3 rounded-lg bg-surface-elevated hover:bg-white/10 border border-white/15 text-xs font-bold text-slate-100 disabled:opacity-50 cursor-pointer"
+                    onClick={() => setShowAddForm(false)}
+                    className="min-h-[40px] px-3 rounded-lg bg-white/10 text-xs font-bold text-slate-200 cursor-pointer"
                   >
-                    {syncingSourceKey === src.source_key ? "Sincronizando..." : "Sincronizar"}
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="min-h-[40px] px-4 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-extrabold cursor-pointer"
+                  >
+                    Salvar Nova Fonte
                   </button>
                 </div>
-              ))}
+              </form>
+            )}
+
+            {/* Registered Source Instances List */}
+            <div className="space-y-2.5">
+              {sources.map((src) => {
+                const isExpanded = expandedSourceKey === src.source_key;
+                const isChallenge = src.status === "challenge_required";
+                const isDegraded = src.status === "degraded" || src.status === "cooldown";
+
+                return (
+                  <div
+                    key={src.source_key}
+                    className="rounded-xl bg-canvas border border-white/10 overflow-hidden"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3 p-3">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <input
+                            type="checkbox"
+                            checked={src.enabled}
+                            onChange={() => handleToggleSourceEnabled(src)}
+                            aria-label={`Ativar ou desativar ${src.display_name}`}
+                            className="accent-emerald-400 cursor-pointer"
+                          />
+                          {isChallenge || isDegraded ? (
+                            <AlertTriangle className="w-4 h-4 text-amber-400" />
+                          ) : (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          )}
+                          <span className="text-sm font-bold text-white">
+                            {src.display_name}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded bg-white/5 text-[10px] font-mono text-slate-300">
+                            {src.adapter_key || src.kind}
+                          </span>
+                          <span className="text-[11px] text-slate-300">
+                            ({src.total_titles.toLocaleString("pt-BR")} títulos •{" "}
+                            {src.total_releases.toLocaleString("pt-BR")} releases)
+                          </span>
+                        </div>
+                        {src.last_error && (
+                          <p className="text-[11px] text-amber-300">{src.last_error}</p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          disabled={testingSourceKey === src.source_key}
+                          onClick={() => handleTestSource(src.source_key)}
+                          className="min-h-[40px] px-2.5 rounded-lg bg-surface-elevated hover:bg-white/10 border border-white/15 text-xs font-bold text-sky-300 flex items-center gap-1 cursor-pointer"
+                          title="Testar conectividade da fonte"
+                        >
+                          <Wifi className="w-3.5 h-3.5" />
+                          {testingSourceKey === src.source_key ? "Testando..." : "Testar"}
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={syncingSourceKey !== null}
+                          onClick={() => handleSyncSource(src.source_key)}
+                          className="min-h-[40px] px-2.5 rounded-lg bg-surface-elevated hover:bg-white/10 border border-white/15 text-xs font-bold text-slate-100 disabled:opacity-50 cursor-pointer"
+                        >
+                          {syncingSourceKey === src.source_key ? "Sync..." : "Sync"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditSource(src)}
+                          aria-expanded={isExpanded}
+                          className="min-h-[40px] px-2.5 rounded-lg bg-surface-elevated hover:bg-white/10 border border-white/15 text-xs font-bold text-slate-200 flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>Config</span>
+                          {isExpanded ? (
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          ) : (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Expanded Instance Configuration Drawer (DEC-005) */}
+                    {isExpanded && editDraft && (
+                      <div className="p-4 bg-surface-elevated/90 border-t border-white/10 space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                              Nome de Exibição
+                            </label>
+                            <input
+                              type="text"
+                              value={editDraft.display_name}
+                              onChange={(e) =>
+                                setEditDraft({ ...editDraft, display_name: e.target.value })
+                              }
+                              className="w-full min-h-[38px] bg-canvas border border-white/15 rounded-lg px-2.5 text-xs text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                              Política de Fallback
+                            </label>
+                            <select
+                              value={editDraft.source_kind}
+                              onChange={(e) =>
+                                setEditDraft({ ...editDraft, source_kind: e.target.value })
+                              }
+                              className="w-full min-h-[38px] bg-canvas border border-white/15 rounded-lg px-2.5 text-xs text-white"
+                            >
+                              <option value="torrent_mirrorable">
+                                Torrent Multi-Mirror (Rotação Automática)
+                              </option>
+                              <option value="unique_web_source">
+                                Fonte Web Única (Aviso CAPTCHA Manual)
+                              </option>
+                            </select>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                              URL Principal
+                            </label>
+                            <input
+                              type="url"
+                              value={editDraft.base_url}
+                              onChange={(e) =>
+                                setEditDraft({ ...editDraft, base_url: e.target.value })
+                              }
+                              className="w-full min-h-[38px] bg-canvas border border-white/15 rounded-lg px-2.5 text-xs text-white"
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                              Mirrors Alternativos (separados por vírgula)
+                            </label>
+                            <input
+                              type="text"
+                              value={editDraft.mirrors_text}
+                              onChange={(e) =>
+                                setEditDraft({ ...editDraft, mirrors_text: e.target.value })
+                              }
+                              placeholder="https://mirror1.org, https://mirror2.org"
+                              className="w-full min-h-[38px] bg-canvas border border-white/15 rounded-lg px-2.5 text-xs text-white"
+                            />
+                          </div>
+                          {(src.adapter_key === "torznab" ||
+                            src.adapter_key === "torrent_api_py" ||
+                            src.adapter_key === "unique_web") && (
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                                  API Key / Token Secreto (preservado se mantiver ••••)
+                                </label>
+                                <input
+                                  type="password"
+                                  value={editDraft.api_key}
+                                  onChange={(e) =>
+                                    setEditDraft({ ...editDraft, api_key: e.target.value })
+                                  }
+                                  placeholder="•••• (não alterado)"
+                                  className="w-full min-h-[38px] bg-canvas border border-white/15 rounded-lg px-2.5 text-xs text-white"
+                                />
+                              </div>
+                            )}
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                              TTL do Cache Lazy (Horas)
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={720}
+                              value={editDraft.ttl_hours}
+                              onChange={(e) =>
+                                setEditDraft({
+                                  ...editDraft,
+                                  ttl_hours: Number(e.target.value) || 24,
+                                })
+                              }
+                              className="w-full min-h-[38px] bg-canvas border border-white/15 rounded-lg px-2.5 text-xs text-white"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2">
+                          {src.source_key !== "eztv" ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSource(src.source_key)}
+                              className="min-h-[40px] px-3 rounded-lg bg-rose-950/70 hover:bg-rose-900 text-rose-200 border border-rose-500/40 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Remover Fonte
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-slate-400">
+                              Catálogo Base Protegido
+                            </span>
+                          )}
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedSourceKey(null)}
+                              className="min-h-[40px] px-3 rounded-lg bg-white/10 text-xs font-bold text-slate-200 cursor-pointer"
+                            >
+                              Fechar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveSourceConfig(src)}
+                              className="min-h-[40px] px-4 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-extrabold cursor-pointer"
+                            >
+                              Salvar Configuração
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             {scheduler && (
@@ -382,11 +920,10 @@ export const StatusConfigView: React.FC<StatusConfigViewProps> = ({
               ).map((opt) => (
                 <label
                   key={opt.value}
-                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors min-h-[44px] ${
-                    preferences.badge_provider_action === opt.value
-                      ? "bg-brand-red/15 border-brand-red text-white"
-                      : "bg-canvas border-white/10 text-slate-300 hover:border-white/25"
-                  }`}
+                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors min-h-[44px] ${preferences.badge_provider_action === opt.value
+                    ? "bg-brand-red/15 border-brand-red text-white"
+                    : "bg-canvas border-white/10 text-slate-300 hover:border-white/25"
+                    }`}
                 >
                   <input
                     type="radio"
@@ -423,7 +960,7 @@ export const StatusConfigView: React.FC<StatusConfigViewProps> = ({
                   {
                     value: "open_sources_modal",
                     title: "Abrir modal de Fontes de Mídia",
-                    desc: "Lista magnets, torrents e links agrupados por provedor (EZTV, YIFY, 1337x).",
+                    desc: "Lista magnets, torrents e links agrupados por provedor (EZTV, YIFY, 1337x...).",
                   },
                   {
                     value: "filter_has_media",
@@ -439,11 +976,10 @@ export const StatusConfigView: React.FC<StatusConfigViewProps> = ({
               ).map((opt) => (
                 <label
                   key={opt.value}
-                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors min-h-[44px] ${
-                    preferences.badge_media_action === opt.value
-                      ? "bg-emerald-500/15 border-emerald-400 text-white"
-                      : "bg-canvas border-white/10 text-slate-300 hover:border-white/25"
-                  }`}
+                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors min-h-[44px] ${preferences.badge_media_action === opt.value
+                    ? "bg-emerald-500/15 border-emerald-400 text-white"
+                    : "bg-canvas border-white/10 text-slate-300 hover:border-white/25"
+                    }`}
                 >
                   <input
                     type="radio"

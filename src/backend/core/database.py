@@ -278,6 +278,47 @@ def init_eztv_db(target_engine=None) -> None:
     )
     inspector = inspect(active_engine)
     table_names = set(inspector.get_table_names())
+    with active_engine.begin() as conn:
+        if "external_sources" in table_names:
+            es_cols = {c["name"] for c in inspector.get_columns("external_sources")}
+            es_additive = [
+                ("adapter_key", "TEXT DEFAULT 'eztv'"),
+                ("source_kind", "TEXT DEFAULT 'torrent_mirrorable'"),
+                ("config_json", "TEXT DEFAULT '{}'"),
+                ("priority", "INTEGER DEFAULT 100"),
+                ("cooldown_until", "TIMESTAMP"),
+            ]
+            for c_name, c_type in es_additive:
+                if c_name not in es_cols:
+                    conn.execute(
+                        text(f"ALTER TABLE external_sources ADD COLUMN {c_name} {c_type}")
+                    )
+            conn.execute(
+                text(
+                    """
+                    UPDATE external_sources
+                    SET adapter_key = CASE
+                        WHEN source_key = 'yify' THEN 'yify'
+                        WHEN source_key = '1337x' THEN 'torrent_api_py'
+                        ELSE COALESCE(NULLIF(adapter_key, ''), source_key)
+                    END
+                    WHERE adapter_key IS NULL OR adapter_key = ''
+                    """
+                )
+            )
+        if "external_releases" in table_names:
+            er_cols = {c["name"] for c in inspector.get_columns("external_releases")}
+            er_additive = [
+                ("matched_by", "TEXT DEFAULT 'exact_imdb'"),
+                ("match_confidence", "REAL DEFAULT 1.0"),
+                ("last_checked_at", "TIMESTAMP"),
+            ]
+            for c_name, c_type in er_additive:
+                if c_name not in er_cols:
+                    conn.execute(
+                        text(f"ALTER TABLE external_releases ADD COLUMN {c_name} {c_type}")
+                    )
+
     if "shows" not in table_names:
         return
 

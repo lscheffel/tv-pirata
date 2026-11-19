@@ -16,9 +16,11 @@ import {
   SharedCollaborationResponse,
   ShowProgress,
   ShowRecord,
+  SourceAdapterMetadata,
   SourceReleasesResponse,
   SourcesCatalogResponse,
   SourcesSummaryResponse,
+  ExternalSourceSummary,
   TagRecord,
   TorrentRelease,
   UnifiedShow,
@@ -197,17 +199,57 @@ export const api = {
   },
 
   sources: {
+    getAdapters: () =>
+      request<{ adapters: SourceAdapterMetadata[]; load_errors: Record<string, string> }>(
+        "/sources/adapters"
+      ),
     getSummary: () => request<SourcesSummaryResponse>("/sources/summary"),
+    createSource: (payload: Record<string, any>) =>
+      request<ExternalSourceSummary>("/sources", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    updateSource: (sourceKey: string, payload: Record<string, any>) =>
+      request<ExternalSourceSummary>(`/sources/${encodeURIComponent(sourceKey)}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }),
+    deleteSource: (sourceKey: string) =>
+      request<{ status: string; source_key: string }>(
+        `/sources/${encodeURIComponent(sourceKey)}`,
+        { method: "DELETE" }
+      ),
+    testSource: (sourceKey: string) =>
+      request<{
+        source_key: string;
+        adapter_key: string;
+        status: string;
+        releases_found?: number;
+        message?: string | null;
+        challenge_url?: string | null;
+        latency_ms: number;
+      }>(`/sources/${encodeURIComponent(sourceKey)}/test`, { method: "POST" }),
     getReleases: (
       imdbId: string,
       source?: string,
-      options: { signal?: AbortSignal; includeLive?: boolean } = {}
+      options: {
+        signal?: AbortSignal;
+        includeLive?: boolean;
+        live?: "auto" | "cache" | "force";
+        qOverride?: string;
+        title?: string;
+        year?: number;
+      } = {}
     ) => {
       const query = new URLSearchParams({ imdb_id: imdbId });
       if (source && source !== "all") query.append("source", source);
       if (options.includeLive !== undefined) {
         query.append("include_live", String(options.includeLive));
       }
+      if (options.live) query.append("live", options.live);
+      if (options.qOverride) query.append("q_override", options.qOverride);
+      if (options.title) query.append("title", options.title);
+      if (options.year) query.append("year", String(options.year));
       return request<SourceReleasesResponse>(`/sources/releases?${query.toString()}`, {
         signal: options.signal,
       });

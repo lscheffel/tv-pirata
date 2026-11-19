@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] — ADR-013 (2026-11-19)
+
+### Added
+- **Extensible Pluggable External Sources System (`ADR-013`, `DEC-001`..`DEC-006`):**
+  - Created `src/backend/providers/sources/` plugin package with `pkgutil.iter_modules` autodiscovery (`discover_source_adapters()`), `BaseSourceAdapter`, `@register_source_adapter`, and 5 concrete adapters: `eztv_adapter.py`, `yify_adapter.py`, `torrent_api_py_adapter.py` (1:N sidecar adapter for `Ryuk-me/Torrent-Api-py` across `1337x`, `tgx`, `piratebay`, `nyaasi`, `bitsearch`, `limetorrent`, `yts`), `torznab_adapter.py` (stdlib `xml.etree.ElementTree` connector for Jackett/Prowlarr), and `unique_web_adapter.py` (CAPTCHA/Anti-Bot diagnostic detector).
+  - Added Zero-Trust security and scoring utilities (`validate_safe_url`, `mask_secret_config`, `merge_preserving_secrets`, `is_antibot_challenge`, `compute_title_match_confidence`).
+  - Evolved `ExternalSourceRecord` (`adapter_key`, `source_kind`, `config_json`, `priority`, `cooldown_until`) and `ExternalRelease` (`matched_by`, `match_confidence`, `last_checked_at`) in `src/backend/models/sources_db.py` with idempotent `ALTER TABLE ADD COLUMN` migration in `init_eztv_db()`.
+  - Upgraded `SourcesRegistryService` (`src/backend/services/sources_registry.py`) and `/api/sources` (`src/backend/api/sources.py`) with 1:N instance CRUD (`GET /api/sources/adapters`, `POST /api/sources`, `PATCH /api/sources/{key}`, `DELETE /api/sources/{key}`, `POST /api/sources/{key}/test`), 2-level circuit breaker (per-instance + shared host cooldown), and Lazy-Cache 24h (`>= 0.85` write-through to `ExternalRelease` vs `0.60–0.84` ephemeral `approx_matches` + `source_diagnostics` with `challenge_url`).
+  - Dehardcoded dynamic external source facet counts and SQL filtering in `DiscoveryEngineRepository` (`src/backend/repositories/discovery_engine.py`) and `ExplorerView.tsx`.
+  - Upgraded `StatusConfigView.tsx` with `+ Adicionar Fonte` drawer, expandable per-instance config editor, and `Testar` button; upgraded `TorrentModal.tsx` with `"Buscar Ao Vivo"` (`live=force`), query refinement (`q_override`), `44×44px` CAPTCHA manual browser handoff banner (`challenge_url`), and `"Correspondência aproximada (não salva)"` list.
+  - Added `tests/integration/test_source_plugins_contract.py` (`72 passed`).
+
+---
+
 ## [Unreleased] — ADR-012 (2026-11-17)
 
 ### Added

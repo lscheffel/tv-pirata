@@ -174,3 +174,128 @@ Q: Where can I find subtitles to the shows I download from EZTV?
 A: We have setup a separate subtitles page where you
 can find subtitles and information on how to use them.
 Please Click Here.
+
+______________________________________________________________
+
+YTS API
+
+API Documentation
+Our API is a lightweight REST service that provides programmatic access to YTS movies data.
+
+Base URL (v2): <https://movies-api.accel.li/api/v2/>
+
+You can use the API for free in your apps/websites - no API key required. Please cache responses where possible and keep request rates reasonable.
+
+Important: If you are still using the old base URL <https://yts.gg/api/v2/>, please update your integration to the new base URL above. The old endpoint will continue to work for a period, but may be retired in the future.
+
+If you find a bug or have questions/suggestions, please get in touch: Contact Us
+
+API Endpoints
+
+- List Movies
+- Movie Details
+- Movie Suggestions
+- Movie Parental Guides
+
+All the API endpoints return the same data structure as below
+
+Returned Key Description Example
+status The returned status for the API call, can be either 'ok' or 'error' ok
+status_message Either the error message or the successful message Query was successful
+data If 'status' is returned as 'ok' the API query results will be inside 'data' data
+List Movies
+HTTP GET
+Endpoint Description
+<https://movies-api.accel.li/api/v2/list_movies.json>
+<https://movies-api.accel.li/api/v2/list_movies.jsonp>
+<https://movies-api.accel.li/api/v2/list_movies.xml> Used to list and search through out all the available movies. Can sort, filter, search and order the results
+Endpoint Parameters
+Parameter Required Type Default Description
+limit  Integer between 1 - 50 (inclusive) 20 The limit of results per page that has been set
+page  Integer (Unsigned) 1 Used to see the next page of movies, eg limit=15 and page=2 will show you movies 15-30
+quality  String (480p, 720p, 1080p, 1080p.x265, 2160p, 3D) All Used to filter by a given quality
+minimum_rating  Integer between 0 - 9 (inclusive) 0 Used to filter movie by a given minimum IMDb rating
+query_term  String 0 Used for movie search, matching on: Movie Title/IMDb Code, Actor Name/IMDb Code, Director Name/IMDb Code
+genre  String All Used to filter by a given genre (See <http://www.imdb.com/genre/> for full list)
+sort_by  String (title, year, rating, peers, seeds, download_count, like_count, date_added) date_added Sorts the results by choosen value
+order_by  String (desc, asc) desc Orders the results by either Ascending or Descending order
+with_rt_ratings  Boolean false Returns the list with the Rotten Tomatoes rating included
+Examples
+URL Description
+<https://movies-api.accel.li/api/v2/list_movies.json?quality=3D> Returns the latest 20 3D movies using JSON format
+<https://movies-api.accel.li/api/v2/list_movies.xml?sort=seeds&limit=15> Returns maximum 15 movies which are sorted by seeds
+Response Data
+Key Name Description Example
+movie_count The total movie count results for your query 2131
+limit The limit of results per page that has been set 20
+page_number The current page number you are viewing 1
+movies An array which will hold multiple movies and their relative information ARRAY
+To get Magnet URLs you need to construct this yourself like so:
+
+magnet:?xt=urn:btih:TORRENT_HASH&dn=Url+Encoded+Movie+Name&tr=<https://tracker.one:1234/announce&tr=udp://tracker.two:80>
+
+You can add as many trackers as you want, we recommend the following:
+
+udp://tracker.opentrackr.org:1337/announce
+udp://tracker.torrent.eu.org:451/announce
+udp://tracker.dler.org:6969/announce
+udp://open.stealth.si:80/announce
+udp://open.demonii.com:1337/announce
+<https://tracker.moeblog.cn:443/announce>
+udp://open.dstud.io:6969/announce
+udp://tracker.srv00.com:6969/announce
+<https://tracker.zhuqiy.com:443/announce>
+<https://tracker.pmman.tech:443/announce>
+Movie Details
+HTTP GET
+Endpoint Description
+<https://movies-api.accel.li/api/v2/movie_details.json>
+<https://movies-api.accel.li/api/v2/movie_details.jsonp>
+<https://movies-api.accel.li/api/v2/movie_details.xml> Returns the information about a specific movie
+Endpoint Parameters
+Parameter Required Type Default Description
+movie_id or imdb_id  Integer (Unsigned) null The YTS ID of the movie or the IMDB ID
+with_images  Boolean false When set the data returned will include the added image URLs
+with_cast  Boolean false When set the data returned will include the added information about the cast
+Examples
+URL Description
+<https://movies-api.accel.li/api/v2/movie_details.json?movie_id=10> Returns basic information about the movie with ID of 10
+<https://movies-api.accel.li/api/v2/movie_details.json?movie_id=15&with_images=true&with_cast=true> Returns the full information (with image urls and cast information) about the movie with ID of 15
+To get Magnet URLs you need to construct this yourself like so:
+
+magnet:?xt=urn:btih:TORRENT_HASH&dn=Url+Encoded+Movie+Name&tr=<http://track.one:1234/announce&tr=udp://track.two:80>
+
+You can add as many trackers as you want, we recommend the following:
+
+- udp://glotorrents.pw:6969/announce
+- udp://tracker.opentrackr.org:1337/announce
+- udp://torrent.gresille.org:80/announce
+- udp://tracker.openbittorrent.com:80
+- udp://tracker.coppersurfer.tk:6969
+- udp://tracker.leechers-paradise.org:6969
+- udp://p4p.arenabg.ch:1337
+- udp://tracker.internetwarriors.net:1337
+Movie Suggestions
+HTTP GET
+Endpoint Description
+<https://movies-api.accel.li/api/v2/movie_suggestions.json>
+<https://movies-api.accel.li/api/v2/movie_suggestions.jsonp>
+<https://movies-api.accel.li/api/v2/movie_suggestions.xml> Returns 4 related movies as suggestions for the user
+Endpoint Parameters
+Parameter Required Type Default Description
+movie_id  Integer (Unsigned) null The ID of the movie
+Examples
+URL Description
+<https://movies-api.accel.li/api/v2/movie_suggestions.json?movie_id=10> Returns related movies to the movie with ID of 10
+Movie Parental Guides
+HTTP GET
+Endpoint Description
+<https://movies-api.accel.li/api/v2/movie_parental_guides.json>
+<https://movies-api.accel.li/api/v2/movie_parental_guides.jsonp>
+<https://movies-api.accel.li/api/v2/movie_parental_guides.xml> Returns all the parental guide ratings for the specified movie
+Endpoint Parameters
+Parameter Required Type Default Description
+movie_id  Integer (Unsigned) null The ID of the movie
+Examples
+URL Description
+<https://movies-api.accel.li/api/v2/movie_parental_guides.json?movie_id=10> Returns the parental guides for the movie with the ID of 10

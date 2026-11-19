@@ -738,20 +738,31 @@ class DiscoveryEngineRepository:
             out = {k: list(v) for k, v in facets_obj.items()}
             ds_list = []
             seen_keys: set[str] = set()
+            static_core_keys = {
+                "imdb",
+                "tmdb",
+                "tvmaze",
+                "ptbr",
+                "youtube_trailer",
+                "personal_library",
+                "p2p_active",
+                "eztv",
+            }
             for item in out.get("data_sources", []):
                 key = item["key"]
                 seen_keys.add(key)
                 if key == "personal_library":
                     ds_list.append({"key": "personal_library", "count": lib_count})
-                elif key in ("yify", "1337x") and not base_filters:
+                elif key not in static_core_keys and not base_filters:
                     ds_list.append(
                         {"key": key, "count": max(item["count"], src_counts.get(key, 0))}
                     )
                 else:
                     ds_list.append(item)
-            for dyn_key in ("yify", "1337x"):
+            for dyn_key, dyn_cnt in sorted(src_counts.items()):
                 if dyn_key not in seen_keys:
-                    ds_list.append({"key": dyn_key, "count": src_counts.get(dyn_key, 0)})
+                    ds_list.append({"key": dyn_key, "count": dyn_cnt})
+                    seen_keys.add(dyn_key)
             if "personal_library" not in seen_keys:
                 ds_list.append({"key": "personal_library", "count": lib_count})
             out["data_sources"] = ds_list
@@ -1092,14 +1103,6 @@ class DiscoveryEngineRepository:
                         )
                     else:
                         filters.append(col(IMDbCatalogShow.has_eztv) == 1)
-                elif src_key in ("yify", "1337x"):
-                    matched_imdbs = [
-                        k for k, srcs in media_sources_by_imdb.items() if src_key in srcs
-                    ]
-                    if matched_imdbs:
-                        filters.append(col(IMDbCatalogShow.imdb_id).in_(matched_imdbs))
-                    else:
-                        filters.append(col(IMDbCatalogShow.imdb_id) == f"__empty_{src_key}__")
                 elif src_key in ("media", "has_media"):
                     all_media_imdbs = list(media_sources_by_imdb.keys())
                     if all_media_imdbs:
@@ -1109,6 +1112,22 @@ class DiscoveryEngineRepository:
                         )
                     else:
                         filters.append(col(IMDbCatalogShow.has_eztv) == 1)
+                elif src_key not in (
+                    "p2p_active",
+                    "imdb",
+                    "tmdb",
+                    "tvmaze",
+                    "ptbr",
+                    "youtube_trailer",
+                    "personal_library",
+                ):
+                    matched_imdbs = [
+                        k for k, srcs in media_sources_by_imdb.items() if src_key in srcs
+                    ]
+                    if matched_imdbs:
+                        filters.append(col(IMDbCatalogShow.imdb_id).in_(matched_imdbs))
+                    else:
+                        filters.append(col(IMDbCatalogShow.imdb_id) == f"__empty_{src_key}__")
                 elif src_key == "p2p_active":
                     if active_p2p_imdbs:
                         filters.append(
