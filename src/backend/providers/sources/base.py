@@ -69,9 +69,10 @@ def parse_release_title_and_year(
     else:
         quality = "Unknown"
 
-    normalized = re.sub(r"[._\[\]\(\)]+", " ", text)
+    normalized = re.sub(r"\[[^\]]{1,40}\]", " ", text)
+    normalized = re.sub(r"[._\[\]\(\)]+", " ", normalized)
     head = re.split(
-        r"\b(?:19\d{2}|20\d{2}|[sS]\d{1,2}[eE]\d{1,3}|[sS]eason\s*\d+|2160p|1080p|720p|480p|4k|uhd|bluray|bdrip|brrip|webrip|web-dl|web|hdtv|dvdrip|x264|x265|hevc|h264|h265|aac|ddp5|proper|repack)\b",
+        r"\b(?:19\d{2}|20\d{2}|[sS]\d{1,2}[eE]\d{1,3}|[sS]eason\s*\d+|[eE]pisode\s*\d+|-\s*\d{1,4}\b|2160p|1080p|720p|480p|4k|uhd|bluray|bdrip|brrip|webrip|web-dl|web|hdtv|dvdrip|x264|x265|hevc|h264|h265|aac|ddp5|proper|repack)\b",
         normalized,
         maxsplit=1,
         flags=re.IGNORECASE,

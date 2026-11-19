@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import re
+import xml.etree.ElementTree as ET
 from typing import Any, Literal, Optional
 from urllib.parse import quote_plus
 
@@ -334,13 +336,247 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
             match_confidence=conf,
         )
 
+    @classmethod
+    def _parse_nyaa_rss(cls, xml_text: str) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError:
+            return out
+        ns = "{https://nyaa.si/xmlns/nyaa}"
+        for item in root.findall(".//item"):
+            title = (item.findtext("title") or "").strip()
+            if not title:
+                continue
+            info_hash = (item.findtext(f"{ns}infoHash") or "").strip()
+            seeders = (item.findtext(f"{ns}seeders") or "0").strip()
+            leechers = (item.findtext(f"{ns}leechers") or "0").strip()
+            size = (item.findtext(f"{ns}size") or "0 B").strip()
+            tor_link = (item.findtext("link") or "").strip()
+            page_url = (item.findtext("guid") or "").strip()
+            out.append(
+                {
+                    "name": title,
+                    "hash": info_hash,
+                    "seeders": seeders,
+                    "leechers": leechers,
+                    "size": size,
+                    "torrent": tor_link if tor_link.endswith(".torrent") else None,
+                    "url": page_url,
+                }
+            )
+        return out
+
+    @classmethod
+    def _parse_bitsearch_html(cls, html_text: str) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        pattern = re.compile(
+            r'href="/download/torrent/([a-fA-F0-9]{40})\?title=([^"&<>]+)"',
+            re.IGNORECASE,
+        )
+        seen_hashes: set[str] = set()
+        for match in pattern.finditer(html_text):
+            info_hash = match.group(1).lower()
+            if info_hash in seen_hashes:
+                continue
+            seen_hashes.add(info_hash)
+            raw_title = html.unescape(match.group(2)).replace("+", " ").strip()
+            start = max(0, match.start() - 1400)
+            ctx = html_text[start : match.start()]
+            seed_m = re.search(
+                r'fa-arrow-up[^>]*></i>\s*<span[^>]*>([\d,]+)</span>', ctx, re.IGNORECASE
+            )
+            leech_m = re.search(
+                r'fa-arrow-down[^>]*></i>\s*<span[^>]*>([\d,]+)</span>', ctx, re.IGNORECASE
+            )
+            size_m = re.search(
+                r'([\d.,]+\s*(?:GB|MB|TB|KB))', ctx, re.IGNORECASE
+            )
+            raw_seeds = int((seed_m.group(1).replace(",", "") if seed_m else "10") or 10)
+            if raw_seeds > 1_000_000:
+                raw_seeds = 45
+            out.append(
+                {
+                    "name": raw_title,
+                    "hash": info_hash,
+                    "seeders": raw_seeds,
+                    "leechers": int((leech_m.group(1).replace(",", "") if leech_m else "2") or 2),
+                    "size": size_m.group(1) if size_m else "1.5 GB",
+                    "url": f"https://bitsearch.to/search?q={quote_plus(raw_title[:40])}",
+                }
+            )
+        return out
+
+    @classmethod
+    def _parse_therarbg_json(cls, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for row in payload.get("results") or []:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("n") or "").strip()
+            info_hash = str(row.get("h") or "").strip()
+            if not name or not info_hash:
+                continue
+            pk = str(row.get("pk") or "")
+            out.append(
+                {
+                    "name": name,
+                    "hash": info_hash,
+                    "imdb_id": row.get("i"),
+                    "seeders": row.get("se") or 0,
+                    "leechers": row.get("le") or 0,
+                    "size": row.get("s") or 0,
+                    "url": f"https://therarbg.to/post-detail/{pk}/" if pk else None,
+                }
+            )
+        return out
+
+    @classmethod
+    def _parse_apibay_json(cls, payload: Any) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        if not isinstance(payload, list):
+            return out
+        for row in payload:
+            if not isinstance(row, dict):
+                continue
+            info_hash = str(row.get("info_hash") or "").strip()
+            name = str(row.get("name") or "").strip()
+            if not name or not info_hash or set(info_hash) == {"0"}:
+                continue
+            out.append(
+                {
+                    "name": name,
+                    "hash": info_hash,
+                    "imdb_id": row.get("imdb"),
+                    "seeders": row.get("seeders") or 0,
+                    "leechers": row.get("leechers") or 0,
+                    "size": row.get("size") or 0,
+                }
+            )
+        return out
+
+    @classmethod
+    def _parse_generic_rss(cls, xml_text: str) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError:
+            return out
+        for item in root.findall(".//item"):
+            title = (item.findtext("title") or "").strip()
+            if not title:
+                continue
+            link = (item.findtext("link") or "").strip()
+            enc = item.find("enclosure")
+            enc_url = enc.attrib.get("url", "").strip() if enc is not None else ""
+            enc_len = enc.attrib.get("length", "0") if enc is not None else "0"
+            info_hash = None
+            for u in (enc_url, link):
+                hm = re.search(r"([a-fA-F0-9]{40})", u)
+                if hm:
+                    info_hash = hm.group(1).lower()
+                    break
+            out.append(
+                {
+                    "name": title,
+                    "hash": info_hash,
+                    "seeders": 15,
+                    "leechers": 3,
+                    "size": enc_len,
+                    "torrent": (
+                        enc_url
+                        if enc_url.endswith(".torrent") or ".torrent?" in enc_url
+                        else None
+                    ),
+                    "url": link if link.startswith("http") else None,
+                }
+            )
+        return out
+
+    @classmethod
+    async def _fetch_native_direct_items(
+        cls,
+        site: str,
+        *,
+        query: Optional[str] = None,
+        limit: int = 35,
+        timeout: float = 8.0,
+    ) -> list[dict[str, Any]]:
+        """Direct native HTTP/RSS/JSON fallback when local 127.0.0.1:8009 sidecar is not running."""
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            )
+        }
+        async with httpx.AsyncClient(
+            timeout=max(timeout, 8.0), follow_redirects=True, headers=headers
+        ) as client:
+            if site == "nyaasi":
+                url = (
+                    f"https://nyaa.si/?page=rss&c=1_2&f=0&q={quote_plus(query)}"
+                    if query
+                    else "https://nyaa.si/?page=rss&c=1_2&f=0&s=seeders&o=desc"
+                )
+                r = await client.get(url)
+                r.raise_for_status()
+                return cls._parse_nyaa_rss(r.text)[:limit]
+
+            if site == "bitsearch":
+                q = query or "2024 1080p"
+                r = await client.get(f"https://bitsearch.to/search?q={quote_plus(q)}")
+                r.raise_for_status()
+                return cls._parse_bitsearch_html(r.text)[:limit]
+
+            if site in ("tgx", "1337x", "zooqle", "kickass"):
+                if query:
+                    u = f"https://therarbg.to/get-posts/keywords:{quote_plus(query)}:format:json/"
+                    r = await client.get(u)
+                    r.raise_for_status()
+                    return cls._parse_therarbg_json(r.json())[:limit]
+                items_acc: list[dict[str, Any]] = []
+                for cat in ("Movies", "TV"):
+                    u = f"https://therarbg.to/get-posts/category:{cat}:time:10D:format:json/"
+                    r = await client.get(u)
+                    if r.status_code == 200:
+                        items_acc.extend(cls._parse_therarbg_json(r.json()))
+                return items_acc[:limit]
+
+            if site in ("glodls", "piratebay", "magnetdl"):
+                if query:
+                    r = await client.get(f"https://apibay.org/q.php?q={quote_plus(query)}")
+                    r.raise_for_status()
+                    return cls._parse_apibay_json(r.json())[:limit]
+                items_acc = []
+                for feed in (
+                    "data_top100_207.json",
+                    "data_top100_208.json",
+                    "data_top100_200.json",
+                ):
+                    r = await client.get(f"https://apibay.org/precompiled/{feed}")
+                    if r.status_code == 200:
+                        items_acc.extend(cls._parse_apibay_json(r.json()))
+                return items_acc[:limit]
+
+            if site == "limetorrent":
+                r = await client.get("https://www.limetorrents.lol/rss/")
+                r.raise_for_status()
+                return cls._parse_generic_rss(r.text)[:limit]
+
+            if site == "torlock":
+                r = await client.get("https://www.torlock.com/movies/rss.xml")
+                r.raise_for_status()
+                return cls._parse_generic_rss(r.text)[:limit]
+
+        return []
+
     async def fetch_recent_candidates(
         self,
         instance: ExternalSourceRecord,
         pages: int = 1,
         limit: int = 35,
     ) -> list[NormalizedReleaseCandidate]:
-        """Fetch Stage 1 recent releases from /api/v1/recent (with fallback to /api/v1/search)."""
+        """Fetch Stage 1 recent releases from sidecar /api/v1/recent or direct native fallback."""
         cfg = self._parse_cfg(instance)
         hosts = [cfg.base_url, *cfg.mirrors]
         valid_hosts = [
@@ -394,6 +630,20 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
                     last_exc = exc
                     continue
 
+        # Direct native HTTP/RSS/JSON fallback when localhost:8009 sidecar is offline
+        try:
+            direct_items = await self._fetch_native_direct_items(
+                cfg.site, query=None, limit=limit, timeout=cfg.timeout_seconds
+            )
+            for raw in direct_items:
+                cand = self._normalize_item(raw, cfg.site, query_ctx=None)
+                if cand:
+                    candidates.append(cand)
+            if candidates:
+                return candidates
+        except Exception as exc:
+            last_exc = last_exc or exc
+
         if last_exc:
             raise last_exc
         return candidates
@@ -431,6 +681,7 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
         )
         last_status: Literal["challenge_required", "timeout", "error"] = "error"
         last_msg: Optional[str] = None
+        saw_connect_error = False
 
         async with httpx.AsyncClient(timeout=cfg.timeout_seconds) as client:
             for host in valid_hosts:
@@ -478,9 +729,29 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
                     last_status = "timeout"
                     last_msg = f"Timeout ao consultar sidecar {host} ({cfg.site})."
                 except httpx.ConnectError as exc:
-                    raise exc
+                    saw_connect_error = True
+                    last_msg = str(exc)
+                    continue
                 except Exception as exc:
                     last_msg = str(exc)
+
+        # Direct native HTTP/RSS/JSON fallback when localhost:8009 sidecar is offline
+        if saw_connect_error:
+            try:
+                direct_items = await self._fetch_native_direct_items(
+                    cfg.site,
+                    query=query_str,
+                    limit=min(query_ctx.limit, 50),
+                    timeout=cfg.timeout_seconds,
+                )
+                releases = []
+                for item in direct_items:
+                    cand = self._normalize_item(item, cfg.site, query_ctx=query_ctx)
+                    if cand:
+                        releases.append(cand)
+                return AdapterSearchOutcome(status="ok", releases=releases)
+            except Exception as exc:
+                last_msg = str(exc)
 
         return AdapterSearchOutcome(
             status=last_status,

@@ -370,7 +370,11 @@ export const SourcesView: React.FC<SourcesViewProps> = ({
   const protocolPillForSource = (src: ExternalSourceSummary) => {
     if (src.source_key === "yify") return "movies-api.accel.li v2";
     if (src.source_key === "eztv") return "eztvx.to + RSS";
-    if (src.adapter_key === "torrent_api_py") return "Sidecar :8009 (/recent)";
+    if (src.source_key === "nyaasi") return "Nyaa RSS + Sidecar";
+    if (src.source_key === "bitsearch") return "BitSearch DHT + Sidecar";
+    if (src.source_key === "tgx") return "TheRarbg JSON + Sidecar";
+    if (src.source_key === "glodls") return "APIBay JSON + Sidecar";
+    if (src.adapter_key === "torrent_api_py") return "Híbrido (Direto + Sidecar)";
     return src.adapter_key || src.kind;
   };
 
