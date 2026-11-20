@@ -18,3 +18,4 @@
 | ADR-012 | Experiência Unificada de Exploração, Camada Multi-Fonte de Dados, Central Status/Sync/Config e ShowCard Interativo | Sim | 18/18 | CONSOLIDADA | ADR-008, ADR-009, ADR-010, ADR-011 | ARCHIVED_OK |
 | ADR-013 | Sistema Extensível de Plugins para Fontes Externas (Adapters 1:N, Torrent-Api-py, Torznab, Lazy-Cache & Challenge Manual) | Sim | 16/16 | CONSOLIDADA | ADR-011, ADR-012 | ARCHIVED_OK |
 | ADR-014 | Alinhamento Canônico com sources-apis.md (YTS movies-api.accel.li & EZTV), Curadoria Torrent-Api-py (12 Sites), Sincronia Bipartida em 2 Etapas e Sync Command Deck UI/UX | Sim | 16/16 | CONSOLIDADA | ADR-011, ADR-012, ADR-013 | ARCHIVED_OK |
+| ADR-015 | Motor Unificado dos 3 Pilares de Hidratação com Checkpoints (--resume), Gatilho Inteligente de Maturidade (Bootstrap <-> Delta) e Cascata Hierárquica de 6 Degraus (IMDb -> TMDB -> TVMaze -> EZTV -> YIFY -> Outras Fontes) | Não | 0/16 | PENDENTE | ADR-011, ADR-012, ADR-013, ADR-014 | ACTIVE |
