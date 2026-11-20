@@ -7,13 +7,13 @@
 
 ## 1. 📍 Contexto e Fase Ativa
 
-- **Versão Atual:** `v0.7.0` (`+ ADR-012, ADR-013 & ADR-014 Consolidadas`)
+- **Versão Atual:** `v0.7.0` (`+ ADR-012, ADR-013, ADR-014 & ADR-015 Consolidadas`)
 - **Branch Ativa:** `UI-UX`
 - **Posicionamento Arquitetural:** **Audiovisual Discovery Platform & Personal Media Ecosystem (Discovery-First)** estruturada em 3 camadas e arquitetura **Dual-SSOT** (`data/mainstream.db` + `data/sources.db`):
-  - **Camada 1 — Base Canônica Soberana & Audiovisual Discovery Core (`data/mainstream.db`):** Catálogo universal `IMDbCatalogShow` (`279.362` obras e `4.529.748` episódios em `IMDbEpisodeCatalog`) + `MediaWork`, detentora exclusiva de metadados ricos (pôsteres, sinopses PT-BR, notas IMDb, gêneros, streamings), taxonomia canônica (`canonical_taxonomy.py`), índice bilíngue `FTS5` PT-BR/EN-US (`shows_fts`), motor SQL Pushdown (`DiscoveryEngineRepository`), snapshot global `global_facets_v2`, preferências híbridas (`/api/explore/preferences`) e experiência unificada **Explorar** (`ExplorerView.tsx`).
-  - **Camada 2 — Base Semi-Efêmera Pluggable Bipartida & Personal Media Ecosystem (`data/sources.db` + `data/mainstream.db`):** Sistema extensível de plugins (`src/backend/providers/sources/`: `eztv` `eztvx.to` + RSS `myrss.org/eztv`, `yify` `movies-api.accel.li/api/v2/` + 10 trackers oficiais, `torrent_api_py` 12 sites com quarteto default `tgx`/`nyaasi`/`bitsearch`/`glodls`, `torznab`, `unique_web`) operando em **Sincronia Bipartida em 2 Etapas** (Etapa 1 Presença `incremental`/`baseline`/`library` + Poda `/api/sources/prune`; Etapa 2 Hidratação JIT SWR com `Replace-on-Success`, Roteamento por Formato e Inteligência YTS), **Sync Command Deck** com Onda Card a Card e **Batch Join Soberano** em `SourcesView.tsx`, `TorrentModal.tsx` e `StatusConfigView.tsx`, além de biblioteca pessoal, SMB e `BackgroundSyncService`.
+  - **Camada 1 — Base Canônica Soberana & Audiovisual Discovery Core (`data/mainstream.db`):** Catálogo universal `IMDbCatalogShow` (`279.362` obras e `4.529.748` episódios em `IMDbEpisodeCatalog`) + `MediaWork`, detentora exclusiva de metadados ricos (pôsteres, sinopses PT-BR, notas IMDb, gêneros, streamings), taxonomia canônica (`canonical_taxonomy.py`), índice bilíngue `FTS5` PT-BR/EN-US (`shows_fts`), motor SQL Pushdown (`DiscoveryEngineRepository`), snapshot global `global_facets_v2`, preferências híbridas (`/api/explore/preferences`), **Cascata Hierárquica de 6 Degraus (`CascadingMetadataEnricher`: `IMDb -> TMDB -> TVMaze -> EZTV -> YIFY -> Wikidata/Wikipédia/Jikan v4`)** com auto-cura Cross-DB (`cross_db_self_heal`) e experiência unificada **Explorar** (`ExplorerView.tsx`).
+  - **Camada 2 — Base Semi-Efêmera Pluggable Bipartida & Personal Media Ecosystem (`data/sources.db` + `data/mainstream.db`):** Sistema extensível de plugins (`src/backend/providers/sources/`: `eztv` `eztvx.to` + RSS `myrss.org/eztv`, `yify` `movies-api.accel.li/api/v2/` + `compact_presence` + 10 trackers oficiais, `torrent_api_py` 12 sites + sidecar `:8009` embarcado + fallback HTTP/RSS/JSON paginado, `torznab`, `unique_web`) operando em **Ciclo Tripartido Resumível** (`SmartBootstrapDetector` `BOOTSTRAP <-> DELTA`, `HydrationOrchestratorService` em `sync_state['hydration_pipeline_v1']`, `HydrationConsoleCard.tsx` + `make hydrate`), **Batch Join Soberano**, SMB e `BackgroundSyncService`.
   - **Camada 3 — Personalization & Intelligence:** Motor de similaridade multi-critério com justificativa explícita, coleções inteligentes (`CollectionRecord`) e exclusão de títulos já assistidos.
-- **Status do Build / Quality Gate:** **PASSING** (`73/73` testes aprovados, `ruff check` 100% limpo, `tsc --noEmit` limpo, bundle SPA Vite compilado em `src/backend/static/dist/`).
+- **Status do Build / Quality Gate:** **PASSING** (`77/77` testes aprovados, `ruff check` 100% limpo, `tsc --noEmit` limpo, bundle SPA Vite compilado em `src/backend/static/dist/`).
 
 ---
 
@@ -35,6 +35,7 @@
 | **ADR-012** | [Experiência Unificada `Explorar`, Camada Multi-Fonte `Fontes de Dados`, Central `StatusConfigView` e `ShowCard` Interativo](./docs/adr/ADR-012-ER.md) | Sim | 18/18 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
 | **ADR-013** | [Sistema Extensível de Plugins para Fontes Externas (Adapters 1:N, Torrent-Api-py, Torznab, Lazy-Cache & Challenge Manual)](./docs/adr/ADR-013-ER.md) | Sim | 16/16 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
 | **ADR-014** | [Alinhamento Canônico `sources-apis.md` (YTS `accel.li` & EZTV), Curadoria `Torrent-Api-py`, Sincronia Bipartida & Sync Command Deck](./docs/adr/ADR-014-ER.md) | Sim | 16/16 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
+| **ADR-015** | [Motor Unificado dos 3 Pilares de Hidratação c/ Checkpoint `--resume`, Gatilho Inteligente & Cascata de 6 Degraus](./docs/adr/ADR-015-ER.md) | Sim | 16/16 (100%) | CONSOLIDADA | `ARCHIVED_OK` |
 
 ---
 

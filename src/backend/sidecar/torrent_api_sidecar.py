@@ -83,6 +83,7 @@ async def get_recent_torrents(
         site_key,
         query=None,
         limit=limit,
+        page=page,
         timeout=8.0,
     )
     return {
@@ -112,6 +113,7 @@ async def search_site_torrents(
         site_key,
         query=query.strip(),
         limit=limit,
+        page=page,
         timeout=8.0,
     )
     return {

@@ -4,6 +4,22 @@ Este documento consolida os marcos de valor de negócio, evolução arquitetural
 
 ---
 
+## 🚀 Motor Unificado dos 3 Pilares de Hidratação c/ `--resume`, Gatilho Inteligente & Cascata de 6 Degraus — ADR-015 (Branch `UI-UX`, 2026-11-19)
+
+### 🌟 Destaques Executivos e Evolução Arquitetural (`ADR-015`)
+1. **Gatilho Inteligente de Maturidade (`BOOTSTRAP` $\leftrightarrow$ `DELTA` — `DEC-001`):**
+   - `SmartBootstrapDetector` reconhece instalações limpas (modo `BOOTSTRAP` integral) vs bancos já populados (mantendo `IMDb` `279.362` e `EZTV` `860` em `DELTA` enquanto avança cursores persistentes de `yify`, `tgx`, `nyaasi`, `bitsearch` e `glodls`).
+2. **Pilar 1B: Presença Estrutural Profunda, Paginação e `Catalog Sweep` (`DEC-002`, `DEC-003`):**
+   - `YIFYSourceAdapter` ganhou cursor `next_page` (`1..1572`), cálculo de `total_pages` e `compact_presence` (Batch UPSERT em 1 linha leve por filme no Estágio 1B, com expansão JIT multi-resolução preservada ao abrir o modal no Estágio 2).
+   - `TorrentApiPySourceAdapter` + Sidecar `:8009` passam a paginar `page=1..N`, varrer 6 categorias de vídeo da APIBay (`glodls`), casar títulos alternativos entre parênteses no `nyaasi` e executar varredura guiada do catálogo canônico (`sweep_canonical_catalog_presence`).
+3. **Pilar 3: Auto-Cura Cross-DB & Cascata Hierárquica de 6 Degraus (`DEC-004`, `DEC-005`):**
+   - `CascadingMetadataEnricher` executa reconciliação mútua entre `EZTVShow` e `IMDbCatalogShow` (`cross_db_self_heal`) e aplica cascata bilíngue não destrutiva na ordem **`IMDb -> TMDB -> TVMaze -> EZTV -> YIFY -> Outras Fontes Abertas (Wikidata Batch SPARQL + Wikipédia PT/EN + Jikan v4)`**.
+4. **Console Unificado de 1 Botão & Operação Contínua (`DEC-006`):**
+   - Novo [HydrationConsoleCard.tsx](file:///home/loupan/projetosVS/tv-pirata/src/frontend/src/components/HydrationConsoleCard.tsx) em [StatusConfigView.tsx](file:///home/loupan/projetosVS/tv-pirata/src/frontend/src/components/StatusConfigView.tsx) e [SourcesView.tsx](file:///home/loupan/projetosVS/tv-pirata/src/frontend/src/components/SourcesView.tsx), API `/api/explore/hydration/*` e CLI `make hydrate` (`scripts/hydrate_ecosystem.py --resume`).
+   - Suíte hermética ampliada para **77 testes aprovados** e ciclo real validado nos bancos locais (`YTS` `251 -> 1.448` títulos, `TGx` `33 -> 303`, `BitSearch` `17 -> 69`, `GloDLS` `25 -> 199`).
+
+---
+
 ## 🚀 Alinhamento `sources-apis.md`, Curadoria `Torrent-Api-py` (12 Sites), Sincronia Bipartida em 2 Etapas & Sync Command Deck — ADR-014 (Branch `UI-UX`, 2026-11-19)
 
 ### 🌟 Destaques Executivos e Evolução Arquitetural (`ADR-014`)

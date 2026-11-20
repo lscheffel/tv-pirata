@@ -587,3 +587,60 @@ export interface SourcesCatalogResponse {
   total_pages: number;
   available_sources: ExternalSourceSummary[];
 }
+
+export interface PillarSourceCursor {
+  source_key: string;
+  mode: "BOOTSTRAP" | "DELTA";
+  next_page: number;
+  total_pages: number;
+  recent_exhausted: boolean;
+  catalog_sweep_offset: number;
+  titles_indexed: number;
+  releases_indexed: number;
+  bootstrap_completed: boolean;
+  last_run_at?: string | null;
+  last_error?: string | null;
+}
+
+export interface WaterfallProvenanceCounts {
+  imdb: number;
+  tmdb: number;
+  tvmaze: number;
+  eztv: number;
+  yify: number;
+  open_sources: number;
+  self_healed_eztv: number;
+  self_healed_mainstream: number;
+}
+
+export interface CanonicalCoverageSnapshot {
+  total_shows: number;
+  with_poster: number;
+  with_synopsis: number;
+  with_synopsis_ptbr: number;
+  missing_posters: number;
+  missing_synopsis: number;
+  posters_pct: number;
+  synopsis_pct: number;
+  synopsis_ptbr_pct: number;
+  eztv_shows: number;
+  eztv_missing_meta: number;
+}
+
+export interface HydrationPipelineStatus {
+  schema_version: 1;
+  state: "IDLE" | "RUNNING" | "PAUSED" | "COMPLETED" | "ERROR";
+  scope: "all" | "sources" | "metadata";
+  overall_mode: "BOOTSTRAP" | "DELTA";
+  imdb_backbone_mode: "BOOTSTRAP" | "DELTA";
+  eztv_mode: "BOOTSTRAP" | "DELTA";
+  steps_executed: number;
+  last_step_summary?: string | null;
+  last_error?: string | null;
+  updated_at?: string | null;
+  is_worker_active: boolean;
+  coverage: CanonicalCoverageSnapshot;
+  sources: Record<string, PillarSourceCursor>;
+  provenance: WaterfallProvenanceCounts;
+}
+

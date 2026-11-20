@@ -220,13 +220,25 @@ def compute_title_match_confidence(
     ext_year, season, episode = extract_release_year_and_se(candidate_title)
     eff_cand_year = candidate_year or ext_year
 
-    # Strip technical release tokens from candidate title before comparing
+    # Strip release group prefix [SubsPlease] and technical tags before comparing
+    cand_no_brackets = re.sub(r"\[[^\]]{1,40}\]", " ", candidate_title or "")
+    paren_alts = [
+        _normalize_title_tokens(m.group(1))
+        for m in re.finditer(r"\(([^()]{3,80})\)", cand_no_brackets)
+        if not re.fullmatch(
+            r"(?:19|20)\d{2}|\d{3,4}p|hevc|x26[45]|aac|flac|dual audio",
+            m.group(1).strip().lower(),
+        )
+    ]
+    cand_main_raw = re.sub(r"\([^()]{1,80}\)", " ", cand_no_brackets)
+    cand_norm_clean = _normalize_title_tokens(cand_main_raw) or cand_norm
+
     stripped_cand = re.split(
-        r"\b(?:19\d{2}|20\d{2}|s\d{1,2}e\d{1,3}|1080p|720p|2160p|4k|bluray|webrip|web|hdtv|x264|x265|hevc)\b",
-        cand_norm,
+        r"\b(?:19\d{2}|20\d{2}|s\d{1,2}e\d{1,3}|1080p|720p|2160p|4k|bluray|webrip|web|hdtv|x264|x265|hevc|batch|complete)\b",
+        cand_norm_clean,
     )[0].strip()
-    if not stripped_cand:
-        stripped_cand = cand_norm
+    stripped_cand = re.sub(r"(?:\s+\d{1,3})+$", "", stripped_cand).strip() or cand_norm_clean
+    cand_variants = [stripped_cand] + [a for a in paren_alts if a]
 
     targets = [
         _normalize_title_tokens(t)
@@ -238,15 +250,20 @@ def compute_title_match_confidence(
 
     best_ratio = 0.0
     exact_title_hit = False
+    exact_match_len = 0
     for target in targets:
-        if stripped_cand == target:
-            exact_title_hit = True
-            best_ratio = 1.0
+        for cand_v in cand_variants:
+            if cand_v == target:
+                exact_title_hit = True
+                best_ratio = 1.0
+                exact_match_len = max(exact_match_len, len(target))
+                break
+            ratio = difflib.SequenceMatcher(None, target, cand_v).ratio()
+            if cand_v.startswith(f"{target} ") and len(target) >= 5:
+                ratio = max(ratio, 0.88)
+            best_ratio = max(best_ratio, ratio)
+        if exact_title_hit:
             break
-        ratio = difflib.SequenceMatcher(None, target, stripped_cand).ratio()
-        if stripped_cand.startswith(f"{target} ") and len(target) >= 5:
-            ratio = max(ratio, 0.88)
-        best_ratio = max(best_ratio, ratio)
 
     score = best_ratio * 0.78
 
@@ -259,8 +276,8 @@ def compute_title_match_confidence(
             score += 0.14
         else:
             score -= 0.30
-    elif exact_title_hit and len(targets[0]) >= 6 and (season > 0 or not query_year):
-        score += 0.12
+    elif exact_title_hit and exact_match_len >= 6 and eff_cand_year is None:
+        score += 0.10
 
     # Format consistency check (Movie vs TV Series episodic release)
     is_tv_query = query_work_type in ("tvSeries", "tv_show", "mini_series", "tvMiniSeries")

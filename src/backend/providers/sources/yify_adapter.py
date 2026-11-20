@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 from typing import Any, Optional
 
 import httpx
@@ -194,6 +195,87 @@ class YIFYSourceAdapter(BaseSourceAdapter):
                 )
         return out
 
+    @classmethod
+    def _movies_to_presence_candidates(
+        cls,
+        movies: list[dict[str, Any]],
+    ) -> list[NormalizedReleaseCandidate]:
+        """Convert YTS movie entries into compact 1-row-per-movie Stage 1B presence records."""
+        out: list[NormalizedReleaseCandidate] = []
+        seen_ext: set[str] = set()
+        for movie in movies:
+            imdb_id = EntityResolutionService.normalize_imdb_id(movie.get("imdb_code"))
+            movie_id = movie.get("id")
+            if not imdb_id and not movie_id:
+                continue
+            ext_id = f"yts:presence:{imdb_id or movie_id}"
+            if ext_id in seen_ext:
+                continue
+            seen_ext.add(ext_id)
+
+            title = str(movie.get("title") or "").strip()
+            if not title:
+                continue
+            year_raw = movie.get("year")
+            year = int(year_raw) if year_raw else None
+            rating = float(movie.get("rating") or 0.0)
+            genres = ", ".join(movie.get("genres") or []) or None
+            poster = validate_safe_url(
+                movie.get("large_cover_image") or movie.get("medium_cover_image"),
+                ("http", "https"),
+            )
+            page_url = validate_safe_url(movie.get("url"), ("http", "https"))
+
+            torrents = movie.get("torrents") or []
+            qualities: list[str] = []
+            max_seeds = 0
+            max_peers = 0
+            best_size = 0
+            best_hash: Optional[str] = None
+            for tor in torrents:
+                raw_q = str(tor.get("quality") or "").strip()
+                codec = str(tor.get("video_codec") or "").lower()
+                q_label = (
+                    "1080p.x265"
+                    if raw_q == "1080p" and ("x265" in codec or "hevc" in codec)
+                    else raw_q
+                )
+                if q_label and q_label not in qualities:
+                    qualities.append(q_label)
+                s_val = int(tor.get("seeds") or 0)
+                p_val = int(tor.get("peers") or 0)
+                if s_val >= max_seeds:
+                    max_seeds = s_val
+                    max_peers = p_val
+                    best_size = int(tor.get("size_bytes") or 0)
+                    best_hash = str(tor.get("hash") or "").strip() or best_hash
+
+            best_magnet = build_official_magnet(best_hash, title) if best_hash else None
+            out.append(
+                NormalizedReleaseCandidate(
+                    external_id=ext_id,
+                    imdb_id=imdb_id,
+                    title=f"{title} ({year})" if year else title,
+                    work_type="movie",
+                    quality=",".join(qualities) if qualities else "1080p",
+                    seeds=max_seeds,
+                    peers=max_peers,
+                    size_bytes=best_size,
+                    release_type="magnet" if best_magnet else "link",
+                    magnet_url=best_magnet,
+                    torrent_url=None,
+                    external_url=page_url,
+                    info_hash=best_hash,
+                    poster_url=poster,
+                    genres=genres,
+                    year=year,
+                    rating=rating,
+                    matched_by="exact_imdb" if imdb_id else "title_year_match",
+                    match_confidence=1.0 if imdb_id else 0.75,
+                )
+            )
+        return out
+
     async def sync(
         self,
         instance: ExternalSourceRecord,
@@ -201,6 +283,8 @@ class YIFYSourceAdapter(BaseSourceAdapter):
         mainstream_session: Optional[Session] = None,
         *,
         pages: int = 2,
+        start_page: int = 1,
+        compact_presence: bool = False,
         enrich: bool = False,
         mode: str = "incremental",
         quality: Optional[str] = None,
@@ -215,6 +299,8 @@ class YIFYSourceAdapter(BaseSourceAdapter):
         updated = 0
         movies_seen = 0
         last_err: Optional[Exception] = None
+        cur_start = max(1, int(start_page))
+        page_budget = max(1, min(int(pages), 100))
 
         eff_quality = (quality or cfg.default_quality or "All").strip()
         eff_min_rating = (
@@ -230,7 +316,12 @@ class YIFYSourceAdapter(BaseSourceAdapter):
         async with httpx.AsyncClient(timeout=cfg.timeout_seconds) as client:
             for endpoint in endpoints:
                 try:
-                    for page in range(1, max(1, min(pages, 20)) + 1):
+                    total_pages = cur_start
+                    movie_count = 0
+                    last_page = cur_start - 1
+                    exhausted = False
+
+                    for page in range(cur_start, cur_start + page_budget):
                         params: dict[str, Any] = {
                             "limit": 50,
                             "page": page,
@@ -248,27 +339,48 @@ class YIFYSourceAdapter(BaseSourceAdapter):
                         resp = await client.get(endpoint, params=params)
                         resp.raise_for_status()
                         payload = resp.json()
-                        movies = payload.get("data", {}).get("movies") or []
+                        data_block = payload.get("data") or {}
+                        if data_block.get("movie_count"):
+                            movie_count = int(data_block.get("movie_count") or 0)
+                            limit_val = max(1, int(data_block.get("limit") or 50))
+                            total_pages = max(1, math.ceil(movie_count / limit_val))
+                        movies = data_block.get("movies") or []
                         if not movies:
+                            exhausted = True
                             break
+
+                        last_page = page
                         movies_seen += len(movies)
-                        for cand in self._movies_to_candidates(movies):
-                            existing = sources_session.exec(
-                                select(ExternalRelease).where(
-                                    ExternalRelease.source_key == instance.source_key,
-                                    ExternalRelease.external_id == cand.external_id,
-                                )
-                            ).first()
-                            if existing:
-                                existing.seeds = cand.seeds
-                                existing.peers = cand.peers
-                                existing.magnet_url = cand.magnet_url or existing.magnet_url
-                                existing.last_checked_at = utc_now()
-                                sources_session.add(existing)
-                                updated += 1
-                            else:
-                                sources_session.add(
-                                    ExternalRelease(
+                        cands = (
+                            self._movies_to_presence_candidates(movies)
+                            if compact_presence
+                            else self._movies_to_candidates(movies)
+                        )
+                        if cands:
+                            ext_ids = [c.external_id for c in cands]
+                            existing_map = {
+                                row.external_id: row
+                                for row in sources_session.exec(
+                                    select(ExternalRelease).where(
+                                        ExternalRelease.source_key == instance.source_key,
+                                        ExternalRelease.external_id.in_(ext_ids),
+                                    )
+                                ).all()
+                            }
+                            now_ts = utc_now()
+                            for cand in cands:
+                                existing = existing_map.get(cand.external_id)
+                                if existing:
+                                    existing.seeds = cand.seeds
+                                    existing.peers = cand.peers
+                                    existing.quality = cand.quality
+                                    existing.poster_url = cand.poster_url or existing.poster_url
+                                    existing.magnet_url = cand.magnet_url or existing.magnet_url
+                                    existing.last_checked_at = now_ts
+                                    sources_session.add(existing)
+                                    updated += 1
+                                else:
+                                    rel_row = ExternalRelease(
                                         source_key=instance.source_key,
                                         external_id=cand.external_id,
                                         imdb_id=cand.imdb_id,
@@ -289,11 +401,20 @@ class YIFYSourceAdapter(BaseSourceAdapter):
                                         rating=cand.rating,
                                         matched_by=cand.matched_by,
                                         match_confidence=cand.match_confidence,
-                                        last_checked_at=utc_now(),
+                                        last_checked_at=now_ts,
                                     )
-                                )
-                                indexed += 1
+                                    sources_session.add(rel_row)
+                                    existing_map[cand.external_id] = rel_row
+                                    indexed += 1
+
+                        if movie_count > 0 and page >= total_pages:
+                            exhausted = True
+                            break
+
                     sources_session.commit()
+                    eff_last = max(cur_start - 1, last_page)
+                    bootstrap_done = exhausted or (movie_count > 0 and eff_last >= total_pages)
+                    next_page = 1 if bootstrap_done else (eff_last + 1)
                     return {
                         "source": instance.source_key,
                         "endpoint": endpoint,
@@ -301,6 +422,13 @@ class YIFYSourceAdapter(BaseSourceAdapter):
                         "sort_by": eff_sort,
                         "quality": eff_quality,
                         "minimum_rating": eff_min_rating,
+                        "compact_presence": compact_presence,
+                        "start_page": cur_start,
+                        "last_page": eff_last,
+                        "next_page": next_page,
+                        "total_pages": total_pages,
+                        "movie_count": movie_count,
+                        "bootstrap_completed": bootstrap_done,
                         "movies_seen": movies_seen,
                         "releases_indexed": indexed,
                         "releases_updated": updated,

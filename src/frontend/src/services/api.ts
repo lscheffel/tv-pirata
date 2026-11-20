@@ -8,6 +8,7 @@ import {
   CatalogStats,
   CollectionRecord,
   ExploreWorksResponse,
+  HydrationPipelineStatus,
   MediaWorkDossier,
   PersonDossier,
   PersonSummary,
@@ -183,6 +184,26 @@ export const api = {
       }>(`/explore/update-mainstream?mode=${encodeURIComponent(mode)}&limit=${limit}`, {
         method: "POST",
       }),
+    hydration: {
+      getStatus: () => request<HydrationPipelineStatus>("/explore/hydration/status"),
+      start: (scope: "all" | "sources" | "metadata" = "all") =>
+        request<HydrationPipelineStatus>(
+          `/explore/hydration/start?scope=${encodeURIComponent(scope)}`,
+          { method: "POST" }
+        ),
+      pause: () =>
+        request<HydrationPipelineStatus>("/explore/hydration/pause", { method: "POST" }),
+      step: (scope: "all" | "sources" | "metadata" = "all") =>
+        request<{ status: HydrationPipelineStatus; step_telemetry: Record<string, any> }>(
+          `/explore/hydration/step?scope=${encodeURIComponent(scope)}`,
+          { method: "POST" }
+        ),
+      resetCursor: (target = "all") =>
+        request<HydrationPipelineStatus>(
+          `/explore/hydration/reset-cursor?target=${encodeURIComponent(target)}`,
+          { method: "POST" }
+        ),
+    },
   },
 
   discovery: {

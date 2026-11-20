@@ -25,6 +25,7 @@ import {
 import { api } from "../services/api";
 import { useExplorePreferences } from "../context/PreferencesContext";
 import { useToast } from "../context/ToastContext";
+import { HydrationConsoleCard } from "./HydrationConsoleCard";
 
 interface StatusConfigViewProps {
   onHealthChange?: (health: "healthy" | "syncing" | "degraded") => void;
@@ -348,6 +349,8 @@ export const StatusConfigView: React.FC<StatusConfigViewProps> = ({
             Saúde Dual-SSOT &amp; Plugins de Fontes Externas
           </h2>
         </div>
+
+        <HydrationConsoleCard onStepCompleted={loadTelemetry} />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
           {/* Canonical DB Card */}

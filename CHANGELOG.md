@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Não Lançado] — ADR-015 (2026-11-19)
+
+### Adicionado e Alterado
+- **Motor Unificado dos 3 Pilares de Hidratação c/ Checkpoint `--resume`, Gatilho Inteligente `BOOTSTRAP <-> DELTA` e Cascata Hierárquica de 6 Degraus (`ADR-015`, `DEC-001`..`DEC-006`):**
+  - **`SmartBootstrapDetector` & `HydrationOrchestratorService` (`hydration_orchestrator.py`):** Detecção automática de maturidade (`IMDb >= 250k` e `EZTV >= 500` em `DELTA` vs instalação limpa ou cursores incompletos em `BOOTSTRAP`), worker cooperativo integrado ao `lifespan` de `main.py`, estado persistente `hydration_pipeline_v1` em `sync_state`, CLI `scripts/hydrate_ecosystem.py` + `make hydrate` e rotas `/api/explore/hydration/{status,start,pause,step,reset-cursor}` em `explore.py`.
+  - **Pilar 1B — Paginação Profunda, Compact Presence e Catalog Sweep:** `YIFYSourceAdapter` (`yify_adapter.py`) com cursor `next_page`, cálculo dinâmico de `total_pages` sobre `movie_count` e `compact_presence` em Batch UPSERT (`yts:presence:tt...` expandido sob demanda no Estágio 2); `TorrentApiPySourceAdapter` (`torrent_api_py_adapter.py`) e sidecar `:8009` com paginação real (`page=1..N`), 6 feeds de vídeo da APIBay (`glodls`), parser de títulos alternativos entre parênteses para `nyaasi` em `base.py` e `sweep_canonical_catalog_presence` em `sources_registry.py`.
+  - **Pilar 3 — `CascadingMetadataEnricher` (`cascading_enricher.py`):** Auto-cura bidirecional (`cross_db_self_heal`) entre `EZTVShow` (`sources.db`) e `IMDbCatalogShow` (`mainstream.db`) + cascata estrita não destrutiva (`COALESCE`) de 6 degraus (**1. IMDb** JSON-LD/`og:image` $\rightarrow$ **2. TMDB** `pt-BR`/`en-US`/`watch/providers` $\rightarrow$ **3. TVMaze** $\rightarrow$ **4. EZTV** Cross-DB $\rightarrow$ **5. YIFY** `movie_details.json` $\rightarrow$ **6. Wikidata Batch SPARQL P345 + Wikipédia PT/EN + Jikan v4**) sobre fila bipartida prioritária `Media-First` (`Sem Capa` $\rightarrow$ `Sem Sinopse`).
+  - **Console UI de 1 Botão (`HydrationConsoleCard.tsx`):** Novo painel unificado embarcado em `StatusConfigView.tsx` e `SourcesView.tsx` com alternância `Iniciar / Retomar` $\leftrightarrow$ `Pausar`, execução passo-a-passo, barras de progresso dos 3 pilares, cursores por fonte e proveniência por degrau.
+  - Adicionados testes herméticos em `tests/integration/test_three_pillar_hydration.py` (**77 passed**).
+
+---
+
 ## [Unreleased] — ADR-014 (2026-11-19)
 
 ### Added & Changed

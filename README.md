@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/python-3.14+-blue.svg)](#)
 [![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20Tailwind-38bdf8.svg)](#)
 [![Backend](https://img.shields.io/badge/backend-FastAPI%20%2B%20SQLModel-009688.svg)](#)
-[![Tests](https://img.shields.io/badge/tests-73%20passing-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-77%20passing-brightgreen.svg)](#)
 [![Governance](https://img.shields.io/badge/governance-SynPraxis%20SOTA-purple.svg)](#)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](#)
 
@@ -239,7 +239,8 @@ Acesse no navegador:
 | `make build-front` | Compila a SPA React 19 + TypeScript + Tailwind para `src/backend/static/dist/` |
 | `make dev-front` | Inicia o servidor Vite com Hot Module Replacement (HMR) em `http://127.0.0.1:5173` |
 | `make sync-catalog` | Sincroniza e enriquece as páginas mais recentes de torrents da EZTV no banco local |
-| `make test` | Executa a suíte completa de **69 testes automatizados** (100% offline/herméticos) |
+| `make hydrate` | Executa o Motor Unificado dos 3 Pilares com checkpoint retomável (`scripts/hydrate_ecosystem.py --resume`) |
+| `make test` | Executa a suíte completa de **77 testes automatizados** (100% offline/herméticos) |
 | `make lint` | Executa análise estática de código Python via `ruff check src/ tests/` |
 | `make format` | Formata automaticamente o código-fonte com `ruff format src/ tests/` |
 | `make setup-hooks` | Instala o `scripts/quality_gate.sh` como hook `pre-commit` do Git |
@@ -258,4 +259,6 @@ Todas as decisões estruturais estão documentadas e auditadas em [docs/adr/ADR-
 - **ADR-009 (Consolidada/Arquivada):** Separação de Bases (`tv_pirata.db` vs `eztv_metadata.db`), Entrelaçamento EZTV e Sistema Universal de Badges (`StatusBadge`, `ProviderBadge`, `EztvBadge`).
 - **ADR-010 (Consolidada/Arquivada):** Otimização de Desempenho de Leitura Dual-SQLite (`PRAGMA`s WAL/mmap), Estatísticas Materializadas, `EngineScopedCache` com Fingerprint e Índice Virtual `FTS5`.
 - **ADR-011 (Consolidada/Arquivada):** Consolidação Dual-SSOT (`data/mainstream.db` + `data/sources.db`), IMDb como Âncora Universal (`279k+` Títulos / `4.5M+` Episódios), Busca Bilíngue `FTS5`, Taxonomia Canônica (`31` Categorias / `25` Streamings / `8` Fontes) e Motor SQL Pushdown.
-- **ADR-012 (Consolidada):** Experiência Unificada **Explorar** (Modo Adaptativo + Roleta + Filtros Híbridos com `AbortController`), camada multi-provedor **Fontes de Dados** (`EZTV`, `YIFY / YTS`, `1337x`), `MediaBadge`, Central `StatusConfigView` com preferências híbridas (`/api/explore/preferences`), `ShowCard` com empilhamento completo/`1+N` e WCAG 2.2 AA.
+- **ADR-012 (Consolidada/Arquivada):** Experiência Unificada **Explorar** (Modo Adaptativo + Roleta + Filtros Híbridos com `AbortController`), camada multi-provedor **Fontes de Dados**, `MediaBadge`, Central `StatusConfigView` com preferências híbridas (`/api/explore/preferences`), `ShowCard` com empilhamento completo/`1+N` e WCAG 2.2 AA.
+- **ADR-013 & ADR-014 (Consolidadas/Arquivadas):** Sistema Extensível de Plugins 1:N (`Torrent-Api-py` 12 sites + Sidecar `:8009`, `Torznab`, `UniqueWeb`), alinhamento `sources-apis.md` (YTS `movies-api.accel.li` + EZTV RSS), Sincronia Bipartida em 2 Etapas e **Sync Command Deck**.
+- **ADR-015 (Consolidada/Arquivada):** Motor Unificado dos 3 Pilares de Hidratação c/ Checkpoint `--resume`, Gatilho Inteligente de Maturidade (`BOOTSTRAP` $\leftrightarrow$ `DELTA`), Compact Presence + Catalog Sweep (`YTS` & Sidecar `:8009`), Auto-Cura Cross-DB e Cascata Hierárquica de 6 Degraus (`IMDb -> TMDB -> TVMaze -> EZTV -> YIFY -> Wikidata/Wikipédia/Jikan v4`).

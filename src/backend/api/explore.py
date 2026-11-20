@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
@@ -15,6 +15,10 @@ from src.backend.repositories.preferences import (
     UserExplorePreferences,
 )
 from src.backend.services.federated_catalog import FederatedCatalogService
+from src.backend.services.hydration_orchestrator import (
+    HydrationPipelineStatus,
+    hydration_orchestrator,
+)
 
 router = APIRouter(prefix="/explore", tags=["Audiovisual Discovery Engine"])
 
@@ -255,3 +259,69 @@ def update_explore_preferences(
 ) -> UserExplorePreferences:
     """Validate and persist UI/interaction preferences into data/mainstream.db sync_state."""
     return ExplorePreferencesRepository.save_preferences(session, prefs)
+
+
+@router.get("/hydration/status", response_model=HydrationPipelineStatus)
+def get_hydration_status(
+    session: Session = Depends(get_session),
+    sources_session: Session = Depends(get_eztv_session),
+) -> HydrationPipelineStatus:
+    """Return real-time 3-pillar maturity, cursor checkpoints and 6-tier provenance."""
+    return hydration_orchestrator.get_status(session, sources_session)
+
+
+@router.post("/hydration/start", response_model=HydrationPipelineStatus)
+def start_hydration_pipeline(
+    scope: Literal["all", "sources", "metadata"] = Query(
+        "all", description="Escopo do motor unificado: all, sources ou metadata"
+    ),
+    session: Session = Depends(get_session),
+    sources_session: Session = Depends(get_eztv_session),
+) -> HydrationPipelineStatus:
+    """Start or resume the cooperative background 3-pillar hydration pipeline."""
+    return hydration_orchestrator.start(session, sources_session, scope=scope)
+
+
+@router.post("/hydration/pause", response_model=HydrationPipelineStatus)
+async def pause_hydration_pipeline(
+    session: Session = Depends(get_session),
+    sources_session: Session = Depends(get_eztv_session),
+) -> HydrationPipelineStatus:
+    """Pause background hydration cleanly while keeping resumable checkpoints intact."""
+    return await hydration_orchestrator.pause(session, sources_session)
+
+
+@router.post("/hydration/step")
+async def step_hydration_pipeline(
+    scope: Literal["all", "sources", "metadata"] = Query("all"),
+    yts_pages: int = Query(3, ge=1, le=20),
+    sidecar_pages: int = Query(1, ge=1, le=5),
+    sweep_batch: int = Query(8, ge=1, le=25),
+    meta_batch: int = Query(10, ge=1, le=30),
+    session: Session = Depends(get_session),
+    sources_session: Session = Depends(get_eztv_session),
+) -> dict[str, Any]:
+    """Execute one bounded, checkpointed step across the 3 hydration pillars."""
+    return await hydration_orchestrator.run_single_step(
+        session,
+        sources_session,
+        scope=scope,
+        yts_pages=yts_pages,
+        sidecar_pages=sidecar_pages,
+        sweep_batch=sweep_batch,
+        meta_batch=meta_batch,
+    )
+
+
+@router.post("/hydration/reset-cursor", response_model=HydrationPipelineStatus)
+def reset_hydration_cursor(
+    target: str = Query(
+        "all",
+        description="Alvo do reset: all, yify, tgx, nyaasi, bitsearch, glodls",
+    ),
+    session: Session = Depends(get_session),
+    sources_session: Session = Depends(get_eztv_session),
+) -> HydrationPipelineStatus:
+    """Reset persisted checkpoints back to BOOTSTRAP page 1 / offset 0."""
+    return hydration_orchestrator.reset_cursor(session, sources_session, target=target)
+

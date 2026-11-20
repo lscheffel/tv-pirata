@@ -25,6 +25,7 @@ from src.backend.api import (
 )
 from src.backend.core.database import engine, init_db, init_eztv_db
 from src.backend.services.federated_catalog import FederatedCatalogService
+from src.backend.services.hydration_orchestrator import hydration_orchestrator
 from src.backend.services.scheduler import scheduler
 from src.backend.sidecar import sidecar_manager
 
@@ -44,6 +45,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await hydration_orchestrator.stop(timeout=3.0)
         await scheduler.stop(timeout=3.0)
         await sidecar_manager.stop(timeout=3.0)
 

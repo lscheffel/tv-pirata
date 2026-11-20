@@ -65,6 +65,10 @@ sync-catalog:
 	@echo "[+] Executando sincronização do catálogo EZTV..."
 	$(PYTHON) scripts/sync_catalog.py --pages 5
 
+hydrate:
+	@echo "[+] Executando Motor Unificado dos 3 Pilares com Checkpoint (--resume)..."
+	PYTHONPATH=. $(PYTHON) scripts/hydrate_ecosystem.py --resume
+
 setup-hooks:
 	@mkdir -p .git/hooks
 	@cp scripts/quality_gate.sh .git/hooks/pre-commit

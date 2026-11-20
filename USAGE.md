@@ -185,17 +185,24 @@ Para manter a **Base Canônica (`data/mainstream.db`)** e a **Base de Recursos (
 
 # 4. Hidratar streaming availability real (TMDB /discover BR/US), normalizar 31 gêneros e atualizar global_facets_v2
 .venv/bin/python scripts/sync_canonical_facets_and_providers.py
+# 5. Orquestrador Unificado dos 3 Pilares com Checkpoint (--resume) — ADR-015
+make hydrate
+.venv/bin/python scripts/hydrate_ecosystem.py --resume --scope all --max-steps 5 --yts-pages 5
+.venv/bin/python scripts/hydrate_ecosystem.py --status-only
 ```
 
 ---
 
-## 5. 🧪 Pirâmide de Testes e Qualidade (`73 Testes`)
+## 5. 🧪 Pirâmide de Testes e Qualidade (`77 Testes`)
 
 Todos os testes automatizados são **100% herméticos e offline**, utilizando `respx` para interceptação determinística de chamadas HTTP e `SQLite :memory:` com isolamento por `Engine`.
 
 ```bash
-# 1. Executar toda a suíte (73 testes unitários e de integração)
+# 1. Executar toda a suíte (77 testes unitários e de integração)
 make test
+
+# 2. Executar testes do Motor Unificado dos 3 Pilares, Cascata 6-Níveis e Checkpoint --resume (ADR-015)
+.venv/bin/pytest tests/integration/test_three_pillar_hydration.py -v
 
 # 2. Executar testes de plugins 1:N, YTS accel.li v2, EZTV RSS, Sincronia Bipartida e CAPTCHA (ADR-013 / ADR-014)
 .venv/bin/pytest tests/integration/test_source_plugins_contract.py -v

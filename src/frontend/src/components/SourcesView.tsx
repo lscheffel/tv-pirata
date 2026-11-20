@@ -23,6 +23,7 @@ import {
 } from "../types";
 import { api, isAbortError, RequestAbortChannel } from "../services/api";
 import { useToast } from "../context/ToastContext";
+import { HydrationConsoleCard } from "./HydrationConsoleCard";
 import { ShowCard } from "./ShowCard";
 
 interface SourcesViewProps {
@@ -378,6 +379,11 @@ export const SourcesView: React.FC<SourcesViewProps> = ({
     return src.adapter_key || src.kind;
   };
 
+  const handlePruneAndOrRefresh = () => {
+    loadSummary();
+    loadCatalog();
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 lg:pt-24 pb-16 space-y-6">
       {/* Header */}
@@ -433,6 +439,8 @@ export const SourcesView: React.FC<SourcesViewProps> = ({
           </button>
         </div>
       </div>
+
+      <HydrationConsoleCard compact onStepCompleted={handlePruneAndOrRefresh} />
 
       {/* Sync Command Deck (1B + 3C + 8B — Intent Recipes & Protocol Fine-Tuning) */}
       <section

@@ -901,8 +901,13 @@ class SourcesRegistryService:
                 if chk and (latest_check is None or chk > latest_check):
                     latest_check = chk
 
+            has_materialized_cache = any(
+                not str(cr.external_id or "").startswith("yts:presence:") for cr in src_cached
+            )
             is_fresh = bool(
-                latest_check and (now - latest_check) < timedelta(hours=max(1, ttl_hours))
+                has_materialized_cache
+                and latest_check
+                and (now - latest_check) < timedelta(hours=max(1, ttl_hours))
             )
 
             if mode == "cache" or (mode == "auto" and is_fresh and not q_override):
@@ -1659,6 +1664,8 @@ class SourcesRegistryService:
         *,
         source_key: str = "eztv",
         pages: int = 5,
+        start_page: int = 1,
+        compact_presence: bool = False,
         enrich: bool = True,
         mode: str = "incremental",
         quality: Optional[str] = None,
@@ -1752,6 +1759,8 @@ class SourcesRegistryService:
                         sources_session,
                         mainstream_session,
                         pages=pages,
+                        start_page=start_page,
+                        compact_presence=compact_presence,
                         enrich=enrich,
                         mode=eff_mode,
                         quality=quality,
@@ -1761,7 +1770,7 @@ class SourcesRegistryService:
                     )
                 elif isinstance(adapter, TorrentApiPySourceAdapter):
                     recent_cands = await adapter.fetch_recent_candidates(
-                        inst, pages=min(pages, 3), limit=35
+                        inst, pages=min(pages, 10), limit=75, start_page=start_page
                     )
                     indexed = 0
                     matched_canonical = 0
@@ -1788,6 +1797,9 @@ class SourcesRegistryService:
                     telemetry = {
                         "source": inst.source_key,
                         "mode": eff_mode,
+                        "start_page": start_page,
+                        "next_page": start_page + min(pages, 10) if recent_cands else 1,
+                        "exhausted": len(recent_cands) == 0,
                         "candidates_scanned": len(recent_cands),
                         "canonical_matched": matched_canonical,
                         "releases_indexed": indexed,
@@ -1844,4 +1856,156 @@ class SourcesRegistryService:
             "mode": eff_mode,
             "prune": prune_summary,
             "results": results,
+        }
+
+    @classmethod
+    async def sweep_canonical_catalog_presence(
+        cls,
+        sources_session: Session,
+        mainstream_session: Optional[Session],
+        *,
+        source_key: str,
+        offset: int = 0,
+        batch_size: int = 12,
+        min_seeds_floor: int = 1,
+    ) -> dict[str, Any]:
+        """Stage 1B Resumable Canonical Catalog Presence Sweep for Sidecar/Search sources."""
+        if mainstream_session is None:
+            return {
+                "source": source_key,
+                "offset": offset,
+                "next_offset": offset,
+                "titles_scanned": 0,
+                "titles_matched": 0,
+                "releases_indexed": 0,
+                "exhausted": True,
+            }
+
+        cls.ensure_sources_registered(sources_session)
+        inst = sources_session.get(ExternalSourceRecord, source_key.lower())
+        if inst is None or not inst.enabled:
+            return {
+                "source": source_key,
+                "offset": offset,
+                "next_offset": offset,
+                "titles_scanned": 0,
+                "titles_matched": 0,
+                "releases_indexed": 0,
+                "exhausted": True,
+                "skipped": "disabled_or_missing",
+            }
+
+        adapters = cls.get_adapters_map()
+        adapter = adapters.get(inst.adapter_key)
+        if not adapter or not adapter.supports_search:
+            return {
+                "source": source_key,
+                "offset": offset,
+                "next_offset": offset,
+                "titles_scanned": 0,
+                "titles_matched": 0,
+                "releases_indexed": 0,
+                "exhausted": True,
+                "skipped": "adapter_no_search",
+            }
+
+        eff_offset = max(0, int(offset))
+        eff_batch = max(1, min(int(batch_size), 50))
+        stmt = select(IMDbCatalogShow).where(IMDbCatalogShow.rating_votes >= 1000)
+        if inst.source_key == "nyaasi":
+            stmt = stmt.where(col(IMDbCatalogShow.genres).ilike("%Animation%"))
+        stmt = (
+            stmt.order_by(
+                col(IMDbCatalogShow.rating_votes).desc(),
+                col(IMDbCatalogShow.imdb_id).asc(),
+            )
+            .offset(eff_offset)
+            .limit(eff_batch)
+        )
+        works = list(mainstream_session.exec(stmt).all())
+        if not works:
+            return {
+                "source": inst.source_key,
+                "offset": eff_offset,
+                "next_offset": 0,
+                "titles_scanned": 0,
+                "titles_matched": 0,
+                "releases_indexed": 0,
+                "exhausted": True,
+            }
+
+        scanned = 0
+        matched_titles = 0
+        releases_indexed = 0
+        aborted_reason: Optional[str] = None
+
+        for work in works:
+            scanned += 1
+            query_ctx = SourceQueryContext(
+                imdb_id=work.imdb_id,
+                title=work.primary_title,
+                original_title=work.original_title,
+                year=work.start_year,
+                work_type=work.title_type,
+                limit=10,
+            )
+            try:
+                outcome = await adapter.search(
+                    inst,
+                    query_ctx,
+                    sources_session=sources_session,
+                    mainstream_session=mainstream_session,
+                )
+            except Exception as exc:
+                aborted_reason = str(exc)
+                continue
+
+            if outcome.status == "challenge_required":
+                aborted_reason = outcome.message or "challenge_required"
+                inst.status = "challenge_required"
+                inst.last_error = aborted_reason
+                inst.cooldown_until = _utc_now() + timedelta(seconds=60)
+                sources_session.add(inst)
+                sources_session.commit()
+                break
+
+            verified = [
+                c
+                for c in outcome.releases
+                if c.seeds >= min_seeds_floor and c.match_confidence >= 0.85
+            ]
+            if verified:
+                for c in verified:
+                    c.imdb_id = work.imdb_id
+                persisted, _ = cls._persist_verified_candidates(
+                    sources_session,
+                    inst.source_key,
+                    work.imdb_id,
+                    verified[:3],
+                    replace_on_success=False,
+                )
+                if persisted:
+                    matched_titles += 1
+                    releases_indexed += len(persisted)
+
+        inst.last_sync_at = _utc_now()
+        if not aborted_reason:
+            inst.status = "ready"
+            inst.last_error = None
+        sources_session.add(inst)
+        sources_session.commit()
+        cls._recompute_source_counters(sources_session)
+        catalog_cache.invalidate()
+        discovery_cache.invalidate()
+
+        next_off = eff_offset + scanned
+        return {
+            "source": inst.source_key,
+            "offset": eff_offset,
+            "next_offset": next_off,
+            "titles_scanned": scanned,
+            "titles_matched": matched_titles,
+            "releases_indexed": releases_indexed,
+            "exhausted": len(works) < eff_batch,
+            "aborted_reason": aborted_reason,
         }
