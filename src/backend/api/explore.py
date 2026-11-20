@@ -271,7 +271,7 @@ def get_hydration_status(
 
 
 @router.post("/hydration/start", response_model=HydrationPipelineStatus)
-def start_hydration_pipeline(
+async def start_hydration_pipeline(
     scope: Literal["all", "sources", "metadata"] = Query(
         "all", description="Escopo do motor unificado: all, sources ou metadata"
     ),

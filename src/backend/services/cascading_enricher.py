@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any, Optional
 from urllib.parse import quote
@@ -661,6 +662,7 @@ class CascadingMetadataEnricher:
         *,
         batch_size: int = 12,
         timeout: float = 8.0,
+        on_progress: Optional[Callable[[str, str], None]] = None,
     ) -> dict[str, Any]:
         """Run Cross-DB Self-Healing + Strict 6-Tier Bilingual Waterfall over missing-gap queue."""
         heal_stats = cls.cross_db_self_heal(mainstream_session, sources_session)
@@ -703,6 +705,8 @@ class CascadingMetadataEnricher:
 
             for show in candidates:
                 row_dirty = False
+                if on_progress is not None:
+                    on_progress("metadata", f"{show.primary_title} ({show.imdb_id})")
 
                 # Tier 1: IMDb
                 if _needs_poster(show) or _needs_synopsis_en(show):

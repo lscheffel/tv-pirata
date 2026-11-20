@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Não Lançado] — ADR-016 (2026-11-20)
+
+### Adicionado e Alterado
+- **Redesign Master-Detail das Configurações, Linguagem Humana & Telemetria Viva (`ADR-016`, `DEC-001`..`DEC-005`):**
+  - **Telemetria Viva em Memória (`hydration_orchestrator.py` & `cascading_enricher.py`):** Adicionados `HydrationActivityEvent`, `current_stage`, `current_target`, `started_at`, `elapsed_seconds`, `items_processed_in_run`, `rate_per_minute`, `eta_seconds` e *ring buffer* `recent_events` (`deque(maxlen=15)`) sem contenção no SQLite.
+  - **Configurações Master-Detail Estilo IDE (`StatusConfigView.tsx` & `src/frontend/src/components/settings/`):** Substituído o monólito vertical por barra lateral fixa com filtro rápido (`SettingsSidebar.tsx`) e 4 painéis dedicados (`CatalogUpdatePanel.tsx`, `SourcesProvidersPanel.tsx`, `ExplorePrefsPanel.tsx`, `AdvancedMaintenancePanel.tsx`), com edição modal focada para fontes.
+  - **Linguagem Humana & Monitor de Atividade (`HydrationConsoleCard.tsx`):** Removidos jargões técnicos da UI, polling ajustado para `1.0s` enquanto ativo (pausando quando oculto/pausado) e exibidos velocidade (`itens/min`), tempo decorrido, ETA e Monitor de Atividade ao vivo.
+  - **Makefile (`run`):** Atualizado comando `make run` para `0.0.0.0:8005` e corrigido `start_hydration_pipeline` para `async def` em `src/backend/api/explore.py`.
+
+---
+
 ## [Não Lançado] — ADR-015 (2026-11-19)
 
 ### Adicionado e Alterado

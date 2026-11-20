@@ -627,6 +627,14 @@ export interface CanonicalCoverageSnapshot {
   eztv_missing_meta: number;
 }
 
+export interface HydrationActivityEvent {
+  timestamp: string;
+  stage: string;
+  target: string;
+  outcome: "ok" | "partial" | "skipped" | "error";
+  message: string;
+}
+
 export interface HydrationPipelineStatus {
   schema_version: 1;
   state: "IDLE" | "RUNNING" | "PAUSED" | "COMPLETED" | "ERROR";
@@ -639,6 +647,14 @@ export interface HydrationPipelineStatus {
   last_error?: string | null;
   updated_at?: string | null;
   is_worker_active: boolean;
+  current_stage?: string | null;
+  current_target?: string | null;
+  started_at?: string | null;
+  elapsed_seconds?: number;
+  items_processed_in_run?: number;
+  rate_per_minute?: number;
+  eta_seconds?: number | null;
+  recent_events?: HydrationActivityEvent[];
   coverage: CanonicalCoverageSnapshot;
   sources: Record<string, PillarSourceCursor>;
   provenance: WaterfallProvenanceCounts;

@@ -7,6 +7,7 @@ Este manual operacional detalha os fluxos de ponta a ponta, comandos de terminal
 ## 1. ⚙️ Configuração do Ambiente e Variáveis (`.env`)
 
 ### 1.1. Preparação Inicial
+
 ```bash
 # 1. Entrar no diretório do repositório
 cd /home/loupan/projetosVS/tv-pirata
@@ -36,6 +37,7 @@ uv pip install -e ".[dev]"
 ## 2. 🚀 Execução da Aplicação (Backend + SPA Frontend)
 
 ### 2.1. Modo Integrado (Produção / Homelab)
+
 O FastAPI serve diretamente o bundle estático compilado do React 19 (`src/backend/static/dist/`) na rota raiz `/` e `/app`:
 
 ```bash
@@ -49,6 +51,7 @@ make run
 > **Regra de Encerramento:** Pressione `Ctrl+C` para encerrar o servidor. O `lifespan` do FastAPI cancelará cooperativamente a task assíncrona do `BackgroundSyncService` em até `3.0s` sem deixar processos órfãos.
 
 ### 2.2. Modo Desenvolvimento de UI (Vite HMR)
+
 ```bash
 # Terminal 1: API Backend na porta 8000
 make run
@@ -64,6 +67,7 @@ make dev-front
 A aba **"Explorar Universo"** (`ExplorerView.tsx`) e o roteador `/api/explore` fornecem descoberta multi-formato (Filmes, Séries, Minisséries, Documentários, Animações e Especiais) independente da existência de torrents ou arquivos locais.
 
 ### 3.1. Filtragem Booleana Avançada, Fontes de Dados e Facetas Dinâmicas
+
 O endpoint `GET /api/explore/works` executa SQL Pushdown sobre `data/mainstream.db` e retorna simultaneamente a lista paginada de obras (`items`) e os contadores exatos/escalados de facetas (`facets`: `work_types`, `data_sources`, `genres`, `streaming_providers`, `statuses`, `countries` e `decades`).
 
 ```bash
@@ -82,6 +86,7 @@ curl -s -X POST "http://127.0.0.1:8000/api/explore/update-mainstream?mode=delta&
 ```
 
 **Parâmetros Principais (`GET /api/explore/works`):**
+
 - `q`: Busca bilíngue PT-BR/EN-US (tolerante a acentos via `shows_fts`) ranqueada por correspondência exata/similaridade.
 - `work_types`: `movie`, `tv_show`, `mini_series`, `tv_movie`, `documentary`, `animation`, `special`, `short`.
 - `data_sources`: Interseção de fontes: `eztv`, `p2p_active`, `imdb`, `tmdb`, `ptbr`, `youtube_trailer`, `tvmaze`, `personal_library`.
@@ -93,12 +98,14 @@ curl -s -X POST "http://127.0.0.1:8000/api/explore/update-mainstream?mode=delta&
 - `only_with_p2p` / `exclude_watched` / `sort_by` (`rating`, `relevance`, `popularity`, `year_desc`, `year_asc`, `runtime`, `title`).
 
 ### 3.2. Dossiê Canônico da Obra, Procedência e Similaridade
+
 ```bash
 # Consultar dossiê completo da obra (identificadores externos, notas por fonte, proveniência por atributo, elenco, streaming, relações e obras similares com justificativa)
 curl -s "http://127.0.0.1:8000/api/explore/works/1" | python3 -m json.tool
 ```
 
 ### 3.3. Descoberta por Pessoas, Filmografias e Colaborações Recorrentes
+
 ```bash
 # 1. Listar profissionais indexados (diretores, criadores, atores, roteiristas)
 curl -s "http://127.0.0.1:8000/api/explore/people?q=Villeneuve" | python3 -m json.tool
@@ -111,6 +118,7 @@ curl -s "http://127.0.0.1:8000/api/explore/people/collaborations?person_a_id=1&p
 ```
 
 ### 3.4. Calendário Unificado de Lançamentos e Rankings Multi-Critério
+
 ```bash
 # 1. Consultar calendário de estreias, novos episódios e temporadas
 curl -s "http://127.0.0.1:8000/api/explore/calendar?limit=30" | python3 -m json.tool
@@ -127,6 +135,7 @@ curl -s -X POST "http://127.0.0.1:8000/api/explore/federate" | python3 -m json.t
 ## 4. 📡 Camada 2: Ecossistema Pessoal, Catálogo P2P e Notificações
 
 ### 4.1. Biblioteca Pessoal e Progresso de Episódios (`/api/library` & `/api/watches`)
+
 ```bash
 # 1. Listar séries da biblioteca pessoal (opcional: ?status=watching)
 curl -s "http://127.0.0.1:8000/api/library/shows" | python3 -m json.tool
@@ -142,6 +151,7 @@ curl -s -X POST "http://127.0.0.1:8000/api/watches/seasons/1/watch-all" | python
 ```
 
 ### 4.2. Background Auto-Sync e Alertas de Novos Episódios (`/api/notifications`)
+
 ```bash
 # 1. Consultar telemetria do agendador assíncrono (BackgroundSyncService)
 curl -s "http://127.0.0.1:8000/api/notifications/scheduler/status" | python3 -m json.tool
@@ -157,6 +167,7 @@ curl -s -X POST "http://127.0.0.1:8000/api/notifications/read-all" | python3 -m 
 ```
 
 ### 4.3. Sincronização do Catálogo P2P EZTV (`scripts/sync_catalog.py`)
+
 Para popular ou expandir o catálogo de torrents com sementes verificadas no banco principal (`tv_pirata.db`):
 
 ```bash
@@ -168,6 +179,7 @@ make sync-catalog
 ```
 
 ### 4.4. Pipeline de Hidratação Canônica (`mainstream.db`) & Base de Recursos (`sources.db`)
+
 Para manter a **Base Canônica (`data/mainstream.db`)** e a **Base de Recursos (`data/sources.db`)** sincronizadas via CLI:
 
 ```bash

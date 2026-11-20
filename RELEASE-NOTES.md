@@ -4,6 +4,18 @@ Este documento consolida os marcos de valor de negócio, evolução arquitetural
 
 ---
 
+## 🚀 Configurações Master-Detail Estilo IDE, Linguagem Humana & Telemetria Viva — ADR-016 (Branch `UI-UX`, 2026-11-20)
+
+### 🌟 Destaques Executivos e Evolução Arquitetural (`ADR-016`)
+1. **Tela de Configurações Reestruturada (`StatusConfigView.tsx` & `settings/`):**
+   - Layout em 2 colunas estilo *Settings* de IDE com busca rápida (`"Filtrar ajustes..."`) e 4 categorias claras (**Atualização & Catálogo**, **Fontes & Provedores**, **Experiência no Explorar** e **Avançado & Manutenção**).
+   - Edição e criação de fontes migradas para modal focado ([SourcesProvidersPanel.tsx](file:///home/loupan/projetosVS/tv-pirata/src/frontend/src/components/settings/SourcesProvidersPanel.tsx)), eliminando o scroll monolítico e os gatilhos redundantes de sincronização.
+2. **Linguagem 100% Humana & Telemetria Viva (`HydrationConsoleCard.tsx` + `hydration_orchestrator.py`):**
+   - Substituição de jargões internos (`BOOTSTRAP`/`DELTA`, `Pilar 1B/3`, `Dual-SSOT`, `Sweep @`) por rótulos humanos claros.
+   - Exibição ao vivo da etapa/título atual, **velocidade (`itens/min`)**, **tempo decorrido**, **tempo restante estimado (ETA)** e **Monitor de Atividade** colapsável com os últimos 15 eventos.
+
+---
+
 ## 🚀 Motor Unificado dos 3 Pilares de Hidratação c/ `--resume`, Gatilho Inteligente & Cascata de 6 Degraus — ADR-015 (Branch `UI-UX`, 2026-11-19)
 
 ### 🌟 Destaques Executivos e Evolução Arquitetural (`ADR-015`)

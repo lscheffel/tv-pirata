@@ -462,11 +462,24 @@ def test_hydration_endpoints_and_nyaa_bilingual_sweep(hydration_client):
     start_res = client.post("/api/explore/hydration/start?scope=sources")
     assert start_res.status_code == 200
     assert start_res.json()["state"] == "RUNNING"
+    assert len(start_res.json()["recent_events"]) >= 1
+
+    # Simulate live telemetry step on metadata
+    respx.get("https://www.imdb.com/title/tt2560140/").mock(return_value=httpx.Response(404))
+    step_res = client.post("/api/explore/hydration/step?scope=metadata&meta_batch=2")
+    assert step_res.status_code == 200
+    step_status = step_res.json()["status"]
+    assert "elapsed_seconds" in step_status
+    assert "rate_per_minute" in step_status
+    assert isinstance(step_status["recent_events"], list)
+    assert step_status["recent_events"][0]["stage"] == "metadata"
 
     pause_res = client.post("/api/explore/hydration/pause")
     assert pause_res.status_code == 200
     assert pause_res.json()["state"] == "PAUSED"
+    assert pause_res.json()["current_target"] is None
 
     reset_res = client.post("/api/explore/hydration/reset-cursor?target=yify")
     assert reset_res.status_code == 200
     assert reset_res.json()["sources"]["yify"]["next_page"] == 1
+
