@@ -44,64 +44,64 @@ export const StatusConfigView: React.FC<StatusConfigViewProps> = ({
       api.notifications.getSchedulerStatus().catch(() => null),
       api.explore.hydration.getStatus().catch(() => null),
     ]).then(([ms, src, adp, sched, hyd]) => {
-      if (ms) setMainstreamStats(ms);
-      if (src) setSources(src.sources);
-      if (adp) setAdapters(adp.adapters);
-      if (sched) setScheduler(sched);
-      if (hyd) setHydrationStatus(hyd);
+        if (ms) setMainstreamStats(ms);
+        if (src) setSources(src.sources);
+        if (adp) setAdapters(adp.adapters);
+        if (sched) setScheduler(sched);
+        if (hyd) setHydrationStatus(hyd);
 
-      const hasDegraded = Boolean(
+        const hasDegraded = Boolean(
         src?.sources.some(
-          (s) => s.enabled && (s.status === "degraded" || s.status === "challenge_required")
-        )
-      );
-      onHealthChange?.(hasDegraded ? "degraded" : "healthy");
-    });
+            (s) => s.enabled && (s.status === "degraded" || s.status === "challenge_required")
+          )
+        );
+        onHealthChange?.(hasDegraded ? "degraded" : "healthy");
+      });
   }, [onHealthChange]);
 
-  useEffect(() => {
-    loadTelemetry();
-  }, [loadTelemetry]);
+useEffect(() => {
+  loadTelemetry();
+}, [loadTelemetry]);
 
-  const degradedCount = sources.filter(
-    (s) => s.enabled && (s.status === "degraded" || s.status === "challenge_required")
-  ).length;
+const degradedCount = sources.filter(
+  (s) => s.enabled && (s.status === "degraded" || s.status === "challenge_required")
+).length;
 
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 lg:pt-24 pb-16 space-y-6">
-      {/* Compact Header */}
-      <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-4">
-        <div className="flex items-center gap-2.5">
-          <Settings className="w-6 h-6 text-brand-red" />
-          <div>
-            <h1 className="text-2xl font-extrabold text-white tracking-tight">Configurações</h1>
-            <p className="text-xs text-slate-300">
-              Atualização do catálogo, fontes externas e preferências de navegação
-            </p>
-          </div>
-        </div>
-      </div>
+return (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 lg:pt-24 pb-16 space-y-6">
+            {/* Compact Header */}
+            <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-4">
+              <div className="flex items-center gap-2.5">
+                <Settings className="w-6 h-6 text-brand-red" />
+                <div>
+                  <h1 className="text-2xl font-extrabold text-white tracking-tight">Configurações</h1>
+                  <p className="text-xs text-slate-300">
+                    Atualização do catálogo, fontes externas e preferências de navegação
+                  </p>
+                </div>
+              </div>
+            </div>
 
-      {/* Master-Detail 2-Column Layout */}
-      <div className="flex flex-col md:flex-row gap-6 items-start">
-        <SettingsSidebar
-          activeCategory={activeCategory}
-          onSelectCategory={setActiveCategory}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          isHydrationRunning={hydrationStatus?.state === "RUNNING"}
-          degradedSourcesCount={degradedCount}
-        />
+              {/* Master-Detail 2-Column Layout */}
+              <div className="flex flex-col md:flex-row gap-6 items-start">
+                <SettingsSidebar
+                  activeCategory={activeCategory}
+                  onSelectCategory={setActiveCategory}
+                  searchQuery={searchQuery}
+                  onSearchChange={setSearchQuery}
+                  isHydrationRunning={hydrationStatus?.state === "RUNNING"}
+                  degradedSourcesCount={degradedCount}
+                />
 
         <main role="tabpanel" className="flex-1 min-w-0 w-full">
-          {activeCategory === "catalog" && (
+                    {activeCategory === "catalog" && (
             <CatalogUpdatePanel
               onRefresh={loadTelemetry}
               onHydrationStatus={setHydrationStatus}
             />
           )}
 
-          {activeCategory === "sources" && (
+                    {activeCategory === "sources" && (
             <SourcesProvidersPanel
               sources={sources}
               adapters={adapters}
@@ -111,9 +111,9 @@ export const StatusConfigView: React.FC<StatusConfigViewProps> = ({
             />
           )}
 
-          {activeCategory === "explore" && <ExplorePrefsPanel />}
+                    {activeCategory === "explore" && <ExplorePrefsPanel />}
 
-          {activeCategory === "advanced" && (
+                    {activeCategory === "advanced" && (
             <AdvancedMaintenancePanel
               mainstreamStats={mainstreamStats}
               scheduler={scheduler}
@@ -121,8 +121,8 @@ export const StatusConfigView: React.FC<StatusConfigViewProps> = ({
               onDataUpdated={onDataUpdated}
             />
           )}
-        </main>
+          </main>
+        </div>
       </div>
-    </div>
-  );
+      );
 };

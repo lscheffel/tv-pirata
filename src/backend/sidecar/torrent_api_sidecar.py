@@ -168,7 +168,36 @@ class EmbeddedSidecarManager:
     def _is_port_in_use(host: str, port: int) -> bool:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(0.25)
-            return sock.connect_ex((host, port)) == 0
+            if sock.connect_ex((host, port)) == 0:
+                return True
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as bind_sock:
+            bind_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                bind_sock.bind((host, port))
+                return False
+            except OSError:
+                return True
+
+    async def _serve_safely(self) -> None:
+        """Run Uvicorn sidecar without propagating SystemExit(3) to the main app loop."""
+        if self._server is None:
+            return
+        try:
+            await self._server.serve()
+        except SystemExit as exc:
+            logger.warning(
+                "Embedded sidecar %s:%d exited cleanly with code %s (main app unaffected).",
+                self.host,
+                self.port,
+                exc.code,
+            )
+        except OSError as exc:
+            logger.warning(
+                "Embedded sidecar %s:%d could not bind (%s); direct fallback remains active.",
+                self.host,
+                self.port,
+                exc,
+            )
 
     async def start(self) -> bool:
         """Start the embedded :8009 sidecar if enabled and port 8009 is free."""
@@ -178,7 +207,7 @@ class EmbeddedSidecarManager:
             return True
         if self._is_port_in_use(self.host, self.port):
             logger.info(
-                "External Torrent-Api-py sidecar already listening on %s:%d",
+                "Sidecar port %s:%d already in use; reusing existing listener or direct fallback.",
                 self.host,
                 self.port,
             )
@@ -192,16 +221,20 @@ class EmbeddedSidecarManager:
             access_log=False,
         )
         self._server = uvicorn.Server(config)
-        self._task = asyncio.create_task(self._server.serve())
+        self._task = asyncio.create_task(self._serve_safely())
         # Wait up to 1.5s for socket readiness
         for _ in range(15):
-            if self._is_port_in_use(self.host, self.port):
-                logger.info(
-                    "Embedded Torrent-Api-py Sidecar started on http://%s:%d",
-                    self.host,
-                    self.port,
-                )
-                return True
+            if self._task.done():
+                return False
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(0.15)
+                if sock.connect_ex((self.host, self.port)) == 0:
+                    logger.info(
+                        "Embedded Torrent-Api-py Sidecar started on http://%s:%d",
+                        self.host,
+                        self.port,
+                    )
+                    return True
             await asyncio.sleep(0.1)
         return False
 
