@@ -21,6 +21,7 @@ import os
 import socket
 from typing import Any, Optional
 
+import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -88,13 +89,32 @@ async def get_recent_torrents(
             "exhausted": True,
             "data": [],
         }
-    items = await TorrentApiPySourceAdapter._fetch_native_direct_items(
-        site_key,
-        query=None,
-        limit=limit,
-        page=page,
-        timeout=8.0,
-    )
+    try:
+        items = await TorrentApiPySourceAdapter._fetch_native_direct_items(
+            site_key,
+            query=None,
+            limit=limit,
+            page=page,
+            timeout=8.0,
+        )
+    except httpx.HTTPStatusError as exc:
+        return {
+            "site": site_key,
+            "page": page,
+            "limit": limit,
+            "total": 0,
+            "error": f"HTTP {exc.response.status_code} upstream",
+            "data": [],
+        }
+    except httpx.RequestError as exc:
+        return {
+            "site": site_key,
+            "page": page,
+            "limit": limit,
+            "total": 0,
+            "error": str(exc),
+            "data": [],
+        }
     return {
         "site": site_key,
         "page": page,
@@ -118,13 +138,34 @@ async def search_site_torrents(
             status_code=400,
             detail=f"Site '{site_key}' not supported.",
         )
-    items = await TorrentApiPySourceAdapter._fetch_native_direct_items(
-        site_key,
-        query=query.strip(),
-        limit=limit,
-        page=page,
-        timeout=8.0,
-    )
+    try:
+        items = await TorrentApiPySourceAdapter._fetch_native_direct_items(
+            site_key,
+            query=query.strip(),
+            limit=limit,
+            page=page,
+            timeout=8.0,
+        )
+    except httpx.HTTPStatusError as exc:
+        return {
+            "site": site_key,
+            "query": query.strip(),
+            "page": page,
+            "limit": limit,
+            "total": 0,
+            "error": f"HTTP {exc.response.status_code} upstream",
+            "data": [],
+        }
+    except httpx.RequestError as exc:
+        return {
+            "site": site_key,
+            "query": query.strip(),
+            "page": page,
+            "limit": limit,
+            "total": 0,
+            "error": str(exc),
+            "data": [],
+        }
     return {
         "site": site_key,
         "query": query.strip(),

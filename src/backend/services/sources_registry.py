@@ -1912,10 +1912,10 @@ class SourcesRegistryService:
                 limit=10,
             )
             try:
-                async with domain_semaphores.get(inst.source_key):
-                    if isinstance(adapter, TorrentApiPySourceAdapter):
-                        outcome = await adapter.search(inst, query_ctx, client=http_client)
-                    else:
+                if isinstance(adapter, TorrentApiPySourceAdapter):
+                    outcome = await adapter.search(inst, query_ctx, client=http_client)
+                else:
+                    async with domain_semaphores.get(inst.source_key):
                         outcome = await adapter.search(inst, query_ctx)
                 return work, outcome
             except Exception as exc:
@@ -1953,6 +1953,12 @@ class SourcesRegistryService:
             if item.status == "challenge_required":
                 aborted_reason = item.message or "challenge_required"
                 inst.status = "challenge_required"
+                inst.last_error = aborted_reason
+                inst.cooldown_until = _utc_now() + timedelta(seconds=60)
+                continue
+            if item.status == "error" and "429" in (item.message or ""):
+                aborted_reason = item.message or "HTTP 429 rate limit"
+                inst.status = "degraded"
                 inst.last_error = aborted_reason
                 inst.cooldown_until = _utc_now() + timedelta(seconds=60)
                 continue
