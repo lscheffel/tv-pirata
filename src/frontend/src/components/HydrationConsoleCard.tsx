@@ -254,7 +254,9 @@ return (
     </div>
 
     {/* Live Telemetry Bar (Speed, Elapsed, ETA, Processed) */}
-    {(isRunning || (status.elapsed_seconds ?? 0) > 0 || (status.items_processed_in_run ?? 0) > 0) && (
+    {(isRunning ||
+      (status.total_elapsed_seconds ?? status.elapsed_seconds ?? 0) > 0 ||
+      (status.items_processed_in_run ?? 0) > 0) && (
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 rounded-xl bg-canvas/90 border border-cyan-500/20">
         <div className="flex items-center gap-2.5">
           <Gauge className="w-4 h-4 text-cyan-400 shrink-0" />
@@ -270,8 +272,13 @@ return (
           <div>
             <div className="text-[11px] text-slate-400">Tempo decorrido</div>
             <div className="text-xs font-extrabold text-white">
-              {formatDuration(status.elapsed_seconds ?? 0)}
+              {formatDuration(status.total_elapsed_seconds ?? status.elapsed_seconds ?? 0)}
             </div>
+            {(status.total_elapsed_seconds ?? 0) > (status.elapsed_seconds ?? 0) + 10 && (
+              <div className="text-[10px] text-slate-400">
+                Sessão: {formatDuration(status.elapsed_seconds ?? 0)}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2.5">
@@ -281,6 +288,19 @@ return (
             <div className="text-xs font-extrabold text-white">
               {formatDuration(status.eta_seconds)}
             </div>
+            {(status.sources_eta_seconds != null || status.metadata_eta_seconds != null) && (
+              <div className="text-[10px] text-slate-400 truncate">
+                {status.sources_eta_seconds != null
+                  ? `YTS: ${formatDuration(status.sources_eta_seconds)}`
+                  : ""}
+                {status.sources_eta_seconds != null && status.metadata_eta_seconds != null
+                  ? " • "
+                  : ""}
+                {status.metadata_eta_seconds != null
+                  ? `Capas: ${formatDuration(status.metadata_eta_seconds)}`
+                  : ""}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2.5">

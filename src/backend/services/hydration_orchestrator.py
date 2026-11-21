@@ -114,9 +114,12 @@ class HydrationPipelineStatus(BaseModel):
     current_target: Optional[str] = None
     started_at: Optional[str] = None
     elapsed_seconds: float = 0.0
+    total_elapsed_seconds: float = 0.0
     items_processed_in_run: int = 0
     rate_per_minute: float = 0.0
     eta_seconds: Optional[int] = None
+    sources_eta_seconds: Optional[int] = None
+    metadata_eta_seconds: Optional[int] = None
     recent_events: list[HydrationActivityEvent] = Field(default_factory=list)
     coverage: CanonicalCoverageSnapshot = Field(default_factory=CanonicalCoverageSnapshot)
     sources: dict[str, PillarSourceCursor] = Field(default_factory=dict)
@@ -268,10 +271,12 @@ class HydrationOrchestratorService:
         self._run_started_mono: Optional[float] = None
         self._run_started_iso: Optional[str] = None
         self._accumulated_elapsed: float = 0.0
+        self._persisted_elapsed_base: float = 0.0
         self._items_in_run: int = 0
         self._current_stage: Optional[str] = None
         self._current_target: Optional[str] = None
         self._recent_events: deque[HydrationActivityEvent] = deque(maxlen=15)
+        self._step_window: deque[tuple[float, int, int]] = deque(maxlen=8)
 
     def _get_lock(self) -> asyncio.Lock:
         if self._step_lock is None:
@@ -300,40 +305,65 @@ class HydrationOrchestratorService:
         )
 
     def _apply_live_telemetry(self, state: HydrationPipelineStatus) -> HydrationPipelineStatus:
-        elapsed = self._accumulated_elapsed
+        session_elapsed = self._accumulated_elapsed
         if self._run_started_mono is not None:
-            elapsed += max(0.0, time.monotonic() - self._run_started_mono)
-        state.elapsed_seconds = round(elapsed, 1)
+            session_elapsed += max(0.0, time.monotonic() - self._run_started_mono)
+        state.elapsed_seconds = round(session_elapsed, 1)
+        base_total = max(self._persisted_elapsed_base, float(state.total_elapsed_seconds or 0.0))
+        state.total_elapsed_seconds = round(
+            max(base_total, self._persisted_elapsed_base + session_elapsed), 1
+        )
         state.started_at = self._run_started_iso
         state.items_processed_in_run = self._items_in_run
         state.current_stage = self._current_stage
         state.current_target = self._current_target
         state.recent_events = list(self._recent_events)
 
-        if self._items_in_run > 0 and elapsed > 0.0:
-            eff_minutes = max(elapsed / 60.0, 0.05)
+        win_dur = sum(d for d, _, _ in self._step_window)
+        win_yts = sum(y for _, y, _ in self._step_window)
+        win_meta = sum(m for _, _, m in self._step_window)
+
+        yts_rate_per_min = 0.0
+        meta_rate_per_min = 0.0
+        if win_dur > 0.0:
+            yts_rate_per_min = (win_yts / win_dur) * 60.0
+            meta_rate_per_min = (win_meta / win_dur) * 60.0
+            state.rate_per_minute = round(((win_yts + win_meta) / win_dur) * 60.0, 1)
+        elif self._items_in_run > 0 and session_elapsed > 0.0:
+            eff_minutes = max(session_elapsed / 60.0, 0.05)
             state.rate_per_minute = round(self._items_in_run / eff_minutes, 1)
         else:
             state.rate_per_minute = 0.0
 
-        remaining = 0
-        if state.scope == "metadata":
-            remaining = (
-                state.coverage.missing_posters
-                if state.coverage.missing_posters > 0
-                else state.coverage.missing_synopsis
-            )
-        else:
+        yts_eta: Optional[int] = None
+        if state.scope in ("all", "sources"):
             yts_cur = state.sources.get("yify")
-            if yts_cur and not yts_cur.bootstrap_completed and yts_cur.total_pages > 1:
-                remaining = max(0, (yts_cur.total_pages - yts_cur.next_page + 1) * 50)
-            elif state.scope == "all":
-                remaining = state.coverage.missing_posters
+            if (
+                yts_cur
+                and not yts_cur.bootstrap_completed
+                and yts_cur.total_pages > 1
+                and yts_rate_per_min > 0.0
+            ):
+                rem_yts = max(0, (yts_cur.total_pages - yts_cur.next_page + 1) * 50)
+                if rem_yts > 0:
+                    yts_eta = int((rem_yts / yts_rate_per_min) * 60)
 
-        if state.rate_per_minute > 0 and remaining > 0:
-            state.eta_seconds = int((remaining / state.rate_per_minute) * 60)
+        meta_eta: Optional[int] = None
+        if state.scope in ("all", "metadata") and meta_rate_per_min > 0.0:
+            rem_meta = max(state.coverage.missing_posters, state.coverage.missing_synopsis)
+            if rem_meta > 0:
+                meta_eta = int((rem_meta / meta_rate_per_min) * 60)
+
+        state.sources_eta_seconds = yts_eta
+        state.metadata_eta_seconds = meta_eta
+
+        if state.scope == "metadata":
+            state.eta_seconds = meta_eta
+        elif state.scope == "sources":
+            state.eta_seconds = yts_eta
         else:
-            state.eta_seconds = None
+            etas = [v for v in (yts_eta, meta_eta) if v is not None]
+            state.eta_seconds = max(etas) if etas else None
         return state
 
     @staticmethod
@@ -410,6 +440,10 @@ class HydrationOrchestratorService:
             state.steps_executed = 0
             state.last_error = None
             state.state = "IDLE"
+            state.total_elapsed_seconds = 0.0
+            self._persisted_elapsed_base = 0.0
+            self._accumulated_elapsed = 0.0
+            self._step_window.clear()
         state.last_step_summary = f"Cursor reiniciado para alvo: {norm_target}."
         state = SmartBootstrapDetector.refresh_modes(state, mainstream_session, sources_session)
         return self._save_state(mainstream_session, state)
@@ -427,10 +461,13 @@ class HydrationOrchestratorService:
     ) -> dict[str, Any]:
         """Execute 3-phase bifurcated step: Prepare DB -> Fan-out HTTP -> Fan-in DB (ADR-017)."""
         async with self._get_lock():
-            if self._run_started_mono is None:
-                self._run_started_mono = time.monotonic()
-                self._run_started_iso = _utc_iso()
+            step_t0 = time.monotonic()
             state = self.get_status(mainstream_session, sources_session)
+            if self._persisted_elapsed_base <= 0.0 and state.total_elapsed_seconds > 0.0:
+                self._persisted_elapsed_base = state.total_elapsed_seconds
+            standalone_step = self._run_started_mono is None
+            step_yts_items = 0
+            step_meta_items = 0
             step_notes: list[str] = []
             step_telemetry: dict[str, Any] = {}
 
@@ -591,6 +628,7 @@ class HydrationOrchestratorService:
                     yts_cur.last_error = None
                     yts_cur.total_pages = int(meta.get("total_pages") or yts_cur.total_pages)
                     seen_movies = int(meta.get("movies_seen") or 0)
+                    step_yts_items += max(seen_movies, idx_y)
                     self._items_in_run += max(seen_movies, idx_y)
                     if yts_cur.mode == "BOOTSTRAP":
                         if meta.get("bootstrap_completed"):
@@ -758,6 +796,7 @@ class HydrationOrchestratorService:
                 heal = meta_res.get("self_heal") or heal_stats
                 proc_m = int(meta_res.get("processed") or 0)
                 upd_m = int(meta_res.get("updated") or 0)
+                step_meta_items += proc_m
                 self._items_in_run += proc_m
                 state.provenance.imdb += int(prov.get("imdb", 0))
                 state.provenance.tmdb += int(prov.get("tmdb", 0))
@@ -775,6 +814,11 @@ class HydrationOrchestratorService:
                     f"Capas e Sinopses: {upd_m} de {proc_m} obras atualizadas",
                 )
                 step_notes.append(f"Metadados +{upd_m}/{proc_m}")
+
+            step_dur = max(0.05, time.monotonic() - step_t0)
+            self._step_window.append((step_dur, step_yts_items, step_meta_items))
+            if standalone_step:
+                self._accumulated_elapsed += step_dur
 
             self._set_live_progress(None, None)
             state.steps_executed += 1
@@ -827,13 +871,15 @@ class HydrationOrchestratorService:
         interval_seconds: float = 2.0,
     ) -> HydrationPipelineStatus:
         """Start or resume the cooperative background hydration loop."""
+        state = self.get_status(mainstream_session, sources_session)
+        self._persisted_elapsed_base = float(state.total_elapsed_seconds or 0.0)
         self._run_started_mono = time.monotonic()
         self._run_started_iso = _utc_iso()
         self._accumulated_elapsed = 0.0
         self._items_in_run = 0
+        self._step_window.clear()
         self._record_event("sistema", "Atualização do Catálogo", "ok", "Atualização iniciada.")
 
-        state = self.get_status(mainstream_session, sources_session)
         state.state = "RUNNING"
         state.scope = scope
         state.last_error = None

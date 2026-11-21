@@ -651,9 +651,12 @@ export interface HydrationPipelineStatus {
   current_target?: string | null;
   started_at?: string | null;
   elapsed_seconds?: number;
+  total_elapsed_seconds?: number;
   items_processed_in_run?: number;
   rate_per_minute?: number;
   eta_seconds?: number | null;
+  sources_eta_seconds?: number | null;
+  metadata_eta_seconds?: number | null;
   recent_events?: HydrationActivityEvent[];
   coverage: CanonicalCoverageSnapshot;
   sources: Record<string, PillarSourceCursor>;

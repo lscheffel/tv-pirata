@@ -470,7 +470,10 @@ def test_hydration_endpoints_and_nyaa_bilingual_sweep(hydration_client):
     assert step_res.status_code == 200
     step_status = step_res.json()["status"]
     assert "elapsed_seconds" in step_status
+    assert "total_elapsed_seconds" in step_status
     assert "rate_per_minute" in step_status
+    assert "sources_eta_seconds" in step_status
+    assert "metadata_eta_seconds" in step_status
     assert isinstance(step_status["recent_events"], list)
     assert step_status["recent_events"][0]["stage"] == "metadata"
 
