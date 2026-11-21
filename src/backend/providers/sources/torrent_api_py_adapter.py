@@ -14,6 +14,7 @@ import httpx
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
+from src.backend.core.domain_concurrency import create_shared_http_client, domain_semaphores
 from src.backend.models.sources_db import ExternalSourceRecord
 from src.backend.providers.sources.base import (
     AdapterSearchOutcome,
@@ -502,6 +503,7 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
         limit: int = 35,
         page: int = 1,
         timeout: float = 8.0,
+        client: Optional[httpx.AsyncClient] = None,
     ) -> list[dict[str, Any]]:
         """Direct native HTTP/RSS/JSON fallback when local 127.0.0.1:8009 sidecar is not running."""
         eff_page = max(1, int(page))
@@ -511,81 +513,94 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
                 "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
             )
         }
-        async with httpx.AsyncClient(
-            timeout=max(timeout, 8.0), follow_redirects=True, headers=headers
-        ) as client:
-            if site == "nyaasi":
-                url = (
-                    f"https://nyaa.si/?page=rss&c=1_2&f=0&q={quote_plus(query)}&p={eff_page}"
-                    if query
-                    else f"https://nyaa.si/?page=rss&c=1_2&f=0&s=seeders&o=desc&p={eff_page}"
-                )
-                r = await client.get(url)
-                r.raise_for_status()
-                return cls._parse_nyaa_rss(r.text)[: max(limit, 75)]
-
-            if site == "bitsearch":
-                q = query or "2024 1080p"
-                r = await client.get(
-                    f"https://bitsearch.to/search?q={quote_plus(q)}&page={eff_page}"
-                )
-                r.raise_for_status()
-                return cls._parse_bitsearch_html(r.text)[:limit]
-
-            if site in ("tgx", "1337x", "zooqle", "kickass"):
-                page_q = f"?page={eff_page}" if eff_page > 1 else ""
-                if query:
-                    u = (
-                        f"https://therarbg.to/get-posts/keywords:{quote_plus(query)}"
-                        f":format:json/{page_q}"
+        own_client = client is None
+        http_client = client or create_shared_http_client(
+            timeout=max(timeout, 8.0), headers=headers
+        )
+        try:
+            async with domain_semaphores.get(site):
+                if site == "nyaasi":
+                    url = (
+                        f"https://nyaa.si/?page=rss&c=1_2&f=0&q={quote_plus(query)}&p={eff_page}"
+                        if query
+                        else f"https://nyaa.si/?page=rss&c=1_2&f=0&s=seeders&o=desc&p={eff_page}"
                     )
-                    r = await client.get(u)
+                    r = await http_client.get(url, headers=headers)
                     r.raise_for_status()
-                    return cls._parse_therarbg_json(r.json())[:limit]
-                items_acc: list[dict[str, Any]] = []
-                for cat in ("Movies", "TV", "Anime"):
-                    u = (
-                        f"https://therarbg.to/get-posts/category:{cat}"
-                        f":time:10D:format:json/{page_q}"
+                    return cls._parse_nyaa_rss(r.text)[: max(limit, 75)]
+
+                if site == "bitsearch":
+                    q = query or "2024 1080p"
+                    r = await http_client.get(
+                        f"https://bitsearch.to/search?q={quote_plus(q)}&page={eff_page}",
+                        headers=headers,
                     )
-                    r = await client.get(u)
-                    if r.status_code == 200:
-                        items_acc.extend(cls._parse_therarbg_json(r.json()))
-                return items_acc[:limit]
-
-            if site in ("glodls", "piratebay", "magnetdl"):
-                if query:
-                    r = await client.get(f"https://apibay.org/q.php?q={quote_plus(query)}")
                     r.raise_for_status()
-                    return cls._parse_apibay_json(r.json())[:limit]
-                all_feeds = (
-                    "data_top100_201.json",
-                    "data_top100_202.json",
-                    "data_top100_205.json",
-                    "data_top100_207.json",
-                    "data_top100_208.json",
-                    "data_top100_209.json",
-                )
-                start_idx = (eff_page - 1) * 2
-                page_feeds = all_feeds[start_idx : start_idx + 2]
-                if not page_feeds:
-                    return []
-                items_acc = []
-                for feed in page_feeds:
-                    r = await client.get(f"https://apibay.org/precompiled/{feed}")
-                    if r.status_code == 200:
-                        items_acc.extend(cls._parse_apibay_json(r.json()))
-                return items_acc[: max(limit, 100)]
+                    return cls._parse_bitsearch_html(r.text)[:limit]
 
-            if site == "limetorrent":
-                r = await client.get("https://www.limetorrents.lol/rss/")
-                r.raise_for_status()
-                return cls._parse_generic_rss(r.text)[:limit]
+                if site in ("tgx", "1337x", "zooqle", "kickass"):
+                    page_q = f"?page={eff_page}" if eff_page > 1 else ""
+                    if query:
+                        u = (
+                            f"https://therarbg.to/get-posts/keywords:{quote_plus(query)}"
+                            f":format:json/{page_q}"
+                        )
+                        r = await http_client.get(u, headers=headers)
+                        r.raise_for_status()
+                        return cls._parse_therarbg_json(r.json())[:limit]
+                    items_acc: list[dict[str, Any]] = []
+                    for cat in ("Movies", "TV", "Anime"):
+                        u = (
+                            f"https://therarbg.to/get-posts/category:{cat}"
+                            f":time:10D:format:json/{page_q}"
+                        )
+                        r = await http_client.get(u, headers=headers)
+                        if r.status_code == 200:
+                            items_acc.extend(cls._parse_therarbg_json(r.json()))
+                    return items_acc[:limit]
 
-            if site == "torlock":
-                r = await client.get("https://www.torlock.com/movies/rss.xml")
-                r.raise_for_status()
-                return cls._parse_generic_rss(r.text)[:limit]
+                if site in ("glodls", "piratebay", "magnetdl"):
+                    if query:
+                        r = await http_client.get(
+                            f"https://apibay.org/q.php?q={quote_plus(query)}", headers=headers
+                        )
+                        r.raise_for_status()
+                        return cls._parse_apibay_json(r.json())[:limit]
+                    all_feeds = (
+                        "data_top100_201.json",
+                        "data_top100_202.json",
+                        "data_top100_205.json",
+                        "data_top100_207.json",
+                        "data_top100_208.json",
+                        "data_top100_209.json",
+                    )
+                    start_idx = (eff_page - 1) * 2
+                    page_feeds = all_feeds[start_idx : start_idx + 2]
+                    if not page_feeds:
+                        return []
+                    items_acc = []
+                    for feed in page_feeds:
+                        r = await http_client.get(
+                            f"https://apibay.org/precompiled/{feed}", headers=headers
+                        )
+                        if r.status_code == 200:
+                            items_acc.extend(cls._parse_apibay_json(r.json()))
+                    return items_acc[: max(limit, 100)]
+
+                if site == "limetorrent":
+                    r = await http_client.get("https://www.limetorrents.lol/rss/", headers=headers)
+                    r.raise_for_status()
+                    return cls._parse_generic_rss(r.text)[:limit]
+
+                if site == "torlock":
+                    r = await http_client.get(
+                        "https://www.torlock.com/movies/rss.xml", headers=headers
+                    )
+                    r.raise_for_status()
+                    return cls._parse_generic_rss(r.text)[:limit]
+        finally:
+            if own_client:
+                await http_client.aclose()
 
         return []
 
@@ -595,6 +610,7 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
         pages: int = 1,
         limit: int = 35,
         start_page: int = 1,
+        client: Optional[httpx.AsyncClient] = None,
     ) -> list[NormalizedReleaseCandidate]:
         """Fetch Stage 1 recent releases from sidecar /api/v1/recent or direct native fallback."""
         cfg = self._parse_cfg(instance)
@@ -613,32 +629,37 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
 
         candidates: list[NormalizedReleaseCandidate] = []
         last_exc: Optional[Exception] = None
+        own_client = client is None
+        http_client = client or create_shared_http_client(timeout=cfg.timeout_seconds)
 
-        async with httpx.AsyncClient(timeout=cfg.timeout_seconds) as client:
+        try:
             for host in valid_hosts:
                 try:
                     for page in range(cur_start, cur_start + page_budget):
-                        resp = await client.get(
-                            f"{host}/api/v1/recent",
-                            params={
-                                "site": cfg.site,
-                                "limit": min(max(limit, 50), 100),
-                                "page": page,
-                            },
-                            headers=headers,
-                        )
-                        if resp.status_code == 404:
-                            resp = await client.get(
-                                f"{host}/api/v1/search",
+                        async with domain_semaphores.get("sidecar"):
+                            resp = await http_client.get(
+                                f"{host}/api/v1/recent",
                                 params={
                                     "site": cfg.site,
-                                    "query": "1080p",
                                     "limit": min(max(limit, 50), 100),
                                     "page": page,
                                 },
                                 headers=headers,
                             )
-                        resp.raise_for_status()
+                            if resp.status_code == 422:
+                                break
+                            if resp.status_code == 404:
+                                resp = await http_client.get(
+                                    f"{host}/api/v1/search",
+                                    params={
+                                        "site": cfg.site,
+                                        "query": "1080p",
+                                        "limit": min(max(limit, 50), 100),
+                                        "page": page,
+                                    },
+                                    headers=headers,
+                                )
+                            resp.raise_for_status()
                         payload = resp.json()
                         raw_items = (
                             payload.get("data")
@@ -658,25 +679,29 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
                     last_exc = exc
                     continue
 
-        # Direct native HTTP/RSS/JSON fallback when localhost:8009 sidecar is offline
-        try:
-            for page in range(cur_start, cur_start + page_budget):
-                direct_items = await self._fetch_native_direct_items(
-                    cfg.site,
-                    query=None,
-                    limit=max(limit, 75),
-                    page=page,
-                    timeout=cfg.timeout_seconds,
-                )
-                if not direct_items:
-                    break
-                for raw in direct_items:
-                    cand = self._normalize_item(raw, cfg.site, query_ctx=None)
-                    if cand:
-                        candidates.append(cand)
-            return candidates
-        except Exception as exc:
-            last_exc = last_exc or exc
+            # Direct native HTTP/RSS/JSON fallback when localhost:8009 sidecar is offline
+            try:
+                for page in range(cur_start, cur_start + page_budget):
+                    direct_items = await self._fetch_native_direct_items(
+                        cfg.site,
+                        query=None,
+                        limit=max(limit, 75),
+                        page=page,
+                        timeout=cfg.timeout_seconds,
+                        client=http_client,
+                    )
+                    if not direct_items:
+                        break
+                    for raw in direct_items:
+                        cand = self._normalize_item(raw, cfg.site, query_ctx=None)
+                        if cand:
+                            candidates.append(cand)
+                return candidates
+            except Exception as exc:
+                last_exc = last_exc or exc
+        finally:
+            if own_client:
+                await http_client.aclose()
 
         if last_exc:
             raise last_exc
@@ -688,6 +713,8 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
         query_ctx: SourceQueryContext,
         sources_session: Optional[Session] = None,
         mainstream_session: Optional[Session] = None,
+        *,
+        client: Optional[httpx.AsyncClient] = None,
     ) -> AdapterSearchOutcome:
         cfg = self._parse_cfg(instance)
         query_str = (
@@ -716,20 +743,23 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
         last_status: Literal["challenge_required", "timeout", "error"] = "error"
         last_msg: Optional[str] = None
         saw_connect_error = False
+        own_client = client is None
+        http_client = client or create_shared_http_client(timeout=cfg.timeout_seconds)
 
-        async with httpx.AsyncClient(timeout=cfg.timeout_seconds) as client:
+        try:
             for host in valid_hosts:
                 endpoint = f"{host}/api/v1/search"
                 try:
-                    resp = await client.get(
-                        endpoint,
-                        params={
-                            "site": cfg.site,
-                            "query": query_str,
-                            "limit": min(query_ctx.limit, 50),
-                        },
-                        headers=headers,
-                    )
+                    async with domain_semaphores.get("sidecar"):
+                        resp = await http_client.get(
+                            endpoint,
+                            params={
+                                "site": cfg.site,
+                                "query": query_str,
+                                "limit": min(query_ctx.limit, 50),
+                            },
+                            headers=headers,
+                        )
                     if is_antibot_challenge(resp.status_code, resp.text, dict(resp.headers)):
                         last_status = "challenge_required"
                         last_msg = f"Desafio anti-bot/CAPTCHA detectado no site {cfg.site}."
@@ -769,23 +799,27 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
                 except Exception as exc:
                     last_msg = str(exc)
 
-        # Direct native HTTP/RSS/JSON fallback when localhost:8009 sidecar is offline
-        if saw_connect_error:
-            try:
-                direct_items = await self._fetch_native_direct_items(
-                    cfg.site,
-                    query=query_str,
-                    limit=min(query_ctx.limit, 50),
-                    timeout=cfg.timeout_seconds,
-                )
-                releases = []
-                for item in direct_items:
-                    cand = self._normalize_item(item, cfg.site, query_ctx=query_ctx)
-                    if cand:
-                        releases.append(cand)
-                return AdapterSearchOutcome(status="ok", releases=releases)
-            except Exception as exc:
-                last_msg = str(exc)
+            # Direct native HTTP/RSS/JSON fallback when localhost:8009 sidecar is offline
+            if saw_connect_error:
+                try:
+                    direct_items = await self._fetch_native_direct_items(
+                        cfg.site,
+                        query=query_str,
+                        limit=min(query_ctx.limit, 50),
+                        timeout=cfg.timeout_seconds,
+                        client=http_client,
+                    )
+                    releases = []
+                    for item in direct_items:
+                        cand = self._normalize_item(item, cfg.site, query_ctx=query_ctx)
+                        if cand:
+                            releases.append(cand)
+                    return AdapterSearchOutcome(status="ok", releases=releases)
+                except Exception as exc:
+                    last_msg = str(exc)
+        finally:
+            if own_client:
+                await http_client.aclose()
 
         return AdapterSearchOutcome(
             status=last_status,

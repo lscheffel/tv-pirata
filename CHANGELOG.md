@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Não Lançado] — ADR-017 (2026-11-20)
+
+### Adicionado e Alterado
+- **Paralelismo Bifurcado (Fan-out HTTP $\rightarrow$ Fan-in SQLite) & Correção 422 do Sidecar (`ADR-017`, `DEC-001`..`DEC-005`):**
+  - **Correção `422` & Exaustão de Feeds:** `torrent_api_sidecar.py` passou a aceitar `page >= 1` retornando `data: []` além da pág. 20; `TorrentApiPySourceAdapter` trata HTTP `422` como exaustão limpa e `HydrationOrchestratorService` / `SourcesRegistryService` migram feeds repetidos (`0` novos em `page > 1`) automaticamente para `sweep_canonical_catalog_presence`.
+  - **`DomainSemaphoreRegistry` & Keep-Alive (`src/backend/core/domain_concurrency.py`):** Semáforos por domínio isolados por event loop (`WeakKeyDictionary`: `tmdb=8`, `yify/tgx/glodls/sidecar/wikipedia=4`, `nyaasi/bitsearch/imdb/tvmaze/jikan/wikidata=2`) + pool `httpx.AsyncClient` compartilhado.
+  - **Arquitetura 3-Fases (`Prepare DB -> Fan-out HTTP -> Fan-in DB`):** Paralelização concorrente de `YIFYSourceAdapter`, `TorrentApiPySourceAdapter`, `sweep_canonical_catalog_presence`, `CascadingMetadataEnricher` e das lanes `Fontes || Metadados` em `HydrationOrchestratorService.run_single_step` (`yts_pages=6`, `sweep_batch=12`, `meta_batch=20`), mantendo persistência SQLite sequencial única ao final.
+  - **Sidecar Resiliente & CLI Multi-Worker:** `EmbeddedSidecarManager._serve_safely()` evita propagação de `Errno 98` / `SystemExit(3)` durante `--reload`, e `make run-sidecar` usa `--workers 4`.
+  - **Testes:** Suíte expandida para **79 testes aprovados** em `14.48s`.
+
+---
+
 ## [Não Lançado] — ADR-016 (2026-11-20)
 
 ### Adicionado e Alterado

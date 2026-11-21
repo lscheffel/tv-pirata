@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/python-3.14+-blue.svg)](#)
 [![Frontend](https://img.shields.io/badge/frontend-React%2019%20%2B%20Tailwind-38bdf8.svg)](#)
 [![Backend](https://img.shields.io/badge/backend-FastAPI%20%2B%20SQLModel-009688.svg)](#)
-[![Tests](https://img.shields.io/badge/tests-77%20passing-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-79%20passing-brightgreen.svg)](#)
 [![Governance](https://img.shields.io/badge/governance-SynPraxis%20SOTA-purple.svg)](#)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](#)
 
@@ -240,7 +240,7 @@ Acesse no navegador:
 | `make dev-front` | Inicia o servidor Vite com Hot Module Replacement (HMR) em `http://127.0.0.1:5173` |
 | `make sync-catalog` | Sincroniza e enriquece as páginas mais recentes de torrents da EZTV no banco local |
 | `make hydrate` | Executa o Motor Unificado dos 3 Pilares com checkpoint retomável (`scripts/hydrate_ecosystem.py --resume`) |
-| `make test` | Executa a suíte completa de **77 testes automatizados** (100% offline/herméticos) |
+| `make test` | Executa a suíte completa de **79 testes automatizados** (100% offline/herméticos) |
 | `make lint` | Executa análise estática de código Python via `ruff check src/ tests/` |
 | `make format` | Formata automaticamente o código-fonte com `ruff format src/ tests/` |
 | `make setup-hooks` | Instala o `scripts/quality_gate.sh` como hook `pre-commit` do Git |
@@ -263,3 +263,4 @@ Todas as decisões estruturais estão documentadas e auditadas em [docs/adr/ADR-
 - **ADR-013 & ADR-014 (Consolidadas/Arquivadas):** Sistema Extensível de Plugins 1:N (`Torrent-Api-py` 12 sites + Sidecar `:8009`, `Torznab`, `UniqueWeb`), alinhamento `sources-apis.md` (YTS `movies-api.accel.li` + EZTV RSS), Sincronia Bipartida em 2 Etapas e **Sync Command Deck**.
 - **ADR-015 (Consolidada/Arquivada):** Motor Unificado dos 3 Pilares de Hidratação c/ Checkpoint `--resume`, Gatilho Inteligente de Maturidade (`BOOTSTRAP` $\leftrightarrow$ `DELTA`), Compact Presence + Catalog Sweep (`YTS` & Sidecar `:8009`), Auto-Cura Cross-DB e Cascata Hierárquica de 6 Degraus (`IMDb -> TMDB -> TVMaze -> EZTV -> YIFY -> Wikidata/Wikipédia/Jikan v4`).
 - **ADR-016 (Consolidada/Arquivada):** Redesign Master-Detail IDE em `StatusConfigView.tsx` (`SettingsSidebar` + 4 painéis dedicados), linguagem 100% humana e telemetria viva no `HydrationOrchestratorService` (etapa/alvo atual, `rate_per_minute`, `eta_seconds` e *ring buffer* `recent_events`).
+- **ADR-017 (Consolidada/Arquivada):** Paralelismo Bifurcado em 3 fases (`Prepare DB -> Fan-out HTTP -> Fan-in DB`) com [`domain_concurrency.py`](file:///home/loupan/projetosVS/tv-pirata/src/backend/core/domain_concurrency.py) (`WeakKeyDictionary` por event loop), pool `httpx.AsyncClient` Keep-Alive, correção `422` do sidecar e lotes `6/12/20`.

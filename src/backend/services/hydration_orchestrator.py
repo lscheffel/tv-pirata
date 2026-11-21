@@ -16,6 +16,10 @@ from sqlalchemy import text
 from sqlmodel import Session
 
 from src.backend.core.database import mainstream_engine, sources_engine
+from src.backend.core.domain_concurrency import create_shared_http_client
+from src.backend.models.sources_db import ExternalSourceRecord
+from src.backend.providers.sources.torrent_api_py_adapter import TorrentApiPySourceAdapter
+from src.backend.providers.sources.yify_adapter import YIFYSourceAdapter
 from src.backend.repositories.preferences import ExplorePreferencesRepository
 from src.backend.services.cascading_enricher import CascadingMetadataEnricher
 from src.backend.services.sources_registry import SourcesRegistryService
@@ -29,8 +33,12 @@ PILLAR_SOURCE_KEYS: tuple[str, ...] = ("eztv", "yify", "tgx", "nyaasi", "bitsear
 SIDECAR_PILLAR_KEYS: tuple[str, ...] = ("tgx", "nyaasi", "bitsearch", "glodls")
 
 
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def _utc_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return _utc_now().isoformat()
 
 
 class PillarSourceCursor(BaseModel):
@@ -412,12 +420,12 @@ class HydrationOrchestratorService:
         sources_session: Session,
         *,
         scope: Literal["all", "sources", "metadata"] = "all",
-        yts_pages: int = 3,
+        yts_pages: int = 6,
         sidecar_pages: int = 2,
-        sweep_batch: int = 8,
-        meta_batch: int = 10,
+        sweep_batch: int = 12,
+        meta_batch: int = 20,
     ) -> dict[str, Any]:
-        """Execute one bounded, checkpoint-persisted step across active pillars (DEC-005)."""
+        """Execute 3-phase bifurcated step: Prepare DB -> Fan-out HTTP -> Fan-in DB (ADR-017)."""
         async with self._get_lock():
             if self._run_started_mono is None:
                 self._run_started_mono = time.monotonic()
@@ -426,168 +434,328 @@ class HydrationOrchestratorService:
             step_notes: list[str] = []
             step_telemetry: dict[str, Any] = {}
 
-            if scope in ("all", "sources"):
-                # 1. YIFY / YTS Resumable Step
-                yts_cur = state.sources.get("yify") or PillarSourceCursor(source_key="yify")
-                target_pg = 1 if yts_cur.mode == "DELTA" else yts_cur.next_page
-                self._set_live_progress(
-                    "sources:yify",
-                    f"Lendo página {target_pg} de {yts_cur.total_pages} no YTS",
-                )
-                try:
-                    yts_mode = "incremental" if yts_cur.mode == "DELTA" else "baseline"
-                    res = await SourcesRegistryService.sync_source(
-                        sources_session,
-                        mainstream_session,
-                        source_key="yify",
-                        pages=1 if yts_cur.mode == "DELTA" else yts_pages,
-                        start_page=target_pg,
-                        compact_presence=(yts_cur.mode == "BOOTSTRAP"),
-                        enrich=False,
-                        mode=yts_mode,
-                        prune_after=(yts_cur.mode == "DELTA"),
-                    )
-                    y_tel = (res.get("results") or {}).get("yify", {}).get("telemetry") or {}
-                    y_err = (res.get("results") or {}).get("yify", {}).get("error")
-                    if y_err:
-                        yts_cur.last_error = str(y_err)
-                        self._record_event(
-                            "yify",
-                            f"Página {target_pg}",
-                            "error",
-                            f"YTS temporariamente indisponível: {str(y_err)[:90]}",
-                        )
-                    else:
-                        yts_cur.last_error = None
-                        yts_cur.total_pages = int(y_tel.get("total_pages") or yts_cur.total_pages)
-                        seen_movies = int(y_tel.get("movies_seen") or 0)
-                        added_yts = int(y_tel.get("releases_indexed") or 0)
-                        self._items_in_run += max(seen_movies, added_yts)
-                        if yts_cur.mode == "BOOTSTRAP":
-                            if y_tel.get("bootstrap_completed"):
-                                yts_cur.bootstrap_completed = True
-                                yts_cur.next_page = 1
-                                yts_cur.mode = "DELTA"
-                            else:
-                                yts_cur.next_page = int(
-                                    y_tel.get("next_page") or (yts_cur.next_page + 1)
-                                )
-                        yts_cur.last_run_at = _utc_iso()
-                        msg_yts = (
-                            f"YTS: página {y_tel.get('start_page', 1)}/{yts_cur.total_pages} "
-                            f"(+{added_yts} novos)"
-                        )
-                        self._record_event("yify", f"Página {target_pg}", "ok", msg_yts)
-                        step_notes.append(
-                            f"YTS p.{y_tel.get('start_page', 1)}/{yts_cur.total_pages} "
-                            f"(+{added_yts})"
-                        )
-                    step_telemetry["yify"] = y_tel or res
-                except Exception as exc:
-                    yts_cur.last_error = str(exc)
-                    self._record_event("yify", f"Página {target_pg}", "error", str(exc)[:90])
-                state.sources["yify"] = yts_cur
+            # --- PHASE 1: PREPARE DB (Read-only & Self-Heal before gather) ---
+            yts_cur = state.sources.get("yify") or PillarSourceCursor(source_key="yify")
+            yts_inst: Optional[ExternalSourceRecord] = None
+            yts_adapter: Optional[YIFYSourceAdapter] = None
+            yts_target_pg = 1 if yts_cur.mode == "DELTA" else yts_cur.next_page
 
-                # 2. Sidecar Quartet Resumable Step (Recent pagination -> Catalog Sweep)
+            sidecar_plans: dict[str, dict[str, Any]] = {}
+            adapters_map = SourcesRegistryService.get_adapters_map()
+
+            if scope in ("all", "sources"):
+                SourcesRegistryService.ensure_sources_registered(sources_session)
+                y_rec = sources_session.get(ExternalSourceRecord, "yify")
+                if y_rec and y_rec.enabled:
+                    adp = adapters_map.get(y_rec.adapter_key)
+                    if isinstance(adp, YIFYSourceAdapter):
+                        yts_inst = y_rec
+                        yts_adapter = adp
+
                 for sk in SIDECAR_PILLAR_KEYS:
                     sc = state.sources.get(sk) or PillarSourceCursor(source_key=sk)
-                    try:
-                        if not sc.recent_exhausted:
-                            self._set_live_progress(
-                                f"sources:{sk}",
-                                f"Lendo página {sc.next_page} em {sk.upper()}",
-                            )
-                            s_res = await SourcesRegistryService.sync_source(
-                                sources_session,
-                                mainstream_session,
-                                source_key=sk,
-                                pages=sidecar_pages,
-                                start_page=sc.next_page,
-                                enrich=False,
-                                mode="incremental" if sc.mode == "DELTA" else "baseline",
-                                prune_after=False,
-                            )
-                            s_tel = (s_res.get("results") or {}).get(sk, {}).get("telemetry") or {}
-                            s_err = (s_res.get("results") or {}).get(sk, {}).get("error")
-                            if s_err:
-                                sc.last_error = str(s_err)
-                                self._record_event(
-                                    sk,
-                                    f"Página {sc.next_page}",
-                                    "error",
-                                    f"{sk.upper()}: falha de conexão",
-                                )
-                            else:
-                                sc.last_error = None
-                                scanned = int(s_tel.get("candidates_scanned") or 0)
-                                added_s = int(s_tel.get("releases_indexed") or 0)
-                                self._items_in_run += scanned
-                                if s_tel.get("exhausted"):
-                                    sc.recent_exhausted = True
-                                    sc.next_page = 1
-                                else:
-                                    sc.next_page = int(s_tel.get("next_page") or (sc.next_page + 1))
-                                step_telemetry[sk] = s_tel
-                                self._record_event(
-                                    sk,
-                                    f"Recentes p.{sc.next_page}",
-                                    "ok" if added_s else "skipped",
-                                    f"{sk.upper()}: {scanned} analisados (+{added_s} novos)",
-                                )
-                                step_notes.append(f"{sk} p.{sc.next_page}(+{added_s})")
+                    s_rec = sources_session.get(ExternalSourceRecord, sk)
+                    if not s_rec or not s_rec.enabled:
+                        continue
+                    s_adp = adapters_map.get(s_rec.adapter_key)
+                    if not isinstance(s_adp, TorrentApiPySourceAdapter):
+                        continue
+                    if not sc.recent_exhausted:
+                        sidecar_plans[sk] = {
+                            "mode": "recent",
+                            "inst": s_rec,
+                            "adapter": s_adp,
+                            "cursor": sc,
+                        }
+                    else:
+                        works = SourcesRegistryService.select_sweep_works(
+                            mainstream_session,
+                            source_key=sk,
+                            offset=sc.catalog_sweep_offset,
+                            batch_size=sweep_batch,
+                        )
+                        sidecar_plans[sk] = {
+                            "mode": "sweep",
+                            "inst": s_rec,
+                            "adapter": s_adp,
+                            "cursor": sc,
+                            "works": works,
+                        }
+
+            heal_stats: dict[str, int] = {"eztv_to_mainstream": 0, "mainstream_to_eztv": 0}
+            meta_candidates: list[Any] = []
+            ez_by_imdb: dict[str, Any] = {}
+            if scope in ("all", "metadata"):
+                heal_stats, meta_candidates, ez_by_imdb = (
+                    CascadingMetadataEnricher.prepare_metadata_batch(
+                        mainstream_session, sources_session, batch_size=meta_batch
+                    )
+                )
+
+            # Multi-lane progress summary during parallel Fan-out
+            active_lanes: list[str] = []
+            if scope in ("all", "sources"):
+                src_count = (1 if yts_inst else 0) + len(sidecar_plans)
+                if src_count:
+                    active_lanes.append(f"Fontes ({src_count})")
+            if scope in ("all", "metadata") and meta_candidates:
+                active_lanes.append(f"Metadados ({len(meta_candidates)} obras)")
+            if active_lanes:
+                self._set_live_progress(
+                    scope, f"{' + '.join(active_lanes)} em paralelo..."
+                )
+
+            # --- PHASE 2: FAN-OUT HTTP (Pure async HTTP, zero Session mutations) ---
+            async def _run_yts_http(
+                http_client: Any,
+            ) -> dict[str, Any]:
+                assert yts_adapter is not None and yts_inst is not None
+                return await yts_adapter.fetch_sync_candidates(
+                    yts_inst,
+                    pages=1 if yts_cur.mode == "DELTA" else yts_pages,
+                    start_page=yts_target_pg,
+                    compact_presence=(yts_cur.mode == "BOOTSTRAP"),
+                    mode="incremental" if yts_cur.mode == "DELTA" else "baseline",
+                    client=http_client,
+                )
+
+            async def _run_sidecar_http(
+                sk: str, plan: dict[str, Any], http_client: Any
+            ) -> Any:
+                sc: PillarSourceCursor = plan["cursor"]
+                if plan["mode"] == "recent":
+                    return await plan["adapter"].fetch_recent_candidates(
+                        plan["inst"],
+                        pages=min(sidecar_pages, 10),
+                        limit=75,
+                        start_page=sc.next_page,
+                        client=http_client,
+                    )
+                return await SourcesRegistryService.fetch_sweep_batch_fanout(
+                    plan["inst"],
+                    plan["adapter"],
+                    plan["works"],
+                    client=http_client,
+                )
+
+            fanout_tasks: dict[str, Any] = {}
+            async with create_shared_http_client(timeout=10.0) as shared_client:
+                if yts_inst and yts_adapter:
+                    fanout_tasks["yify"] = _run_yts_http(shared_client)
+                for sk, plan in sidecar_plans.items():
+                    fanout_tasks[f"sidecar:{sk}"] = _run_sidecar_http(sk, plan, shared_client)
+                if scope in ("all", "metadata") and meta_candidates:
+                    fanout_tasks["metadata"] = CascadingMetadataEnricher.fetch_metadata_fanout(
+                        meta_candidates,
+                        ez_by_imdb,
+                        client=shared_client,
+                    )
+
+                keys_order = list(fanout_tasks.keys())
+                raw_results = (
+                    await asyncio.gather(
+                        *(fanout_tasks[k] for k in keys_order),
+                        return_exceptions=True,
+                    )
+                    if keys_order
+                    else []
+                )
+            results_map = dict(zip(keys_order, raw_results))
+
+            # --- PHASE 3: FAN-IN DB (Sequential batch persistence) ---
+            if "yify" in results_map:
+                y_res = results_map["yify"]
+                if isinstance(y_res, Exception):
+                    yts_cur.last_error = str(y_res)
+                    self._record_event(
+                        "yify",
+                        f"Página {yts_target_pg}",
+                        "error",
+                        f"YTS temporariamente indisponível: {str(y_res)[:90]}",
+                    )
+                else:
+                    cands = y_res["candidates"]
+                    meta = dict(y_res["meta"])
+                    idx_y, upd_y = YIFYSourceAdapter.persist_sync_candidates(
+                        sources_session, "yify", cands
+                    )
+                    meta["releases_indexed"] = idx_y
+                    meta["releases_updated"] = upd_y
+                    if yts_inst is not None:
+                        yts_inst.status = "ready"
+                        yts_inst.last_error = None
+                        yts_inst.cooldown_until = None
+                        yts_inst.last_sync_at = _utc_now()
+                        sources_session.add(yts_inst)
+                        sources_session.commit()
+                    yts_cur.last_error = None
+                    yts_cur.total_pages = int(meta.get("total_pages") or yts_cur.total_pages)
+                    seen_movies = int(meta.get("movies_seen") or 0)
+                    self._items_in_run += max(seen_movies, idx_y)
+                    if yts_cur.mode == "BOOTSTRAP":
+                        if meta.get("bootstrap_completed"):
+                            yts_cur.bootstrap_completed = True
+                            yts_cur.next_page = 1
+                            yts_cur.mode = "DELTA"
                         else:
-                            self._set_live_progress(
-                                f"sources:{sk}",
-                                (
-                                    f"Verificando catálogo em {sk.upper()} "
-                                    f"(item {sc.catalog_sweep_offset})"
-                                ),
+                            yts_cur.next_page = int(
+                                meta.get("next_page") or (yts_cur.next_page + 1)
                             )
-                            sw_res = await SourcesRegistryService.sweep_canonical_catalog_presence(
-                                sources_session,
-                                mainstream_session,
-                                source_key=sk,
-                                offset=sc.catalog_sweep_offset,
-                                batch_size=sweep_batch,
-                            )
-                            sc.last_error = sw_res.get("aborted_reason")
-                            scanned_sw = int(sw_res.get("titles_scanned") or 0)
-                            added_sw = int(sw_res.get("releases_indexed") or 0)
-                            self._items_in_run += scanned_sw
-                            if not sw_res.get("aborted_reason"):
-                                sc.catalog_sweep_offset = int(
-                                    sw_res.get("next_offset") or sc.catalog_sweep_offset
-                                )
-                                if sw_res.get("exhausted"):
-                                    sc.bootstrap_completed = True
-                                    sc.catalog_sweep_offset = 0
-                                    sc.mode = "DELTA"
-                            step_telemetry[sk] = sw_res
-                            self._record_event(
-                                sk,
-                                f"Catálogo @{sc.catalog_sweep_offset}",
-                                "ok" if added_sw else "skipped",
-                                f"{sk.upper()}: {scanned_sw} títulos verificados (+{added_sw})",
-                            )
-                            step_notes.append(
-                                f"{sk} cat.{sc.catalog_sweep_offset}(+{added_sw})"
-                            )
-                        sc.last_run_at = _utc_iso()
-                    except Exception as exc:
-                        sc.last_error = str(exc)
-                        self._record_event(sk, "Sincronia", "error", str(exc)[:90])
+                    yts_cur.last_run_at = _utc_iso()
+                    self._record_event(
+                        "yify",
+                        f"Página {yts_target_pg}",
+                        "ok",
+                        f"YTS: página {meta.get('start_page', 1)}/{yts_cur.total_pages} "
+                        f"(+{idx_y} novos)",
+                    )
+                    step_notes.append(
+                        f"YTS p.{meta.get('start_page', 1)}/{yts_cur.total_pages} (+{idx_y})"
+                    )
+                    step_telemetry["yify"] = meta
+                state.sources["yify"] = yts_cur
+
+            for sk, plan in sidecar_plans.items():
+                sc = plan["cursor"]
+                s_inst: ExternalSourceRecord = plan["inst"]
+                res_item = results_map.get(f"sidecar:{sk}")
+                if isinstance(res_item, Exception):
+                    sc.last_error = str(res_item)
+                    self._record_event(
+                        sk,
+                        f"Página {sc.next_page}",
+                        "error",
+                        f"{sk.upper()}: falha de conexão",
+                    )
                     state.sources[sk] = sc
+                    continue
+
+                if plan["mode"] == "recent":
+                    recent_cands = res_item or []
+                    indexed_s = 0
+                    matched_s = 0
+                    for cand in recent_cands:
+                        if cand.seeds < 1:
+                            continue
+                        imdb = cand.imdb_id
+                        conf = cand.match_confidence
+                        if not imdb:
+                            r_id, r_conf, _ = (
+                                SourcesRegistryService._resolve_imdb_id_against_mainstream(
+                                    mainstream_session, cand.title, cand.year, cand.work_type
+                                )
+                            )
+                            if r_id:
+                                imdb = r_id
+                                conf = max(conf, r_conf)
+                                matched_s += 1
+                        if imdb and conf >= 0.85:
+                            cand.imdb_id = imdb
+                            cand.match_confidence = conf
+                            p_rows, _ = SourcesRegistryService._persist_verified_candidates(
+                                sources_session, sk, imdb, [cand]
+                            )
+                            indexed_s += len(p_rows)
+
+                    is_exhausted = len(recent_cands) == 0 or (
+                        sc.mode == "BOOTSTRAP" and sc.next_page > 1 and indexed_s == 0
+                    )
+                    scanned = len(recent_cands)
+                    self._items_in_run += scanned
+                    if is_exhausted:
+                        sc.recent_exhausted = True
+                        sc.next_page = 1
+                    else:
+                        sc.next_page = sc.next_page + min(sidecar_pages, 10)
+                    sc.last_error = None
+                    sc.last_run_at = _utc_iso()
+                    s_inst.status = "ready"
+                    s_inst.last_error = None
+                    s_inst.last_sync_at = _utc_now()
+                    sources_session.add(s_inst)
+                    sources_session.commit()
+                    step_telemetry[sk] = {
+                        "source": sk,
+                        "exhausted": is_exhausted,
+                        "candidates_scanned": scanned,
+                        "canonical_matched": matched_s,
+                        "releases_indexed": indexed_s,
+                    }
+                    self._record_event(
+                        sk,
+                        f"Recentes p.{sc.next_page}",
+                        "ok" if indexed_s else "skipped",
+                        f"{sk.upper()}: {scanned} analisados (+{indexed_s} novos)",
+                    )
+                    step_notes.append(f"{sk} p.{sc.next_page}(+{indexed_s})")
+                else:
+                    works = plan["works"]
+                    if not works:
+                        sc.bootstrap_completed = True
+                        sc.catalog_sweep_offset = 0
+                        sc.mode = "DELTA"
+                        sw_res = {
+                            "source": sk,
+                            "titles_scanned": 0,
+                            "releases_indexed": 0,
+                            "exhausted": True,
+                        }
+                    else:
+                        sw_res = SourcesRegistryService.persist_sweep_batch_fanin(
+                            sources_session,
+                            s_inst,
+                            res_item,
+                            offset=sc.catalog_sweep_offset,
+                            batch_size=sweep_batch,
+                        )
+                        sc.last_error = sw_res.get("aborted_reason")
+                        if not sw_res.get("aborted_reason"):
+                            sc.catalog_sweep_offset = int(
+                                sw_res.get("next_offset") or sc.catalog_sweep_offset
+                            )
+                            if sw_res.get("exhausted"):
+                                sc.bootstrap_completed = True
+                                sc.catalog_sweep_offset = 0
+                                sc.mode = "DELTA"
+                    scanned_sw = int(sw_res.get("titles_scanned") or 0)
+                    added_sw = int(sw_res.get("releases_indexed") or 0)
+                    self._items_in_run += scanned_sw
+                    sc.last_run_at = _utc_iso()
+                    step_telemetry[sk] = sw_res
+                    self._record_event(
+                        sk,
+                        f"Catálogo @{sc.catalog_sweep_offset}",
+                        "ok" if added_sw else "skipped",
+                        f"{sk.upper()}: {scanned_sw} títulos verificados (+{added_sw})",
+                    )
+                    step_notes.append(f"{sk} cat.{sc.catalog_sweep_offset}(+{added_sw})")
+                state.sources[sk] = sc
+
+            if scope in ("all", "sources"):
+                SourcesRegistryService._recompute_source_counters(sources_session)
 
             if scope in ("all", "metadata"):
-                self._set_live_progress("metadata", "Buscando capas e sinopses faltantes...")
-                meta_res = await CascadingMetadataEnricher.enrich_batch(
-                    mainstream_session,
-                    sources_session,
-                    batch_size=meta_batch,
-                    on_progress=self._set_live_progress,
-                )
+                if meta_candidates:
+                    m_res = results_map.get("metadata")
+                    collected = {} if isinstance(m_res, Exception) or m_res is None else m_res
+                    meta_res = CascadingMetadataEnricher.apply_metadata_fanin(
+                        mainstream_session,
+                        sources_session,
+                        heal_stats,
+                        meta_candidates,
+                        ez_by_imdb,
+                        collected,
+                    )
+                else:
+                    meta_res = {
+                        "processed": 0,
+                        "updated": 0,
+                        "self_heal": heal_stats,
+                        "provenance": {"eztv": heal_stats.get("eztv_to_mainstream", 0)},
+                        "exhausted": True,
+                    }
                 prov = meta_res.get("provenance") or {}
-                heal = meta_res.get("self_heal") or {}
+                heal = meta_res.get("self_heal") or heal_stats
                 proc_m = int(meta_res.get("processed") or 0)
                 upd_m = int(meta_res.get("updated") or 0)
                 self._items_in_run += proc_m

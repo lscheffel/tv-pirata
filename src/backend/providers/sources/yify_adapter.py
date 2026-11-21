@@ -11,6 +11,7 @@ import httpx
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from src.backend.core.domain_concurrency import create_shared_http_client, domain_semaphores
 from src.backend.models.sources_db import ExternalRelease, ExternalSourceRecord
 from src.backend.providers.sources.base import (
     AdapterSearchOutcome,
@@ -276,6 +277,245 @@ class YIFYSourceAdapter(BaseSourceAdapter):
             )
         return out
 
+    async def fetch_sync_candidates(
+        self,
+        instance: ExternalSourceRecord,
+        *,
+        pages: int = 2,
+        start_page: int = 1,
+        compact_presence: bool = False,
+        mode: str = "incremental",
+        quality: Optional[str] = None,
+        minimum_rating: Optional[int] = None,
+        sort_by: Optional[str] = None,
+        order_by: str = "desc",
+        genre: Optional[str] = None,
+        client: Optional[httpx.AsyncClient] = None,
+    ) -> dict[str, Any]:
+        """Pure HTTP Fan-out: fetch start_page then remaining pages concurrently via semaphore."""
+        cfg = self._parse_cfg(instance)
+        endpoints = self._candidate_endpoints(cfg)
+        cur_start = max(1, int(start_page))
+        page_budget = max(1, min(int(pages), 100))
+
+        eff_quality = (quality or cfg.default_quality or "All").strip()
+        eff_min_rating = (
+            minimum_rating if minimum_rating is not None else int(cfg.minimum_rating or 0)
+        )
+        if sort_by:
+            eff_sort = sort_by
+        elif mode == "baseline":
+            eff_sort = "seeds"
+        else:
+            eff_sort = cfg.sort_by or "date_added"
+
+        base_params: dict[str, Any] = {
+            "limit": 50,
+            "sort_by": eff_sort,
+            "order_by": order_by if order_by in ("desc", "asc") else "desc",
+            "with_rt_ratings": "true" if cfg.with_rt_ratings else "false",
+        }
+        if eff_quality and eff_quality.lower() != "all":
+            base_params["quality"] = eff_quality
+        if eff_min_rating > 0:
+            base_params["minimum_rating"] = min(9, max(0, eff_min_rating))
+        if genre and genre.strip().lower() != "all":
+            base_params["genre"] = genre.strip()
+
+        last_err: Optional[Exception] = None
+        own_client = client is None
+        http_client = client or create_shared_http_client(timeout=cfg.timeout_seconds)
+
+        async def _fetch_page(ep: str, pg: int) -> dict[str, Any]:
+            async with domain_semaphores.get("yify"):
+                r = await http_client.get(ep, params={**base_params, "page": pg})
+                r.raise_for_status()
+                return r.json()
+
+        try:
+            for endpoint in endpoints:
+                try:
+                    first_payload = await _fetch_page(endpoint, cur_start)
+                    first_data = first_payload.get("data") or {}
+                    movie_count = int(first_data.get("movie_count") or 0)
+                    limit_val = max(1, int(first_data.get("limit") or 50))
+                    total_pages = (
+                        max(1, math.ceil(movie_count / limit_val))
+                        if movie_count > 0
+                        else cur_start + page_budget - 1
+                    )
+                    first_movies = first_data.get("movies") or []
+                    if not first_movies:
+                        return {
+                            "candidates": [],
+                            "meta": {
+                                "source": instance.source_key,
+                                "endpoint": endpoint,
+                                "mode": mode,
+                                "sort_by": eff_sort,
+                                "quality": eff_quality,
+                                "minimum_rating": eff_min_rating,
+                                "compact_presence": compact_presence,
+                                "start_page": cur_start,
+                                "last_page": cur_start - 1,
+                                "next_page": 1,
+                                "total_pages": max(1, total_pages),
+                                "movie_count": movie_count,
+                                "bootstrap_completed": True,
+                                "movies_seen": 0,
+                            },
+                        }
+
+                    max_end_page = min(cur_start + page_budget - 1, total_pages)
+                    remaining_pages = list(range(cur_start + 1, max_end_page + 1))
+                    page_results: list[tuple[int, list[dict[str, Any]]]] = [
+                        (cur_start, first_movies)
+                    ]
+
+                    if remaining_pages:
+                        raw_responses = await asyncio.gather(
+                            *(_fetch_page(endpoint, pg) for pg in remaining_pages),
+                            return_exceptions=True,
+                        )
+                        for pg, res_item in zip(remaining_pages, raw_responses):
+                            if isinstance(res_item, Exception):
+                                continue
+                            d_blk = res_item.get("data") or {}
+                            if d_blk.get("movie_count"):
+                                movie_count = int(d_blk.get("movie_count") or movie_count)
+                                total_pages = max(1, math.ceil(movie_count / limit_val))
+                            pg_movies = d_blk.get("movies") or []
+                            if pg_movies:
+                                page_results.append((pg, pg_movies))
+
+                    all_movies: list[dict[str, Any]] = []
+                    last_page = cur_start
+                    exhausted = False
+                    for pg, m_list in sorted(page_results, key=lambda x: x[0]):
+                        all_movies.extend(m_list)
+                        last_page = max(last_page, pg)
+                    if remaining_pages and len(page_results) < len(remaining_pages) + 1:
+                        exhausted = True
+
+                    cands = (
+                        self._movies_to_presence_candidates(all_movies)
+                        if compact_presence
+                        else self._movies_to_candidates(all_movies)
+                    )
+                    bootstrap_done = exhausted or (movie_count > 0 and last_page >= total_pages)
+                    next_page = 1 if bootstrap_done else (last_page + 1)
+                    return {
+                        "candidates": cands,
+                        "meta": {
+                            "source": instance.source_key,
+                            "endpoint": endpoint,
+                            "mode": mode,
+                            "sort_by": eff_sort,
+                            "quality": eff_quality,
+                            "minimum_rating": eff_min_rating,
+                            "compact_presence": compact_presence,
+                            "start_page": cur_start,
+                            "last_page": last_page,
+                            "next_page": next_page,
+                            "total_pages": total_pages,
+                            "movie_count": movie_count,
+                            "bootstrap_completed": bootstrap_done,
+                            "movies_seen": len(all_movies),
+                        },
+                    }
+                except Exception as exc:
+                    last_err = exc
+                    continue
+        finally:
+            if own_client:
+                await http_client.aclose()
+
+        if last_err:
+            raise last_err
+        return {
+            "candidates": [],
+            "meta": {
+                "source": instance.source_key,
+                "mode": mode,
+                "start_page": cur_start,
+                "next_page": cur_start,
+                "total_pages": cur_start,
+                "bootstrap_completed": False,
+                "movies_seen": 0,
+            },
+        }
+
+    @staticmethod
+    def persist_sync_candidates(
+        sources_session: Session,
+        source_key: str,
+        candidates: list[NormalizedReleaseCandidate],
+    ) -> tuple[int, int]:
+        """Fan-in SQLite batch SELECT/UPSERT for YTS candidates."""
+        indexed = 0
+        updated = 0
+        if not candidates:
+            return indexed, updated
+
+        deduped: list[NormalizedReleaseCandidate] = []
+        seen_ext: set[str] = set()
+        for c in candidates:
+            if c.external_id not in seen_ext:
+                seen_ext.add(c.external_id)
+                deduped.append(c)
+
+        ext_ids = [c.external_id for c in deduped]
+        existing_map = {
+            row.external_id: row
+            for row in sources_session.exec(
+                select(ExternalRelease).where(
+                    ExternalRelease.source_key == source_key,
+                    ExternalRelease.external_id.in_(ext_ids),
+                )
+            ).all()
+        }
+        now_ts = utc_now()
+        for cand in deduped:
+            existing = existing_map.get(cand.external_id)
+            if existing:
+                existing.seeds = cand.seeds
+                existing.peers = cand.peers
+                existing.quality = cand.quality
+                existing.poster_url = cand.poster_url or existing.poster_url
+                existing.magnet_url = cand.magnet_url or existing.magnet_url
+                existing.last_checked_at = now_ts
+                sources_session.add(existing)
+                updated += 1
+            else:
+                rel_row = ExternalRelease(
+                    source_key=source_key,
+                    external_id=cand.external_id,
+                    imdb_id=cand.imdb_id,
+                    title=cand.title,
+                    work_type=cand.work_type,
+                    quality=cand.quality,
+                    seeds=cand.seeds,
+                    peers=cand.peers,
+                    size_bytes=cand.size_bytes,
+                    release_type=cand.release_type,
+                    magnet_url=cand.magnet_url,
+                    torrent_url=cand.torrent_url,
+                    external_url=cand.external_url,
+                    info_hash=cand.info_hash,
+                    poster_url=cand.poster_url,
+                    genres=cand.genres,
+                    year=cand.year,
+                    rating=cand.rating,
+                    matched_by=cand.matched_by,
+                    match_confidence=cand.match_confidence,
+                    last_checked_at=now_ts,
+                )
+                sources_session.add(rel_row)
+                existing_map[cand.external_id] = rel_row
+                indexed += 1
+        sources_session.commit()
+        return indexed, updated
+
     async def sync(
         self,
         instance: ExternalSourceRecord,
@@ -292,159 +532,29 @@ class YIFYSourceAdapter(BaseSourceAdapter):
         sort_by: Optional[str] = None,
         order_by: str = "desc",
         genre: Optional[str] = None,
+        client: Optional[httpx.AsyncClient] = None,
     ) -> dict[str, Any]:
-        cfg = self._parse_cfg(instance)
-        endpoints = self._candidate_endpoints(cfg)
-        indexed = 0
-        updated = 0
-        movies_seen = 0
-        last_err: Optional[Exception] = None
-        cur_start = max(1, int(start_page))
-        page_budget = max(1, min(int(pages), 100))
-
-        eff_quality = (quality or cfg.default_quality or "All").strip()
-        eff_min_rating = (
-            minimum_rating if minimum_rating is not None else int(cfg.minimum_rating or 0)
+        fetched = await self.fetch_sync_candidates(
+            instance,
+            pages=pages,
+            start_page=start_page,
+            compact_presence=compact_presence,
+            mode=mode,
+            quality=quality,
+            minimum_rating=minimum_rating,
+            sort_by=sort_by,
+            order_by=order_by,
+            genre=genre,
+            client=client,
         )
-        if sort_by:
-            eff_sort = sort_by
-        elif mode == "baseline":
-            eff_sort = "seeds"
-        else:
-            eff_sort = cfg.sort_by or "date_added"
-
-        async with httpx.AsyncClient(timeout=cfg.timeout_seconds) as client:
-            for endpoint in endpoints:
-                try:
-                    total_pages = cur_start
-                    movie_count = 0
-                    last_page = cur_start - 1
-                    exhausted = False
-
-                    for page in range(cur_start, cur_start + page_budget):
-                        params: dict[str, Any] = {
-                            "limit": 50,
-                            "page": page,
-                            "sort_by": eff_sort,
-                            "order_by": order_by if order_by in ("desc", "asc") else "desc",
-                            "with_rt_ratings": "true" if cfg.with_rt_ratings else "false",
-                        }
-                        if eff_quality and eff_quality.lower() != "all":
-                            params["quality"] = eff_quality
-                        if eff_min_rating > 0:
-                            params["minimum_rating"] = min(9, max(0, eff_min_rating))
-                        if genre and genre.strip().lower() != "all":
-                            params["genre"] = genre.strip()
-
-                        resp = await client.get(endpoint, params=params)
-                        resp.raise_for_status()
-                        payload = resp.json()
-                        data_block = payload.get("data") or {}
-                        if data_block.get("movie_count"):
-                            movie_count = int(data_block.get("movie_count") or 0)
-                            limit_val = max(1, int(data_block.get("limit") or 50))
-                            total_pages = max(1, math.ceil(movie_count / limit_val))
-                        movies = data_block.get("movies") or []
-                        if not movies:
-                            exhausted = True
-                            break
-
-                        last_page = page
-                        movies_seen += len(movies)
-                        cands = (
-                            self._movies_to_presence_candidates(movies)
-                            if compact_presence
-                            else self._movies_to_candidates(movies)
-                        )
-                        if cands:
-                            ext_ids = [c.external_id for c in cands]
-                            existing_map = {
-                                row.external_id: row
-                                for row in sources_session.exec(
-                                    select(ExternalRelease).where(
-                                        ExternalRelease.source_key == instance.source_key,
-                                        ExternalRelease.external_id.in_(ext_ids),
-                                    )
-                                ).all()
-                            }
-                            now_ts = utc_now()
-                            for cand in cands:
-                                existing = existing_map.get(cand.external_id)
-                                if existing:
-                                    existing.seeds = cand.seeds
-                                    existing.peers = cand.peers
-                                    existing.quality = cand.quality
-                                    existing.poster_url = cand.poster_url or existing.poster_url
-                                    existing.magnet_url = cand.magnet_url or existing.magnet_url
-                                    existing.last_checked_at = now_ts
-                                    sources_session.add(existing)
-                                    updated += 1
-                                else:
-                                    rel_row = ExternalRelease(
-                                        source_key=instance.source_key,
-                                        external_id=cand.external_id,
-                                        imdb_id=cand.imdb_id,
-                                        title=cand.title,
-                                        work_type=cand.work_type,
-                                        quality=cand.quality,
-                                        seeds=cand.seeds,
-                                        peers=cand.peers,
-                                        size_bytes=cand.size_bytes,
-                                        release_type=cand.release_type,
-                                        magnet_url=cand.magnet_url,
-                                        torrent_url=cand.torrent_url,
-                                        external_url=cand.external_url,
-                                        info_hash=cand.info_hash,
-                                        poster_url=cand.poster_url,
-                                        genres=cand.genres,
-                                        year=cand.year,
-                                        rating=cand.rating,
-                                        matched_by=cand.matched_by,
-                                        match_confidence=cand.match_confidence,
-                                        last_checked_at=now_ts,
-                                    )
-                                    sources_session.add(rel_row)
-                                    existing_map[cand.external_id] = rel_row
-                                    indexed += 1
-
-                        if movie_count > 0 and page >= total_pages:
-                            exhausted = True
-                            break
-
-                    sources_session.commit()
-                    eff_last = max(cur_start - 1, last_page)
-                    bootstrap_done = exhausted or (movie_count > 0 and eff_last >= total_pages)
-                    next_page = 1 if bootstrap_done else (eff_last + 1)
-                    return {
-                        "source": instance.source_key,
-                        "endpoint": endpoint,
-                        "mode": mode,
-                        "sort_by": eff_sort,
-                        "quality": eff_quality,
-                        "minimum_rating": eff_min_rating,
-                        "compact_presence": compact_presence,
-                        "start_page": cur_start,
-                        "last_page": eff_last,
-                        "next_page": next_page,
-                        "total_pages": total_pages,
-                        "movie_count": movie_count,
-                        "bootstrap_completed": bootstrap_done,
-                        "movies_seen": movies_seen,
-                        "releases_indexed": indexed,
-                        "releases_updated": updated,
-                    }
-                except Exception as exc:
-                    last_err = exc
-                    continue
-
-        if last_err:
-            raise last_err
-        return {
-            "source": instance.source_key,
-            "movies_seen": 0,
-            "releases_indexed": 0,
-            "releases_updated": 0,
-        }
+        cands = fetched["candidates"]
+        meta = dict(fetched["meta"])
+        indexed, updated = self.persist_sync_candidates(
+            sources_session, instance.source_key, cands
+        )
+        meta["releases_indexed"] = indexed
+        meta["releases_updated"] = updated
+        return meta
 
     async def search(
         self,

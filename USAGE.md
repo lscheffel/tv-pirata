@@ -205,12 +205,12 @@ make hydrate
 
 ---
 
-## 5. 🧪 Pirâmide de Testes e Qualidade (`77 Testes`)
+## 5. 🧪 Pirâmide de Testes e Qualidade (`79 Testes`)
 
 Todos os testes automatizados são **100% herméticos e offline**, utilizando `respx` para interceptação determinística de chamadas HTTP e `SQLite :memory:` com isolamento por `Engine`.
 
 ```bash
-# 1. Executar toda a suíte (77 testes unitários e de integração)
+# 1. Executar toda a suíte (79 testes unitários e de integração)
 make test
 
 # 2. Executar testes do Motor Unificado dos 3 Pilares, Cascata 6-Níveis e Checkpoint --resume (ADR-015)

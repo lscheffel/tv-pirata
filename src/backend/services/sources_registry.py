@@ -16,6 +16,7 @@ from sqlalchemy import func, text
 from sqlmodel import Session, col, delete, select
 
 from src.backend.core.cache import catalog_cache, discovery_cache
+from src.backend.core.domain_concurrency import create_shared_http_client, domain_semaphores
 from src.backend.models.catalog_domain import IMDbCatalogShow
 from src.backend.models.db import CatalogRelease, CatalogShow, ShowRecord
 from src.backend.models.eztv_db import EZTVShow
@@ -1794,12 +1795,15 @@ class SourcesRegistryService:
                                 sources_session, inst.source_key, imdb, [cand]
                             )
                             indexed += len(p_rows)
+                    is_exhausted = len(recent_cands) == 0 or (
+                        eff_mode == "baseline" and start_page > 1 and indexed == 0
+                    )
                     telemetry = {
                         "source": inst.source_key,
                         "mode": eff_mode,
                         "start_page": start_page,
-                        "next_page": start_page + min(pages, 10) if recent_cands else 1,
-                        "exhausted": len(recent_cands) == 0,
+                        "next_page": 1 if is_exhausted else (start_page + min(pages, 10)),
+                        "exhausted": is_exhausted,
                         "candidates_scanned": len(recent_cands),
                         "canonical_matched": matched_canonical,
                         "releases_indexed": indexed,
@@ -1858,6 +1862,140 @@ class SourcesRegistryService:
             "results": results,
         }
 
+    @staticmethod
+    def select_sweep_works(
+        mainstream_session: Session,
+        *,
+        source_key: str,
+        offset: int = 0,
+        batch_size: int = 12,
+    ) -> list[IMDbCatalogShow]:
+        """Prepare-phase read: select canonical works for catalog presence sweep."""
+        eff_offset = max(0, int(offset))
+        eff_batch = max(1, min(int(batch_size), 50))
+        stmt = select(IMDbCatalogShow).where(IMDbCatalogShow.rating_votes >= 1000)
+        if source_key == "nyaasi":
+            stmt = stmt.where(col(IMDbCatalogShow.genres).ilike("%Animation%"))
+        stmt = (
+            stmt.order_by(
+                col(IMDbCatalogShow.rating_votes).desc(),
+                col(IMDbCatalogShow.imdb_id).asc(),
+            )
+            .offset(eff_offset)
+            .limit(eff_batch)
+        )
+        return list(mainstream_session.exec(stmt).all())
+
+    @staticmethod
+    async def fetch_sweep_batch_fanout(
+        inst: ExternalSourceRecord,
+        adapter: BaseSourceAdapter,
+        works: list[IMDbCatalogShow],
+        *,
+        client: Optional[httpx.AsyncClient] = None,
+    ) -> list[tuple[IMDbCatalogShow, AdapterSearchOutcome | Exception]]:
+        """Pure HTTP Fan-out for canonical catalog sweep under domain semaphore."""
+        if not works:
+            return []
+        own_client = client is None
+        http_client = client or create_shared_http_client(timeout=10.0)
+
+        async def _query_one(
+            work: IMDbCatalogShow,
+        ) -> tuple[IMDbCatalogShow, AdapterSearchOutcome | Exception]:
+            query_ctx = SourceQueryContext(
+                imdb_id=work.imdb_id,
+                title=work.primary_title,
+                original_title=work.original_title,
+                year=work.start_year,
+                work_type=work.title_type,
+                limit=10,
+            )
+            try:
+                async with domain_semaphores.get(inst.source_key):
+                    if isinstance(adapter, TorrentApiPySourceAdapter):
+                        outcome = await adapter.search(inst, query_ctx, client=http_client)
+                    else:
+                        outcome = await adapter.search(inst, query_ctx)
+                return work, outcome
+            except Exception as exc:
+                return work, exc
+
+        try:
+            return list(await asyncio.gather(*(_query_one(w) for w in works)))
+        finally:
+            if own_client:
+                await http_client.aclose()
+
+    @classmethod
+    def persist_sweep_batch_fanin(
+        cls,
+        sources_session: Session,
+        inst: ExternalSourceRecord,
+        outcomes: list[tuple[IMDbCatalogShow, AdapterSearchOutcome | Exception]],
+        *,
+        offset: int = 0,
+        batch_size: int = 12,
+        min_seeds_floor: int = 1,
+    ) -> dict[str, Any]:
+        """Fan-in SQLite write for parallel catalog sweep results."""
+        eff_offset = max(0, int(offset))
+        eff_batch = max(1, min(int(batch_size), 50))
+        scanned = len(outcomes)
+        matched_titles = 0
+        releases_indexed = 0
+        aborted_reason: Optional[str] = None
+
+        for work, item in outcomes:
+            if isinstance(item, Exception):
+                aborted_reason = str(item)
+                continue
+            if item.status == "challenge_required":
+                aborted_reason = item.message or "challenge_required"
+                inst.status = "challenge_required"
+                inst.last_error = aborted_reason
+                inst.cooldown_until = _utc_now() + timedelta(seconds=60)
+                continue
+            verified = [
+                c
+                for c in item.releases
+                if c.seeds >= min_seeds_floor and c.match_confidence >= 0.85
+            ]
+            if verified:
+                for c in verified:
+                    c.imdb_id = work.imdb_id
+                persisted, _ = cls._persist_verified_candidates(
+                    sources_session,
+                    inst.source_key,
+                    work.imdb_id,
+                    verified[:3],
+                    replace_on_success=False,
+                )
+                if persisted:
+                    matched_titles += 1
+                    releases_indexed += len(persisted)
+
+        inst.last_sync_at = _utc_now()
+        if not aborted_reason:
+            inst.status = "ready"
+            inst.last_error = None
+        sources_session.add(inst)
+        sources_session.commit()
+        cls._recompute_source_counters(sources_session)
+        catalog_cache.invalidate()
+        discovery_cache.invalidate()
+
+        return {
+            "source": inst.source_key,
+            "offset": eff_offset,
+            "next_offset": eff_offset + scanned,
+            "titles_scanned": scanned,
+            "titles_matched": matched_titles,
+            "releases_indexed": releases_indexed,
+            "exhausted": scanned < eff_batch,
+            "aborted_reason": aborted_reason,
+        }
+
     @classmethod
     async def sweep_canonical_catalog_presence(
         cls,
@@ -1868,6 +2006,7 @@ class SourcesRegistryService:
         offset: int = 0,
         batch_size: int = 12,
         min_seeds_floor: int = 1,
+        client: Optional[httpx.AsyncClient] = None,
     ) -> dict[str, Any]:
         """Stage 1B Resumable Canonical Catalog Presence Sweep for Sidecar/Search sources."""
         if mainstream_session is None:
@@ -1909,24 +2048,13 @@ class SourcesRegistryService:
                 "skipped": "adapter_no_search",
             }
 
-        eff_offset = max(0, int(offset))
-        eff_batch = max(1, min(int(batch_size), 50))
-        stmt = select(IMDbCatalogShow).where(IMDbCatalogShow.rating_votes >= 1000)
-        if inst.source_key == "nyaasi":
-            stmt = stmt.where(col(IMDbCatalogShow.genres).ilike("%Animation%"))
-        stmt = (
-            stmt.order_by(
-                col(IMDbCatalogShow.rating_votes).desc(),
-                col(IMDbCatalogShow.imdb_id).asc(),
-            )
-            .offset(eff_offset)
-            .limit(eff_batch)
+        works = cls.select_sweep_works(
+            mainstream_session, source_key=inst.source_key, offset=offset, batch_size=batch_size
         )
-        works = list(mainstream_session.exec(stmt).all())
         if not works:
             return {
                 "source": inst.source_key,
-                "offset": eff_offset,
+                "offset": max(0, int(offset)),
                 "next_offset": 0,
                 "titles_scanned": 0,
                 "titles_matched": 0,
@@ -1934,78 +2062,12 @@ class SourcesRegistryService:
                 "exhausted": True,
             }
 
-        scanned = 0
-        matched_titles = 0
-        releases_indexed = 0
-        aborted_reason: Optional[str] = None
-
-        for work in works:
-            scanned += 1
-            query_ctx = SourceQueryContext(
-                imdb_id=work.imdb_id,
-                title=work.primary_title,
-                original_title=work.original_title,
-                year=work.start_year,
-                work_type=work.title_type,
-                limit=10,
-            )
-            try:
-                outcome = await adapter.search(
-                    inst,
-                    query_ctx,
-                    sources_session=sources_session,
-                    mainstream_session=mainstream_session,
-                )
-            except Exception as exc:
-                aborted_reason = str(exc)
-                continue
-
-            if outcome.status == "challenge_required":
-                aborted_reason = outcome.message or "challenge_required"
-                inst.status = "challenge_required"
-                inst.last_error = aborted_reason
-                inst.cooldown_until = _utc_now() + timedelta(seconds=60)
-                sources_session.add(inst)
-                sources_session.commit()
-                break
-
-            verified = [
-                c
-                for c in outcome.releases
-                if c.seeds >= min_seeds_floor and c.match_confidence >= 0.85
-            ]
-            if verified:
-                for c in verified:
-                    c.imdb_id = work.imdb_id
-                persisted, _ = cls._persist_verified_candidates(
-                    sources_session,
-                    inst.source_key,
-                    work.imdb_id,
-                    verified[:3],
-                    replace_on_success=False,
-                )
-                if persisted:
-                    matched_titles += 1
-                    releases_indexed += len(persisted)
-
-        inst.last_sync_at = _utc_now()
-        if not aborted_reason:
-            inst.status = "ready"
-            inst.last_error = None
-        sources_session.add(inst)
-        sources_session.commit()
-        cls._recompute_source_counters(sources_session)
-        catalog_cache.invalidate()
-        discovery_cache.invalidate()
-
-        next_off = eff_offset + scanned
-        return {
-            "source": inst.source_key,
-            "offset": eff_offset,
-            "next_offset": next_off,
-            "titles_scanned": scanned,
-            "titles_matched": matched_titles,
-            "releases_indexed": releases_indexed,
-            "exhausted": len(works) < eff_batch,
-            "aborted_reason": aborted_reason,
-        }
+        outcomes = await cls.fetch_sweep_batch_fanout(inst, adapter, works, client=client)
+        return cls.persist_sweep_batch_fanin(
+            sources_session,
+            inst,
+            outcomes,
+            offset=offset,
+            batch_size=batch_size,
+            min_seeds_floor=min_seeds_floor,
+        )

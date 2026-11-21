@@ -52,7 +52,7 @@ run:
 	.venv/bin/python -m uvicorn src.backend.main:app --host 0.0.0.0 --port 8005 --reload
 
 run-sidecar:
-	$(PYTHON) -m uvicorn src.backend.sidecar.torrent_api_sidecar:sidecar_app --host 127.0.0.1 --port 8009 --reload
+	.venv/bin/python -m uvicorn src.backend.sidecar.torrent_api_sidecar:sidecar_app --host 127.0.0.1 --port 8009 --workers 4
 
 build-front:
 	@echo "[+] Compilando SPA Frontend com Vite..."

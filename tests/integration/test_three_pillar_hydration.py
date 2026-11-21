@@ -483,3 +483,100 @@ def test_hydration_endpoints_and_nyaa_bilingual_sweep(hydration_client):
     assert reset_res.status_code == 200
     assert reset_res.json()["sources"]["yify"]["next_page"] == 1
 
+
+@respx.mock
+def test_sidecar_422_and_exhaustion_transitions_to_sweep(hydration_client):
+    """Verify page>20 on sidecar returns 200 empty and 422 from external sidecar triggers sweep."""
+    from src.backend.providers.sources.torrent_api_py_adapter import TorrentApiPySourceAdapter
+    from src.backend.sidecar.torrent_api_sidecar import sidecar_app
+
+    # 1. Embedded sidecar_app accepts page=21 cleanly without 422
+    sc_client = TestClient(sidecar_app)
+    r_sc = sc_client.get("/api/v1/recent?site=nyaasi&page=21")
+    assert r_sc.status_code == 200
+    assert r_sc.json()["exhausted"] is True
+    assert r_sc.json()["data"] == []
+
+    # 2. Adapter treats external 422 gracefully as empty -> exhausted=True
+    _client, _main_e, src_e = hydration_client
+    with Session(src_e) as ss:
+        SourcesRegistryService.ensure_sources_registered(ss)
+        nyaa = ss.get(ExternalSourceRecord, "nyaasi")
+        assert nyaa is not None
+        respx.get("http://127.0.0.1:8009/api/v1/recent").mock(
+            return_value=httpx.Response(422, json={"detail": "page > 20"})
+        )
+        cands = asyncio.run(
+            TorrentApiPySourceAdapter().fetch_recent_candidates(nyaa, pages=1, start_page=21)
+        )
+        assert cands == []
+
+
+@respx.mock
+def test_domain_semaphore_loop_isolation_and_parallel_fanout(hydration_client, monkeypatch):
+    """Verify WeakKeyDictionary semaphores across loops and parallel Fan-out -> Fan-in."""
+    from src.backend.core.domain_concurrency import DomainSemaphoreRegistry
+
+    reg = DomainSemaphoreRegistry(limits={"tmdb": 4})
+
+    async def _grab_sem():
+        return reg.get("tmdb")
+
+    s1 = asyncio.run(_grab_sem())
+    s2 = asyncio.run(_grab_sem())
+    assert s1 is not s2
+
+    _client, main_e, src_e = hydration_client
+    monkeypatch.setenv("TMDB_API_KEY", "dummy_tmdb_key")
+    with Session(main_e) as ms, Session(src_e) as ss:
+        for i in range(6):
+            ms.add(
+                IMDbCatalogShow(
+                    imdb_id=f"tt700000{i}",
+                    title_type="movie",
+                    primary_title=f"Parallel Movie {i}",
+                    start_year=2023,
+                    genres="Action",
+                    rating_votes=50000 - i,
+                    details_fetched=0,
+                )
+            )
+        ms.commit()
+
+        respx.get(url__regex=r"https://www\.imdb\.com/title/tt700000\d/").mock(
+            return_value=httpx.Response(404)
+        )
+        respx.get(url__regex=r"https://api\.themoviedb\.org/3/find/tt700000\d").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "movie_results": [
+                        {
+                            "id": 4242,
+                            "title": "Filme Paralelo",
+                            "overview": "Sinopse em português preenchida via Fan-out.",
+                            "poster_path": "/parallel.jpg",
+                        }
+                    ],
+                    "tv_results": [],
+                },
+            )
+        )
+        respx.get("https://api.themoviedb.org/3/movie/4242").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "overview": "English overview fetched concurrently.",
+                    "status": "Released",
+                },
+            )
+        )
+
+        report = asyncio.run(
+            CascadingMetadataEnricher.enrich_batch(ms, ss, batch_size=6)
+        )
+        assert report["processed"] == 6
+        assert report["updated"] == 6
+        assert report["provenance"]["tmdb"] == 6
+
+

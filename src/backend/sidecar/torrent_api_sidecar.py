@@ -70,7 +70,7 @@ def list_supported_sites() -> dict[str, Any]:
 async def get_recent_torrents(
     site: str = Query(..., description="Site key (tgx, nyaasi, bitsearch, glodls, etc.)"),
     limit: int = Query(35, ge=1, le=100),
-    page: int = Query(1, ge=1, le=20),
+    page: int = Query(1, ge=1),
 ) -> dict[str, Any]:
     """Fetch recent torrents for a specific site in Torrent-Api-py JSON format."""
     site_key = site.strip().lower()
@@ -79,6 +79,15 @@ async def get_recent_torrents(
             status_code=400,
             detail=f"Site '{site_key}' not supported.",
         )
+    if page > 20:
+        return {
+            "site": site_key,
+            "page": page,
+            "limit": limit,
+            "total": 0,
+            "exhausted": True,
+            "data": [],
+        }
     items = await TorrentApiPySourceAdapter._fetch_native_direct_items(
         site_key,
         query=None,

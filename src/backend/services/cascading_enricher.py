@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
 import json
 import logging
@@ -18,6 +19,7 @@ from sqlmodel import Session, col, select
 
 from src.backend.core.cache import catalog_cache, discovery_cache
 from src.backend.core.canonical_taxonomy import extract_tmdb_watch_providers
+from src.backend.core.domain_concurrency import create_shared_http_client, domain_semaphores
 from src.backend.models.catalog_domain import IMDbCatalogShow
 from src.backend.models.db import ShowRecord
 from src.backend.models.eztv_db import EZTVShow
@@ -375,16 +377,17 @@ class CascadingMetadataEnricher:
     async def _fetch_tier1_imdb(client: httpx.AsyncClient, imdb_id: str) -> dict[str, Any]:
         """Tier 1: IMDb public JSON-LD + og:image HTML metadata extractor."""
         try:
-            resp = await client.get(
-                f"https://www.imdb.com/title/{imdb_id}/",
-                headers={
-                    "User-Agent": (
-                        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-                    ),
-                    "Accept-Language": "en-US,en;q=0.9",
-                },
-            )
+            async with domain_semaphores.get("imdb"):
+                resp = await client.get(
+                    f"https://www.imdb.com/title/{imdb_id}/",
+                    headers={
+                        "User-Agent": (
+                            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                        ),
+                        "Accept-Language": "en-US,en;q=0.9",
+                    },
+                )
             if resp.status_code != 200:
                 return {}
             body = resp.text
@@ -433,48 +436,49 @@ class CascadingMetadataEnricher:
             base_params["api_key"] = api_key
 
         try:
-            find_resp = await client.get(
-                f"https://api.themoviedb.org/3/find/{imdb_id}",
-                params={**base_params, "external_source": "imdb_id", "language": "pt-BR"},
-                headers=headers,
-            )
-            if find_resp.status_code != 200:
-                return {}
-            f_data = find_resp.json()
-            movies = f_data.get("movie_results") or []
-            tvs = f_data.get("tv_results") or []
-            is_movie = bool(movies)
-            item = movies[0] if movies else (tvs[0] if tvs else None)
-            if not isinstance(item, dict) or not item.get("id"):
-                return {}
+            async with domain_semaphores.get("tmdb"):
+                find_resp = await client.get(
+                    f"https://api.themoviedb.org/3/find/{imdb_id}",
+                    params={**base_params, "external_source": "imdb_id", "language": "pt-BR"},
+                    headers=headers,
+                )
+                if find_resp.status_code != 200:
+                    return {}
+                f_data = find_resp.json()
+                movies = f_data.get("movie_results") or []
+                tvs = f_data.get("tv_results") or []
+                is_movie = bool(movies)
+                item = movies[0] if movies else (tvs[0] if tvs else None)
+                if not isinstance(item, dict) or not item.get("id"):
+                    return {}
 
-            tmdb_id = int(item["id"])
-            media_path = "movie" if is_movie else "tv"
-            out: dict[str, Any] = {
-                "tmdb_id": tmdb_id,
-                "title_ptbr": item.get("title") or item.get("name"),
-                "synopsis_ptbr": item.get("overview"),
-                "poster_url": (
-                    f"https://image.tmdb.org/t/p/w500{item['poster_path']}"
-                    if item.get("poster_path")
-                    else None
-                ),
-                "backdrop_url": (
-                    f"https://image.tmdb.org/t/p/original{item['backdrop_path']}"
-                    if item.get("backdrop_path")
-                    else None
-                ),
-            }
+                tmdb_id = int(item["id"])
+                media_path = "movie" if is_movie else "tv"
+                out: dict[str, Any] = {
+                    "tmdb_id": tmdb_id,
+                    "title_ptbr": item.get("title") or item.get("name"),
+                    "synopsis_ptbr": item.get("overview"),
+                    "poster_url": (
+                        f"https://image.tmdb.org/t/p/w500{item['poster_path']}"
+                        if item.get("poster_path")
+                        else None
+                    ),
+                    "backdrop_url": (
+                        f"https://image.tmdb.org/t/p/original{item['backdrop_path']}"
+                        if item.get("backdrop_path")
+                        else None
+                    ),
+                }
 
-            det_resp = await client.get(
-                f"https://api.themoviedb.org/3/{media_path}/{tmdb_id}",
-                params={
-                    **base_params,
-                    "language": "en-US",
-                    "append_to_response": "watch/providers,videos",
-                },
-                headers=headers,
-            )
+                det_resp = await client.get(
+                    f"https://api.themoviedb.org/3/{media_path}/{tmdb_id}",
+                    params={
+                        **base_params,
+                        "language": "en-US",
+                        "append_to_response": "watch/providers,videos",
+                    },
+                    headers=headers,
+                )
             if det_resp.status_code == 200:
                 det = det_resp.json()
                 out["synopsis"] = det.get("overview")
@@ -502,10 +506,11 @@ class CascadingMetadataEnricher:
     async def _fetch_tier3_tvmaze(client: httpx.AsyncClient, imdb_id: str) -> dict[str, Any]:
         """Tier 3: TVMaze lookup by IMDb ID."""
         try:
-            resp = await client.get(
-                "https://api.tvmaze.com/lookup/shows",
-                params={"imdb": imdb_id},
-            )
+            async with domain_semaphores.get("tvmaze"):
+                resp = await client.get(
+                    "https://api.tvmaze.com/lookup/shows",
+                    params={"imdb": imdb_id},
+                )
             if resp.status_code != 200:
                 return {}
             data = resp.json()
@@ -527,10 +532,11 @@ class CascadingMetadataEnricher:
     async def _fetch_tier5_yify(client: httpx.AsyncClient, imdb_id: str) -> dict[str, Any]:
         """Tier 5: YIFY / YTS movie_details.json fallback."""
         try:
-            resp = await client.get(
-                "https://movies-api.accel.li/api/v2/movie_details.json",
-                params={"imdb_id": imdb_id, "with_images": "true", "with_cast": "true"},
-            )
+            async with domain_semaphores.get("yify"):
+                resp = await client.get(
+                    "https://movies-api.accel.li/api/v2/movie_details.json",
+                    params={"imdb_id": imdb_id, "with_images": "true", "with_cast": "true"},
+                )
             if resp.status_code != 200:
                 return {}
             movie = (resp.json().get("data") or {}).get("movie") or {}
@@ -575,14 +581,15 @@ class CascadingMetadataEnricher:
         }}
         """
         try:
-            resp = await client.get(
-                "https://query.wikidata.org/sparql",
-                params={"query": sparql, "format": "json"},
-                headers={
-                    "User-Agent": DEFAULT_BOT_HEADERS["User-Agent"],
-                    "Accept": "application/sparql-results+json",
-                },
-            )
+            async with domain_semaphores.get("wikidata"):
+                resp = await client.get(
+                    "https://query.wikidata.org/sparql",
+                    params={"query": sparql, "format": "json"},
+                    headers={
+                        "User-Agent": DEFAULT_BOT_HEADERS["User-Agent"],
+                        "Accept": "application/sparql-results+json",
+                    },
+                )
             if resp.status_code != 200:
                 return {}
             bindings = (resp.json().get("results") or {}).get("bindings") or []
@@ -613,10 +620,11 @@ class CascadingMetadataEnricher:
         """Tier 6B: Wikipedia REST summary API for PT-BR and EN-US extracts and thumbnails."""
         try:
             slug = quote(page_title.replace(" ", "_"), safe="")
-            resp = await client.get(
-                f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{slug}",
-                headers={"User-Agent": DEFAULT_BOT_HEADERS["User-Agent"]},
-            )
+            async with domain_semaphores.get("wikipedia"):
+                resp = await client.get(
+                    f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{slug}",
+                    headers={"User-Agent": DEFAULT_BOT_HEADERS["User-Agent"]},
+                )
             if resp.status_code != 200:
                 return {}
             data = resp.json()
@@ -636,10 +644,11 @@ class CascadingMetadataEnricher:
     async def _fetch_tier6_jikan(client: httpx.AsyncClient, title: str) -> dict[str, Any]:
         """Tier 6C: Jikan v4 open anime metadata fallback."""
         try:
-            resp = await client.get(
-                "https://api.jikan.moe/v4/anime",
-                params={"q": title, "limit": 1},
-            )
+            async with domain_semaphores.get("jikan"):
+                resp = await client.get(
+                    "https://api.jikan.moe/v4/anime",
+                    params={"q": title, "limit": 1},
+                )
             if resp.status_code != 200:
                 return {}
             rows = resp.json().get("data") or []
@@ -655,132 +664,155 @@ class CascadingMetadataEnricher:
             return {}
 
     @classmethod
-    async def enrich_batch(
+    def prepare_metadata_batch(
         cls,
         mainstream_session: Session,
         sources_session: Optional[Session] = None,
         *,
         batch_size: int = 12,
-        timeout: float = 8.0,
-        on_progress: Optional[Callable[[str, str], None]] = None,
-    ) -> dict[str, Any]:
-        """Run Cross-DB Self-Healing + Strict 6-Tier Bilingual Waterfall over missing-gap queue."""
+    ) -> tuple[dict[str, int], list[IMDbCatalogShow], dict[str, EZTVShow]]:
+        """Phase 1 (Prepare DB): run cross-DB self-heal and pick priority queue."""
         heal_stats = cls.cross_db_self_heal(mainstream_session, sources_session)
         candidates = cls._select_priority_queue(
             mainstream_session, sources_session, batch_size=batch_size
         )
-        if not candidates:
-            return {
-                "processed": 0,
-                "updated": 0,
-                "self_heal": heal_stats,
-                "provenance": {},
-                "exhausted": True,
-            }
-
-        read_token, api_key = resolve_tmdb_credential()
-        provenance: dict[str, int] = {
-            "imdb": 0,
-            "tmdb": 0,
-            "tvmaze": 0,
-            "eztv": heal_stats["eztv_to_mainstream"],
-            "yify": 0,
-            "open_sources": 0,
-        }
-
         ez_by_imdb: dict[str, EZTVShow] = {}
-        if sources_session is not None:
+        if candidates and sources_session is not None:
             cand_ids = [c.imdb_id for c in candidates]
             for ez in sources_session.exec(
                 select(EZTVShow).where(col(EZTVShow.imdb_id).in_(cand_ids))
             ).all():
                 if ez.imdb_id:
                     ez_by_imdb[ez.imdb_id] = ez
+        return heal_stats, candidates, ez_by_imdb
 
-        updated_count = 0
-        async with httpx.AsyncClient(
-            timeout=timeout, follow_redirects=True, headers=DEFAULT_BOT_HEADERS
-        ) as client:
-            still_incomplete: list[IMDbCatalogShow] = []
+    @classmethod
+    async def fetch_metadata_fanout(
+        cls,
+        candidates: list[IMDbCatalogShow],
+        ez_by_imdb: dict[str, EZTVShow],
+        *,
+        timeout: float = 8.0,
+        client: Optional[httpx.AsyncClient] = None,
+        on_progress: Optional[Callable[[str, str], None]] = None,
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
+        """Phase 2 (Pure HTTP Fan-out): parallel Tiers 1-5 + batch Tier 6 without DB writes."""
+        if not candidates:
+            return {}
 
-            for show in candidates:
-                row_dirty = False
-                if on_progress is not None:
-                    on_progress("metadata", f"{show.primary_title} ({show.imdb_id})")
+        read_token, api_key = resolve_tmdb_credential()
+        own_client = client is None
+        http_client = client or create_shared_http_client(
+            timeout=timeout, headers=DEFAULT_BOT_HEADERS
+        )
 
-                # Tier 1: IMDb
-                if _needs_poster(show) or _needs_synopsis_en(show):
-                    t1 = await cls._fetch_tier1_imdb(client, show.imdb_id)
-                    if _apply_coalesce(show, t1, provenance, "imdb"):
-                        row_dirty = True
+        snapshots: dict[str, dict[str, Any]] = {
+            s.imdb_id: {
+                "imdb_id": s.imdb_id,
+                "title_type": s.title_type,
+                "primary_title": s.primary_title,
+                "original_title": s.original_title,
+                "genres": s.genres or "",
+                "has_poster": not _needs_poster(s),
+                "has_syn_pt": not _needs_synopsis_ptbr(s),
+                "has_syn_en": not _needs_synopsis_en(s),
+            }
+            for s in candidates
+        }
+        collected: dict[str, list[tuple[str, dict[str, Any]]]] = {
+            s.imdb_id: [] for s in candidates
+        }
 
-                # Tier 2: TMDB (pt-BR + en-US + watch/providers)
-                if not _is_complete_for_waterfall(show):
-                    t2 = await cls._fetch_tier2_tmdb(client, show.imdb_id, read_token, api_key)
-                    if _apply_coalesce(show, t2, provenance, "tmdb"):
-                        show.tmdb_synced = 1
-                        row_dirty = True
+        def _mark_filled(snap: dict[str, Any], payload: dict[str, Any]) -> None:
+            if payload.get("poster_url"):
+                snap["has_poster"] = True
+            syn_pt_clean = _strip_html(payload.get("synopsis_ptbr")) or ""
+            if len(syn_pt_clean) >= 15:
+                snap["has_syn_pt"] = True
+            syn_en_clean = _strip_html(payload.get("synopsis")) or ""
+            if len(syn_en_clean) >= 15:
+                snap["has_syn_en"] = True
 
-                # Tier 3: TVMaze (series / miniseries / animation)
-                is_tv_like = show.title_type in (
-                    "tvSeries",
-                    "tvMiniSeries",
-                    "tv_show",
-                    "mini_series",
-                )
-                if is_tv_like and (_needs_poster(show) or _needs_synopsis_en(show)):
-                    t3 = await cls._fetch_tier3_tvmaze(client, show.imdb_id)
-                    if _apply_coalesce(show, t3, provenance, "tvmaze"):
-                        row_dirty = True
+        def _is_done(snap: dict[str, Any]) -> bool:
+            return snap["has_poster"] and snap["has_syn_pt"] and snap["has_syn_en"]
 
-                # Tier 4: EZTV Cross-DB lookup
-                ez = ez_by_imdb.get(show.imdb_id)
-                if ez is not None and not _is_complete_for_waterfall(show):
-                    t4 = {
-                        "poster_url": ez.poster_url,
-                        "synopsis": ez.synopsis,
-                        "status": ez.status,
-                        "network": ez.network,
-                        "streaming_providers": ez.streaming_providers,
-                        "tvmaze_id": ez.tvmaze_id,
-                    }
-                    if _apply_coalesce(show, t4, provenance, "eztv"):
-                        row_dirty = True
+        async def _process_tiers_1_to_5(show_id: str) -> None:
+            snap = snapshots[show_id]
+            if on_progress is not None:
+                on_progress("metadata", f"{snap['primary_title']} ({show_id})")
 
-                # Tier 5: YIFY / YTS (movies)
-                if show.title_type in ("movie", "tvMovie") and (
-                    _needs_poster(show) or _needs_synopsis_en(show)
-                ):
-                    t5 = await cls._fetch_tier5_yify(client, show.imdb_id)
-                    if _apply_coalesce(show, t5, provenance, "yify"):
-                        row_dirty = True
+            if not snap["has_poster"] or not snap["has_syn_en"]:
+                t1 = await cls._fetch_tier1_imdb(http_client, show_id)
+                if t1:
+                    collected[show_id].append(("imdb", t1))
+                    _mark_filled(snap, t1)
 
-                if not _is_complete_for_waterfall(show):
-                    still_incomplete.append(show)
-                if row_dirty:
-                    mainstream_session.add(show)
+            if not _is_done(snap):
+                t2 = await cls._fetch_tier2_tmdb(http_client, show_id, read_token, api_key)
+                if t2:
+                    collected[show_id].append(("tmdb", t2))
+                    _mark_filled(snap, t2)
 
-            # Tier 6: Batch Wikidata SPARQL + Wikipedia PT/EN + Jikan v4
-            if still_incomplete:
-                wd_map = await cls._fetch_tier6_wikidata_batch(
-                    client, [s.imdb_id for s in still_incomplete]
-                )
-                for show in still_incomplete:
-                    wd = wd_map.get(show.imdb_id) or {}
+            is_tv_like = snap["title_type"] in (
+                "tvSeries",
+                "tvMiniSeries",
+                "tv_show",
+                "mini_series",
+            )
+            if is_tv_like and (not snap["has_poster"] or not snap["has_syn_en"]):
+                t3 = await cls._fetch_tier3_tvmaze(http_client, show_id)
+                if t3:
+                    collected[show_id].append(("tvmaze", t3))
+                    _mark_filled(snap, t3)
+
+            ez = ez_by_imdb.get(show_id)
+            if ez is not None and not _is_done(snap):
+                t4 = {
+                    "poster_url": ez.poster_url,
+                    "synopsis": ez.synopsis,
+                    "status": ez.status,
+                    "network": ez.network,
+                    "streaming_providers": ez.streaming_providers,
+                    "tvmaze_id": ez.tvmaze_id,
+                }
+                collected[show_id].append(("eztv", t4))
+                _mark_filled(snap, t4)
+
+            if snap["title_type"] in ("movie", "tvMovie") and (
+                not snap["has_poster"] or not snap["has_syn_en"]
+            ):
+                t5 = await cls._fetch_tier5_yify(http_client, show_id)
+                if t5:
+                    collected[show_id].append(("yify", t5))
+                    _mark_filled(snap, t5)
+
+        try:
+            await asyncio.gather(
+                *(_process_tiers_1_to_5(s.imdb_id) for s in candidates),
+                return_exceptions=True,
+            )
+
+            incomplete_ids = [sid for sid, snap in snapshots.items() if not _is_done(snap)]
+            if incomplete_ids:
+                wd_map = await cls._fetch_tier6_wikidata_batch(http_client, incomplete_ids)
+
+                async def _process_tier_6(show_id: str) -> None:
+                    snap = snapshots[show_id]
+                    wd = wd_map.get(show_id) or {}
                     t6_payload: dict[str, Any] = {}
                     if wd.get("poster_url"):
                         img_u = wd["poster_url"]
                         if img_u.startswith("http://"):
                             img_u = "https://" + img_u[7:]
                         t6_payload["poster_url"] = img_u
-                    if wd.get("pt_title") and _needs_synopsis_ptbr(show):
+                    if wd.get("pt_title") and not snap["has_syn_pt"]:
                         wp_pt = await cls._fetch_tier6_wikipedia_summary(
-                            client, "pt", wd["pt_title"]
+                            http_client, "pt", wd["pt_title"]
                         )
                         t6_payload.update({k: v for k, v in wp_pt.items() if v})
-                    if wd.get("en_title") and _needs_synopsis_en(show):
+                    if wd.get("en_title") and not snap["has_syn_en"]:
                         wp_en = await cls._fetch_tier6_wikipedia_summary(
-                            client, "en", wd["en_title"]
+                            http_client, "en", wd["en_title"]
                         )
                         for k, v in wp_en.items():
                             if v and k not in t6_payload:
@@ -790,54 +822,97 @@ class CascadingMetadataEnricher:
                     if not t6_payload.get("synopsis") and wd.get("desc_en"):
                         t6_payload["synopsis"] = wd["desc_en"]
 
-                    is_anim = "animation" in (show.genres or "").lower()
+                    is_anim = "animation" in snap["genres"].lower()
                     if is_anim and (
-                        (_needs_poster(show) and not t6_payload.get("poster_url"))
-                        or (_needs_synopsis_en(show) and not t6_payload.get("synopsis"))
+                        (not snap["has_poster"] and not t6_payload.get("poster_url"))
+                        or (not snap["has_syn_en"] and not t6_payload.get("synopsis"))
                     ):
                         jk = await cls._fetch_tier6_jikan(
-                            client, show.original_title or show.primary_title
+                            http_client, snap["original_title"] or snap["primary_title"]
                         )
                         for k, v in jk.items():
                             if v and k not in t6_payload:
                                 t6_payload[k] = v
 
-                    if t6_payload and _apply_coalesce(show, t6_payload, provenance, "open_sources"):
-                        mainstream_session.add(show)
+                    if t6_payload:
+                        collected[show_id].append(("open_sources", t6_payload))
 
-            # Finalize 4-state details_fetched markers & back-propagate healed fields to EZTV
-            for show in candidates:
-                has_p = not _needs_poster(show)
-                has_s = bool((show.synopsis_ptbr or "").strip() or (show.synopsis or "").strip())
-                if has_p and has_s:
-                    show.details_fetched = 1
-                elif has_p or has_s:
-                    show.details_fetched = 2
-                else:
-                    show.details_fetched = -1
-                show.updated_at = _utc_iso()
-                mainstream_session.add(show)
-                if has_p or has_s:
-                    updated_count += 1
+                await asyncio.gather(
+                    *(_process_tier_6(sid) for sid in incomplete_ids),
+                    return_exceptions=True,
+                )
+        finally:
+            if own_client:
+                await http_client.aclose()
 
-                ez = ez_by_imdb.get(show.imdb_id)
-                if ez is not None and sources_session is not None:
-                    ez_dirty = False
-                    if show.poster_url and not (ez.poster_url or "").strip():
-                        ez.poster_url = show.poster_url
-                        ez_dirty = True
-                    best_s = show.synopsis or show.synopsis_ptbr
-                    if best_s and not (ez.synopsis or "").strip():
-                        ez.synopsis = best_s
-                        ez_dirty = True
-                    if ez_dirty:
-                        ez.details_fetched = 1 if (ez.poster_url and ez.synopsis) else 2
-                        ez.updated_at = _utc_iso()
-                        sources_session.add(ez)
+        return collected
 
-            mainstream_session.commit()
-            if sources_session is not None:
-                sources_session.commit()
+    @classmethod
+    def apply_metadata_fanin(
+        cls,
+        mainstream_session: Session,
+        sources_session: Optional[Session],
+        heal_stats: dict[str, int],
+        candidates: list[IMDbCatalogShow],
+        ez_by_imdb: dict[str, EZTVShow],
+        collected: dict[str, list[tuple[str, dict[str, Any]]]],
+    ) -> dict[str, Any]:
+        """Phase 3 (Fan-in DB): coalesce fetched tier payloads sequentially & commit once."""
+        if not candidates:
+            return {
+                "processed": 0,
+                "updated": 0,
+                "self_heal": heal_stats,
+                "provenance": {},
+                "exhausted": True,
+            }
+
+        provenance: dict[str, int] = {
+            "imdb": 0,
+            "tmdb": 0,
+            "tvmaze": 0,
+            "eztv": heal_stats.get("eztv_to_mainstream", 0),
+            "yify": 0,
+            "open_sources": 0,
+        }
+        updated_count = 0
+
+        for show in candidates:
+            for tier_key, payload in collected.get(show.imdb_id, []):
+                if _apply_coalesce(show, payload, provenance, tier_key) and tier_key == "tmdb":
+                    show.tmdb_synced = 1
+
+            has_p = not _needs_poster(show)
+            has_s = bool((show.synopsis_ptbr or "").strip() or (show.synopsis or "").strip())
+            if has_p and has_s:
+                show.details_fetched = 1
+            elif has_p or has_s:
+                show.details_fetched = 2
+            else:
+                show.details_fetched = -1
+            show.updated_at = _utc_iso()
+            mainstream_session.add(show)
+            if has_p or has_s:
+                updated_count += 1
+
+            ez = ez_by_imdb.get(show.imdb_id)
+            if ez is not None and sources_session is not None:
+                ez_dirty = False
+                if show.poster_url and not (ez.poster_url or "").strip():
+                    ez.poster_url = show.poster_url
+                    ez_dirty = True
+                best_s = show.synopsis or show.synopsis_ptbr
+                if best_s and not (ez.synopsis or "").strip():
+                    ez.synopsis = best_s
+                    ez_dirty = True
+                if ez_dirty:
+                    ez.details_fetched = 1 if (ez.poster_url and ez.synopsis) else 2
+                    ez.updated_at = _utc_iso()
+                    sources_session.add(ez)
+
+        mainstream_session.commit()
+        if sources_session is not None:
+            sources_session.commit()
 
         catalog_cache.invalidate()
         discovery_cache.invalidate()
@@ -848,3 +923,42 @@ class CascadingMetadataEnricher:
             "provenance": provenance,
             "exhausted": False,
         }
+
+    @classmethod
+    async def enrich_batch(
+        cls,
+        mainstream_session: Session,
+        sources_session: Optional[Session] = None,
+        *,
+        batch_size: int = 12,
+        timeout: float = 8.0,
+        client: Optional[httpx.AsyncClient] = None,
+        on_progress: Optional[Callable[[str, str], None]] = None,
+    ) -> dict[str, Any]:
+        """Run Cross-DB Self-Healing + Strict 6-Tier Parallel Bilingual Waterfall."""
+        heal_stats, candidates, ez_by_imdb = cls.prepare_metadata_batch(
+            mainstream_session, sources_session, batch_size=batch_size
+        )
+        if not candidates:
+            return {
+                "processed": 0,
+                "updated": 0,
+                "self_heal": heal_stats,
+                "provenance": {},
+                "exhausted": True,
+            }
+        collected = await cls.fetch_metadata_fanout(
+            candidates,
+            ez_by_imdb,
+            timeout=timeout,
+            client=client,
+            on_progress=on_progress,
+        )
+        return cls.apply_metadata_fanin(
+            mainstream_session,
+            sources_session,
+            heal_stats,
+            candidates,
+            ez_by_imdb,
+            collected,
+        )

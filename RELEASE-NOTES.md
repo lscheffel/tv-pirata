@@ -4,6 +4,18 @@ Este documento consolida os marcos de valor de negócio, evolução arquitetural
 
 ---
 
+## 🚀 Paralelismo Bifurcado (Fan-out HTTP $\rightarrow$ Fan-in SQLite) & Correção 422 — ADR-017 (Branch `UI-UX`, 2026-11-20)
+
+### 🌟 Destaques Executivos e Evolução Arquitetural (`ADR-017`)
+1. **Fim do Bloqueio `422` no Sidecar (`torrent_api_sidecar.py` + `torrent_api_py_adapter.py`):**
+   - Páginas acima de `20` no `/api/v1/recent` agora retornam `data: []` (`exhausted: true`) sem erro `422`, e feeds sem novos itens migram automaticamente para o `sweep_canonical_catalog_presence` (destravando `nyaasi` e `bitsearch`).
+2. **Concorrência Segura em 3 Fases (`Prepare DB -> Fan-out HTTP -> Fan-in DB`):**
+   - Novo [`domain_concurrency.py`](file:///home/loupan/projetosVS/tv-pirata/src/backend/core/domain_concurrency.py) com semáforos isolados por event loop (`tmdb=8`, `yify/tgx/glodls/sidecar=4`, `nyaasi/bitsearch/imdb/tvmaze/jikan=2`) e pool `httpx.AsyncClient` Keep-Alive compartilhado.
+   - As *lanes* **Fontes P2P** e **Metadados (Capas & Sinopses)** rodam em paralelo com lotes ampliados (`yts_pages=6`, `sweep_batch=12`, `meta_batch=20`), gravando no SQLite em lote único ao final.
+   - Suíte hermética ampliada para **79 testes aprovados**.
+
+---
+
 ## 🚀 Configurações Master-Detail Estilo IDE, Linguagem Humana & Telemetria Viva — ADR-016 (Branch `UI-UX`, 2026-11-20)
 
 ### 🌟 Destaques Executivos e Evolução Arquitetural (`ADR-016`)
