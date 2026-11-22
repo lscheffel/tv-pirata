@@ -715,6 +715,7 @@ class HydrationOrchestratorService:
             heal_stats: dict[str, int] = {"eztv_to_mainstream": 0, "mainstream_to_eztv": 0}
             meta_candidates: list[Any] = []
             ez_by_imdb: dict[str, Any] = {}
+            focus_just_completed = False
             if run_metadata:
                 heal_stats, meta_candidates, ez_by_imdb = (
                     CascadingMetadataEnricher.prepare_metadata_batch(
@@ -731,13 +732,13 @@ class HydrationOrchestratorService:
                     if meta_candidates:
                         state.focus_cursor_imdb = meta_candidates[-1].imdb_id
                     else:
+                        focus_just_completed = True
                         state.focus_cursor_imdb = None
                         state.ptbr_recheck_offset = 0
                         state.metadata_mode = "pending"
                         state.target_provider = None
                         self._active_target_provider = None
                         self._active_metadata_mode = "pending"
-                        self._active_scope = "all"
 
             # Multi-lane progress summary during parallel Fan-out
             active_lanes: list[str] = []
@@ -1081,17 +1082,47 @@ class HydrationOrchestratorService:
             state.steps_executed += 1
             state.scope = scope
             state.last_step_summary = " | ".join(step_notes) if step_notes else "Ciclo verificado."
-            if (
+            state = SmartBootstrapDetector.refresh_modes(state, mainstream_session, sources_session)
+
+            # Auto-stop when active scope or focused target has no pending work left
+            pending_sources = [
+                k
+                for k, cur in state.sources.items()
+                if cur.mode == "BOOTSTRAP" and not cur.bootstrap_completed
+            ]
+            should_complete = False
+            completion_msg = ""
+            if focus_just_completed:
+                should_complete = True
+                completion_msg = "Foco concluído: todas as obras elegíveis foram verificadas."
+            elif (
                 scope == "metadata"
                 and run_metadata
                 and step_meta_items == 0
                 and not state.target_provider
             ):
+                should_complete = True
+                completion_msg = "Fila de capas e sinopses concluída (0 pendentes)."
+            elif scope == "sources" and not pending_sources and not state.target_provider:
+                should_complete = True
+                completion_msg = "Todas as fontes sincronizadas (varredura inicial concluída)."
+            elif (
+                scope == "all"
+                and not pending_sources
+                and state.coverage.pending_details == 0
+                and not state.target_provider
+            ):
+                should_complete = True
+                completion_msg = "Catálogo e todas as fontes concluídos (100% em dia)."
+
+            if should_complete:
                 state.state = "COMPLETED"
                 state.is_worker_active = False
-                state.last_step_summary = "Fila de capas e sinopses concluída (0 pendentes)."
+                state.last_step_summary = completion_msg
                 self._stop_event.set()
-            state = SmartBootstrapDetector.refresh_modes(state, mainstream_session, sources_session)
+                if scope != "metadata" or focus_just_completed:
+                    self._record_event("sistema", "Atualização Concluída", "ok", completion_msg)
+
             state = self._apply_live_telemetry(state)
             self._save_state(mainstream_session, state)
             print(
