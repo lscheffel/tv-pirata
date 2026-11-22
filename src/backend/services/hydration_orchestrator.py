@@ -1081,6 +1081,16 @@ class HydrationOrchestratorService:
             state.steps_executed += 1
             state.scope = scope
             state.last_step_summary = " | ".join(step_notes) if step_notes else "Ciclo verificado."
+            if (
+                scope == "metadata"
+                and run_metadata
+                and step_meta_items == 0
+                and not state.target_provider
+            ):
+                state.state = "COMPLETED"
+                state.is_worker_active = False
+                state.last_step_summary = "Fila de capas e sinopses concluída (0 pendentes)."
+                self._stop_event.set()
             state = SmartBootstrapDetector.refresh_modes(state, mainstream_session, sources_session)
             state = self._apply_live_telemetry(state)
             self._save_state(mainstream_session, state)
