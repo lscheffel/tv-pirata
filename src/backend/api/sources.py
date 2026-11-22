@@ -178,7 +178,7 @@ async def live_ingest_sources(
 def prune_obsolete_sources(
     source: Optional[str] = Query(None, description="Fonte alvo ou all"),
     min_seeds_floor: int = Query(1, ge=1, le=100),
-    max_zero_seed_hours: int = Query(0, ge=0, le=720),
+    max_zero_seed_hours: int = Query(48, ge=0, le=720),
     sources_session: Session = Depends(get_eztv_session),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:

@@ -251,6 +251,9 @@ class YIFYSourceAdapter(BaseSourceAdapter):
                     best_size = int(tor.get("size_bytes") or 0)
                     best_hash = str(tor.get("hash") or "").strip() or best_hash
 
+            if max_seeds < 1:
+                continue
+
             best_magnet = build_official_magnet(best_hash, title) if best_hash else None
             out.append(
                 NormalizedReleaseCandidate(
@@ -465,54 +468,57 @@ class YIFYSourceAdapter(BaseSourceAdapter):
                 deduped.append(c)
 
         ext_ids = [c.external_id for c in deduped]
-        existing_map = {
-            row.external_id: row
-            for row in sources_session.exec(
-                select(ExternalRelease).where(
-                    ExternalRelease.source_key == source_key,
-                    ExternalRelease.external_id.in_(ext_ids),
-                )
-            ).all()
-        }
-        now_ts = utc_now()
-        for cand in deduped:
-            existing = existing_map.get(cand.external_id)
-            if existing:
-                existing.seeds = cand.seeds
-                existing.peers = cand.peers
-                existing.quality = cand.quality
-                existing.poster_url = cand.poster_url or existing.poster_url
-                existing.magnet_url = cand.magnet_url or existing.magnet_url
-                existing.last_checked_at = now_ts
-                sources_session.add(existing)
-                updated += 1
-            else:
-                rel_row = ExternalRelease(
-                    source_key=source_key,
-                    external_id=cand.external_id,
-                    imdb_id=cand.imdb_id,
-                    title=cand.title,
-                    work_type=cand.work_type,
-                    quality=cand.quality,
-                    seeds=cand.seeds,
-                    peers=cand.peers,
-                    size_bytes=cand.size_bytes,
-                    release_type=cand.release_type,
-                    magnet_url=cand.magnet_url,
-                    torrent_url=cand.torrent_url,
-                    external_url=cand.external_url,
-                    info_hash=cand.info_hash,
-                    poster_url=cand.poster_url,
-                    genres=cand.genres,
-                    year=cand.year,
-                    rating=cand.rating,
-                    matched_by=cand.matched_by,
-                    match_confidence=cand.match_confidence,
-                    last_checked_at=now_ts,
-                )
-                sources_session.add(rel_row)
-                existing_map[cand.external_id] = rel_row
-                indexed += 1
+        with sources_session.no_autoflush:
+            existing_map = {
+                row.external_id: row
+                for row in sources_session.exec(
+                    select(ExternalRelease).where(
+                        ExternalRelease.source_key == source_key,
+                        ExternalRelease.external_id.in_(ext_ids),
+                    )
+                ).all()
+            }
+            now_ts = utc_now()
+            for cand in deduped:
+                existing = existing_map.get(cand.external_id)
+                if existing:
+                    existing.seeds = cand.seeds
+                    existing.peers = cand.peers
+                    existing.quality = cand.quality
+                    existing.poster_url = cand.poster_url or existing.poster_url
+                    existing.magnet_url = cand.magnet_url or existing.magnet_url
+                    existing.last_checked_at = now_ts
+                    sources_session.add(existing)
+                    updated += 1
+                else:
+                    if cand.seeds < 1:
+                        continue
+                    rel_row = ExternalRelease(
+                        source_key=source_key,
+                        external_id=cand.external_id,
+                        imdb_id=cand.imdb_id,
+                        title=cand.title,
+                        work_type=cand.work_type,
+                        quality=cand.quality,
+                        seeds=cand.seeds,
+                        peers=cand.peers,
+                        size_bytes=cand.size_bytes,
+                        release_type=cand.release_type,
+                        magnet_url=cand.magnet_url,
+                        torrent_url=cand.torrent_url,
+                        external_url=cand.external_url,
+                        info_hash=cand.info_hash,
+                        poster_url=cand.poster_url,
+                        genres=cand.genres,
+                        year=cand.year,
+                        rating=cand.rating,
+                        matched_by=cand.matched_by,
+                        match_confidence=cand.match_confidence,
+                        last_checked_at=now_ts,
+                    )
+                    sources_session.add(rel_row)
+                    existing_map[cand.external_id] = rel_row
+                    indexed += 1
         sources_session.commit()
         return indexed, updated
 

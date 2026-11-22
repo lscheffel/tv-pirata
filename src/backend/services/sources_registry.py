@@ -12,7 +12,7 @@ from typing import Any, Optional
 from urllib.parse import urlparse
 
 import httpx
-from sqlalchemy import func, text
+from sqlalchemy import and_, func, or_, text
 from sqlmodel import Session, col, delete, select
 
 from src.backend.core.cache import catalog_cache, discovery_cache
@@ -687,99 +687,109 @@ class SourcesRegistryService:
                 if mag or tor or ext:
                     verified_ext_ids.add(cand.external_id)
 
-        # Atomic Replace-on-Success (RT14-01): prune stale/dead releases of this work
-        if replace_on_success and verified_ext_ids:
-            stale_rows = list(
-                sources_session.exec(
-                    select(ExternalRelease).where(
-                        ExternalRelease.source_key == source_key,
-                        ExternalRelease.imdb_id == norm_imdb,
-                    )
-                ).all()
-            )
-            for stale in stale_rows:
-                if stale.external_id not in verified_ext_ids:
-                    sources_session.delete(stale)
-                    wrote_any = True
-
-        for cand in candidates:
-            mag = validate_safe_url(cand.magnet_url, ("magnet",))
-            tor = validate_safe_url(cand.torrent_url, ("http", "https"))
-            ext = validate_safe_url(cand.external_url, ("http", "https"))
-            if not (mag or tor or ext):
-                continue
-
-            if cand.match_confidence >= 0.85:
-                existing = sources_session.exec(
-                    select(ExternalRelease).where(
-                        ExternalRelease.source_key == source_key,
-                        ExternalRelease.external_id == cand.external_id,
-                    )
-                ).first()
-                if existing:
-                    existing.imdb_id = norm_imdb
-                    existing.seeds = cand.seeds
-                    existing.peers = cand.peers
-                    existing.magnet_url = mag or existing.magnet_url
-                    existing.torrent_url = tor or existing.torrent_url
-                    existing.external_url = ext or existing.external_url
-                    existing.matched_by = cand.matched_by
-                    existing.match_confidence = cand.match_confidence
-                    existing.last_checked_at = now
-                    sources_session.add(existing)
-                    persisted.append(existing)
-                else:
-                    new_rel = ExternalRelease(
-                        source_key=source_key,
-                        external_id=cand.external_id,
-                        imdb_id=norm_imdb,
-                        title=cand.title,
-                        work_type=cand.work_type,
-                        season=cand.season,
-                        episode=cand.episode,
-                        quality=cand.quality,
-                        seeds=cand.seeds,
-                        peers=cand.peers,
-                        size_bytes=cand.size_bytes,
-                        release_type=cand.release_type,
-                        magnet_url=mag,
-                        torrent_url=tor,
-                        external_url=ext,
-                        info_hash=cand.info_hash,
-                        poster_url=validate_safe_url(cand.poster_url, ("http", "https")),
-                        genres=cand.genres,
-                        year=cand.year,
-                        rating=cand.rating,
-                        matched_by=cand.matched_by,
-                        match_confidence=cand.match_confidence,
-                        last_checked_at=now,
-                    )
-                    sources_session.add(new_rel)
-                    persisted.append(new_rel)
-                wrote_any = True
-            elif cand.match_confidence >= 0.60:
-                approx_ephemeral.append(
-                    {
-                        "id": cand.external_id,
-                        "source_key": source_key,
-                        "source_name": source_key.upper(),
-                        "release_type": cand.release_type,
-                        "hash": cand.info_hash or "",
-                        "filename": cand.title,
-                        "title": cand.title,
-                        "season": cand.season,
-                        "episode": cand.episode,
-                        "quality": cand.quality,
-                        "seeds": cand.seeds,
-                        "peers": cand.peers,
-                        "size_bytes": cand.size_bytes,
-                        "magnet_url": mag or "",
-                        "torrent_url": tor,
-                        "external_url": ext,
-                        "matched_by": cand.matched_by,
-                        "match_confidence": cand.match_confidence,
-                    }
+        with sources_session.no_autoflush:
+            # Atomic Replace-on-Success (RT14-01): prune stale/dead releases of this work
+            if replace_on_success and verified_ext_ids:
+                stale_rows = list(
+                    sources_session.exec(
+                        select(ExternalRelease).where(
+                            ExternalRelease.source_key == source_key,
+                            ExternalRelease.imdb_id == norm_imdb,
+                        )
+                    ).all()
                 )
+                for stale in stale_rows:
+                    if stale.external_id not in verified_ext_ids:
+                        sources_session.delete(stale)
+                        wrote_any = True
+
+            verified_ids_list = list(verified_ext_ids)
+            existing_map: dict[str, ExternalRelease] = {}
+            if verified_ids_list:
+                existing_map = {
+                    row.external_id: row
+                    for row in sources_session.exec(
+                        select(ExternalRelease).where(
+                            ExternalRelease.source_key == source_key,
+                            col(ExternalRelease.external_id).in_(verified_ids_list),
+                        )
+                    ).all()
+                }
+
+            for cand in candidates:
+                mag = validate_safe_url(cand.magnet_url, ("magnet",))
+                tor = validate_safe_url(cand.torrent_url, ("http", "https"))
+                ext = validate_safe_url(cand.external_url, ("http", "https"))
+                if not (mag or tor or ext):
+                    continue
+
+                if cand.match_confidence >= 0.85:
+                    existing = existing_map.get(cand.external_id)
+                    if existing:
+                        existing.imdb_id = norm_imdb
+                        existing.seeds = cand.seeds
+                        existing.peers = cand.peers
+                        existing.magnet_url = mag or existing.magnet_url
+                        existing.torrent_url = tor or existing.torrent_url
+                        existing.external_url = ext or existing.external_url
+                        existing.matched_by = cand.matched_by
+                        existing.match_confidence = cand.match_confidence
+                        existing.last_checked_at = now
+                        sources_session.add(existing)
+                        persisted.append(existing)
+                    else:
+                        new_rel = ExternalRelease(
+                            source_key=source_key,
+                            external_id=cand.external_id,
+                            imdb_id=norm_imdb,
+                            title=cand.title,
+                            work_type=cand.work_type,
+                            season=cand.season,
+                            episode=cand.episode,
+                            quality=cand.quality,
+                            seeds=cand.seeds,
+                            peers=cand.peers,
+                            size_bytes=cand.size_bytes,
+                            release_type=cand.release_type,
+                            magnet_url=mag,
+                            torrent_url=tor,
+                            external_url=ext,
+                            info_hash=cand.info_hash,
+                            poster_url=validate_safe_url(cand.poster_url, ("http", "https")),
+                            genres=cand.genres,
+                            year=cand.year,
+                            rating=cand.rating,
+                            matched_by=cand.matched_by,
+                            match_confidence=cand.match_confidence,
+                            last_checked_at=now,
+                        )
+                        sources_session.add(new_rel)
+                        existing_map[cand.external_id] = new_rel
+                        persisted.append(new_rel)
+                    wrote_any = True
+                elif cand.match_confidence >= 0.60:
+                    approx_ephemeral.append(
+                        {
+                            "id": cand.external_id,
+                            "source_key": source_key,
+                            "source_name": source_key.upper(),
+                            "release_type": cand.release_type,
+                            "hash": cand.info_hash or "",
+                            "filename": cand.title,
+                            "title": cand.title,
+                            "season": cand.season,
+                            "episode": cand.episode,
+                            "quality": cand.quality,
+                            "seeds": cand.seeds,
+                            "peers": cand.peers,
+                            "size_bytes": cand.size_bytes,
+                            "magnet_url": mag or "",
+                            "torrent_url": tor,
+                            "external_url": ext,
+                            "matched_by": cand.matched_by,
+                            "match_confidence": cand.match_confidence,
+                        }
+                    )
 
         if wrote_any:
             sources_session.commit()
@@ -1497,20 +1507,19 @@ class SourcesRegistryService:
         zero_cutoff = now - timedelta(hours=max(0, max_zero_seed_hours))
         stale_cutoff = now - timedelta(days=max(1, max_stale_days))
 
-        stmt = select(ExternalRelease)
-        if source_key and source_key != "all":
-            stmt = stmt.where(ExternalRelease.source_key == source_key.lower())
+        min_floor = max(1, min_seeds_floor)
+        checked_expr = func.coalesce(ExternalRelease.last_checked_at, ExternalRelease.created_at)
+        dead_cond: Any = ExternalRelease.seeds < min_floor
+        if max_zero_seed_hours > 0:
+            dead_cond = and_(dead_cond, checked_expr <= zero_cutoff)
+        stale_cond = and_(ExternalRelease.seeds < 5, checked_expr <= stale_cutoff)
 
-        removed = 0
-        for rel in sources_session.exec(stmt).all():
-            checked_at = _as_utc(rel.last_checked_at or rel.created_at) or now
-            is_dead = rel.seeds < max(1, min_seeds_floor) and (
-                max_zero_seed_hours == 0 or checked_at <= zero_cutoff
-            )
-            is_stale = checked_at <= stale_cutoff and rel.seeds < 5
-            if is_dead or is_stale:
-                sources_session.delete(rel)
-                removed += 1
+        del_stmt = delete(ExternalRelease).where(or_(dead_cond, stale_cond))
+        if source_key and source_key != "all":
+            del_stmt = del_stmt.where(ExternalRelease.source_key == source_key.lower())
+
+        res = sources_session.execute(del_stmt)
+        removed = int(getattr(res, "rowcount", 0) or 0)
 
         if removed > 0:
             sources_session.commit()

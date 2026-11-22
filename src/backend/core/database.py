@@ -28,7 +28,7 @@ def _configure_sqlite_pragmas(dbapi_connection: object, _connection_record: obje
         cur.execute("PRAGMA temp_store=MEMORY")
         cur.execute("PRAGMA cache_size=-64000")
         cur.execute("PRAGMA mmap_size=268435456")
-        cur.execute("PRAGMA busy_timeout=5000")
+        cur.execute("PRAGMA busy_timeout=15000")
     except Exception:
         pass
     finally:

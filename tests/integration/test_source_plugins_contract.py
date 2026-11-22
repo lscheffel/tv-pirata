@@ -482,9 +482,45 @@ def test_adr014_yts_accel_enrichment_eztv_rss_numeric_imdb_and_bipartite_prune(p
         )
         ss.commit()
 
+    # Default prune (48h grace period) keeps fresh 0-seed rows; explicit 0h prunes immediately
+    default_prune = client.post("/api/sources/prune?source=tgx")
+    assert default_prune.status_code == 200
+    assert default_prune.json()["removed_releases"] == 0
+    assert default_prune.json()["max_zero_seed_hours"] == 48
+
     prune_res = client.post("/api/sources/prune?source=tgx&min_seeds_floor=1&max_zero_seed_hours=0")
     assert prune_res.status_code == 200
     assert prune_res.json()["removed_releases"] == 1
+
+    # YIFY persist_sync_candidates skips brand-new 0-seed rows to avoid churn
+    from src.backend.providers.sources.base import NormalizedReleaseCandidate
+    from src.backend.providers.sources.yify_adapter import YIFYSourceAdapter
+
+    with Session(src_e) as ss:
+        idx_y, upd_y = YIFYSourceAdapter.persist_sync_candidates(
+            ss,
+            "yify",
+            [
+                NormalizedReleaseCandidate(
+                    external_id="yts:presence:tt9990001",
+                    imdb_id="tt9990001",
+                    title="Dead Movie (2025)",
+                    work_type="movie",
+                    seeds=0,
+                    magnet_url="magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                ),
+                NormalizedReleaseCandidate(
+                    external_id="yts:presence:tt9990002",
+                    imdb_id="tt9990002",
+                    title="Alive Movie (2025)",
+                    work_type="movie",
+                    seeds=5,
+                    magnet_url="magnet:?xt=urn:btih:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                ),
+            ],
+        )
+        assert idx_y == 1
+        assert upd_y == 0
 
     # 5. Embedded Torrent-Api-py Sidecar (:8009) contract (/health, /api/v1/sites)
     with TestClient(sidecar_app) as sc:
