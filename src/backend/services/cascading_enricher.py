@@ -703,6 +703,7 @@ class CascadingMetadataEnricher:
         batch_size: int = 12,
         metadata_mode: str = "pending",
         ptbr_offset: int = 0,
+        focus_cursor: Optional[str] = None,
         target_provider: Optional[str] = None,
     ) -> tuple[dict[str, int], list[IMDbCatalogShow], dict[str, EZTVShow]]:
         """Phase 1 (Prepare DB): run cross-DB self-heal and pick priority queue."""
@@ -713,8 +714,9 @@ class CascadingMetadataEnricher:
                     col(IMDbCatalogShow.synopsis_ptbr).is_(None),
                     col(IMDbCatalogShow.synopsis_ptbr) == "",
                 ),
-                col(IMDbCatalogShow.id) > max(0, ptbr_offset),
             )
+            if focus_cursor:
+                stmt = stmt.where(col(IMDbCatalogShow.imdb_id) > focus_cursor)
             if target_provider == "tvmaze":
                 stmt = stmt.where(
                     col(IMDbCatalogShow.title_type).in_(
@@ -726,7 +728,7 @@ class CascadingMetadataEnricher:
                 stmt = stmt.where(col(IMDbCatalogShow.tmdb_id).is_(None))
             candidates = list(
                 mainstream_session.exec(
-                    stmt.order_by(col(IMDbCatalogShow.id).asc()).limit(batch_size)
+                    stmt.order_by(col(IMDbCatalogShow.imdb_id).asc()).limit(batch_size)
                 ).all()
             )
         elif target_provider == "tvmaze":
@@ -735,21 +737,21 @@ class CascadingMetadataEnricher:
                     ["tvSeries", "tvMiniSeries", "tv_show", "mini_series"]
                 ),
                 col(IMDbCatalogShow.tvmaze_id).is_(None),
-                col(IMDbCatalogShow.id) > max(0, ptbr_offset),
             )
+            if focus_cursor:
+                stmt = stmt.where(col(IMDbCatalogShow.imdb_id) > focus_cursor)
             candidates = list(
                 mainstream_session.exec(
-                    stmt.order_by(col(IMDbCatalogShow.id).asc()).limit(batch_size)
+                    stmt.order_by(col(IMDbCatalogShow.imdb_id).asc()).limit(batch_size)
                 ).all()
             )
         elif target_provider == "tmdb":
-            stmt = select(IMDbCatalogShow).where(
-                col(IMDbCatalogShow.tmdb_id).is_(None),
-                col(IMDbCatalogShow.id) > max(0, ptbr_offset),
-            )
+            stmt = select(IMDbCatalogShow).where(col(IMDbCatalogShow.tmdb_id).is_(None))
+            if focus_cursor:
+                stmt = stmt.where(col(IMDbCatalogShow.imdb_id) > focus_cursor)
             candidates = list(
                 mainstream_session.exec(
-                    stmt.order_by(col(IMDbCatalogShow.id).asc()).limit(batch_size)
+                    stmt.order_by(col(IMDbCatalogShow.imdb_id).asc()).limit(batch_size)
                 ).all()
             )
         else:

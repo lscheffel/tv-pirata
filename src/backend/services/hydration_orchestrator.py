@@ -144,6 +144,7 @@ class HydrationPipelineStatus(BaseModel):
     target_provider: Optional[str] = None
     metadata_mode: Literal["pending", "missing_synopsis_ptbr"] = "pending"
     ptbr_recheck_offset: int = 0
+    focus_cursor_imdb: Optional[str] = None
     metadata_completed_notified: bool = False
     recent_events: list[HydrationActivityEvent] = Field(default_factory=list)
     coverage: CanonicalCoverageSnapshot = Field(default_factory=CanonicalCoverageSnapshot)
@@ -710,15 +711,15 @@ class HydrationOrchestratorService:
                         batch_size=meta_batch,
                         metadata_mode=eff_meta_mode,
                         ptbr_offset=state.ptbr_recheck_offset,
+                        focus_cursor=state.focus_cursor_imdb,
                         target_provider=eff_target if eff_target in ("tmdb", "tvmaze") else None,
                     )
                 )
                 if eff_meta_mode == "missing_synopsis_ptbr" or eff_target in ("tmdb", "tvmaze"):
                     if meta_candidates:
-                        state.ptbr_recheck_offset = max(
-                            int(c.id or 0) for c in meta_candidates
-                        )
+                        state.focus_cursor_imdb = meta_candidates[-1].imdb_id
                     else:
+                        state.focus_cursor_imdb = None
                         state.ptbr_recheck_offset = 0
                         state.metadata_mode = "pending"
                         state.target_provider = None
@@ -1149,14 +1150,17 @@ class HydrationOrchestratorService:
             else "Atualização iniciada.",
         )
 
+        prev_target = state.target_provider
+        prev_mode = state.metadata_mode
         state.state = "RUNNING"
         state.scope = scope
         state.target_provider = eff_target
         state.metadata_mode = metadata_mode
-        if not eff_target and metadata_mode == "pending":
+        if (not eff_target and metadata_mode == "pending") or (
+            eff_target != prev_target or metadata_mode != prev_mode
+        ):
             state.ptbr_recheck_offset = 0
-        elif eff_target != (state.target_provider or eff_target):
-            state.ptbr_recheck_offset = 0
+            state.focus_cursor_imdb = None
         state.last_error = None
         state = self._apply_live_telemetry(state)
         state = self._save_state(mainstream_session, state)
