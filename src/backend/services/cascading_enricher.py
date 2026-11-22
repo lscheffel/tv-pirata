@@ -986,9 +986,12 @@ class CascadingMetadataEnricher:
         updated_count = 0
 
         for show in candidates:
+            any_changed = False
             for tier_key, payload in collected.get(show.imdb_id, []):
-                if _apply_coalesce(show, payload, provenance, tier_key) and tier_key == "tmdb":
-                    show.tmdb_synced = 1
+                if _apply_coalesce(show, payload, provenance, tier_key):
+                    any_changed = True
+                    if tier_key == "tmdb":
+                        show.tmdb_synced = 1
 
             has_p = not _needs_poster(show)
             has_s = bool((show.synopsis_ptbr or "").strip() or (show.synopsis or "").strip())
@@ -1000,7 +1003,7 @@ class CascadingMetadataEnricher:
                 show.details_fetched = -1
             show.updated_at = _utc_iso()
             mainstream_session.add(show)
-            if has_p or has_s:
+            if any_changed:
                 updated_count += 1
 
             ez = ez_by_imdb.get(show.imdb_id)

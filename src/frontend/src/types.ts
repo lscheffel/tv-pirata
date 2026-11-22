@@ -676,6 +676,7 @@ export interface HydrationPipelineStatus {
   ema_rates?: Record<string, number>;
   target_provider?: string | null;
   metadata_mode?: "pending" | "missing_synopsis_ptbr";
+  focus_cursor_imdb?: string | null;
   recent_events?: HydrationActivityEvent[];
   coverage: CanonicalCoverageSnapshot;
   sources: Record<string, PillarSourceCursor>;

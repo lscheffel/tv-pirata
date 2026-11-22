@@ -449,7 +449,16 @@ class HydrationOrchestratorService:
 
         meta_eta: Optional[int] = None
         if state.scope in ("all", "metadata") and meta_rate_per_min > 0.0:
-            rem_meta = state.coverage.pending_details
+            if state.metadata_mode == "missing_synopsis_ptbr":
+                rem_meta = max(0, state.coverage.total_shows - state.coverage.with_synopsis_ptbr)
+            elif state.target_provider == "tmdb":
+                rem_meta = max(0, state.coverage.total_shows - state.coverage.with_tmdb_id)
+            elif state.target_provider == "tvmaze":
+                rem_meta = max(
+                    0, state.coverage.series_total - state.coverage.series_with_tvmaze_id
+                )
+            else:
+                rem_meta = state.coverage.pending_details
             if rem_meta > 0:
                 meta_eta = int((rem_meta / meta_rate_per_min) * 60)
 
@@ -621,7 +630,7 @@ class HydrationOrchestratorService:
         yts_pages: int = 6,
         sidecar_pages: int = 2,
         sweep_batch: int = 12,
-        meta_batch: int = 60,
+        meta_batch: int = 80,
     ) -> dict[str, Any]:
         """Execute 3-phase bifurcated step: Prepare DB -> Fan-out HTTP -> Fan-in DB (ADR-017)."""
         async with self._get_lock():
@@ -632,6 +641,9 @@ class HydrationOrchestratorService:
                 metadata_mode
                 if metadata_mode != "pending"
                 else state.metadata_mode
+            )
+            eff_meta_batch = (
+                max(meta_batch, 150) if eff_target in ("tmdb", "tvmaze") else meta_batch
             )
             if self._persisted_elapsed_base <= 0.0 and state.total_elapsed_seconds > 0.0:
                 self._persisted_elapsed_base = state.total_elapsed_seconds
@@ -708,7 +720,7 @@ class HydrationOrchestratorService:
                     CascadingMetadataEnricher.prepare_metadata_batch(
                         mainstream_session,
                         sources_session,
-                        batch_size=meta_batch,
+                        batch_size=eff_meta_batch,
                         metadata_mode=eff_meta_mode,
                         ptbr_offset=state.ptbr_recheck_offset,
                         focus_cursor=state.focus_cursor_imdb,

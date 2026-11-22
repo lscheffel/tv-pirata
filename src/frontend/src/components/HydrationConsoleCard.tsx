@@ -651,8 +651,9 @@ return (
             />
           </div>
           <p className="text-[11px] text-slate-400 truncate">
-            {isRunning && status.target_provider === "tmdb" && status.current_target
-              ? status.current_target
+            {isRunning && status.target_provider === "tmdb"
+              ? status.current_target ||
+                `Varrendo ${status.focus_cursor_imdb || "..."} (${(cov.with_tmdb_id ?? 0).toLocaleString("pt-BR")} vinculadas)`
               : `${(cov.with_tmdb_id ?? 0).toLocaleString("pt-BR")} de ${cov.total_shows.toLocaleString("pt-BR")} obras vinculadas`}
           </p>
           <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
@@ -718,8 +719,9 @@ return (
             />
           </div>
           <p className="text-[11px] text-slate-400 truncate">
-            {isRunning && status.target_provider === "tvmaze" && status.current_target
-              ? status.current_target
+            {isRunning && status.target_provider === "tvmaze"
+              ? status.current_target ||
+                `Varrendo ${status.focus_cursor_imdb || "..."} (${(cov.series_with_tvmaze_id ?? 0).toLocaleString("pt-BR")} vinculadas)`
               : `${(cov.series_with_tvmaze_id ?? 0).toLocaleString("pt-BR")} de ${(cov.series_total ?? 0).toLocaleString("pt-BR")} séries vinculadas`}
           </p>
           <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
