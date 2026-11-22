@@ -9,7 +9,7 @@ import re
 import unicodedata
 from typing import Any, Optional
 
-from sqlalchemy import text
+from sqlalchemy import literal_column, text
 from sqlmodel import Session, col, func, or_, select
 
 from src.backend.core.cache import discovery_cache
@@ -1090,6 +1090,15 @@ class DiscoveryEngineRepository:
                     & (col(IMDbCatalogShow.cast_members) != "")
                 )
 
+        def _imdb_in(ids: list[str] | set[str]) -> Any:
+            id_list = list(ids)
+            if len(id_list) <= 900:
+                return col(IMDbCatalogShow.imdb_id).in_(id_list)
+            subq = select(literal_column("value")).select_from(
+                func.json_each(json.dumps(id_list))
+            )
+            return col(IMDbCatalogShow.imdb_id).in_(subq)
+
         if data_sources:
             for src_key in [s.lower() for s in cls._parse_csv(data_sources)]:
                 if src_key == "eztv":
@@ -1098,8 +1107,7 @@ class DiscoveryEngineRepository:
                     ]
                     if eztv_imdbs:
                         filters.append(
-                            (col(IMDbCatalogShow.has_eztv) == 1)
-                            | col(IMDbCatalogShow.imdb_id).in_(eztv_imdbs)
+                            (col(IMDbCatalogShow.has_eztv) == 1) | _imdb_in(eztv_imdbs)
                         )
                     else:
                         filters.append(col(IMDbCatalogShow.has_eztv) == 1)
@@ -1107,8 +1115,7 @@ class DiscoveryEngineRepository:
                     all_media_imdbs = list(media_sources_by_imdb.keys())
                     if all_media_imdbs:
                         filters.append(
-                            (col(IMDbCatalogShow.has_eztv) == 1)
-                            | col(IMDbCatalogShow.imdb_id).in_(all_media_imdbs)
+                            (col(IMDbCatalogShow.has_eztv) == 1) | _imdb_in(all_media_imdbs)
                         )
                     else:
                         filters.append(col(IMDbCatalogShow.has_eztv) == 1)
@@ -1125,14 +1132,13 @@ class DiscoveryEngineRepository:
                         k for k, srcs in media_sources_by_imdb.items() if src_key in srcs
                     ]
                     if matched_imdbs:
-                        filters.append(col(IMDbCatalogShow.imdb_id).in_(matched_imdbs))
+                        filters.append(_imdb_in(matched_imdbs))
                     else:
                         filters.append(col(IMDbCatalogShow.imdb_id) == f"__empty_{src_key}__")
                 elif src_key == "p2p_active":
                     if active_p2p_imdbs:
                         filters.append(
-                            (col(IMDbCatalogShow.has_eztv) == 1)
-                            | col(IMDbCatalogShow.imdb_id).in_(list(active_p2p_imdbs))
+                            (col(IMDbCatalogShow.has_eztv) == 1) | _imdb_in(active_p2p_imdbs)
                         )
                     else:
                         filters.append(col(IMDbCatalogShow.has_eztv) == 1)
@@ -1157,17 +1163,14 @@ class DiscoveryEngineRepository:
                     )
                 elif src_key == "personal_library":
                     if saved_library_map:
-                        filters.append(
-                            col(IMDbCatalogShow.imdb_id).in_(list(saved_library_map.keys()))
-                        )
+                        filters.append(_imdb_in(list(saved_library_map.keys())))
                     else:
                         filters.append(col(IMDbCatalogShow.imdb_id) == "__empty_library__")
 
         if only_with_p2p:
             if active_p2p_imdbs:
                 filters.append(
-                    (col(IMDbCatalogShow.has_eztv) == 1)
-                    | col(IMDbCatalogShow.imdb_id).in_(list(active_p2p_imdbs))
+                    (col(IMDbCatalogShow.has_eztv) == 1) | _imdb_in(active_p2p_imdbs)
                 )
             else:
                 filters.append(col(IMDbCatalogShow.has_eztv) == 1)
@@ -1187,7 +1190,7 @@ class DiscoveryEngineRepository:
                 )
 
         if exclude_watched and watched_imdbs:
-            filters.append(~col(IMDbCatalogShow.imdb_id).in_(watched_imdbs))
+            filters.append(~_imdb_in(watched_imdbs))
 
         scope = discovery_cache.session_scope(session)
         filter_sig = (
