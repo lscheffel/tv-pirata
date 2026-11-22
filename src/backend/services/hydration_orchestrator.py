@@ -687,6 +687,13 @@ class HydrationOrchestratorService:
                     s_rec = sources_session.get(ExternalSourceRecord, sk)
                     if not s_rec or not s_rec.enabled:
                         continue
+                    cd_until = s_rec.cooldown_until
+                    if cd_until is not None:
+                        if cd_until.tzinfo is None:
+                            cd_until = cd_until.replace(tzinfo=timezone.utc)
+                        if cd_until > _utc_now():
+                            step_notes.append(f"{sk} cooldown")
+                            continue
                     s_adp = adapters_map.get(s_rec.adapter_key)
                     if not isinstance(s_adp, TorrentApiPySourceAdapter):
                         continue
@@ -873,7 +880,9 @@ class HydrationOrchestratorService:
                         f"(+{idx_y} novos)",
                     )
                     step_notes.append(
-                        f"YTS p.{meta.get('start_page', 1)}/{yts_cur.total_pages} (+{idx_y})"
+                        f"YTS em dia (+{idx_y})"
+                        if yts_cur.mode == "DELTA"
+                        else f"YTS p.{meta.get('start_page', 1)}/{yts_cur.total_pages} (+{idx_y})"
                     )
                     step_telemetry["yify"] = meta
                 state.sources["yify"] = yts_cur
@@ -883,13 +892,30 @@ class HydrationOrchestratorService:
                 s_inst: ExternalSourceRecord = plan["inst"]
                 res_item = results_map.get(f"sidecar:{sk}")
                 if isinstance(res_item, Exception):
-                    sc.last_error = str(res_item)
-                    self._record_event(
-                        sk,
-                        f"Página {sc.next_page}",
-                        "error",
-                        f"{sk.upper()}: falha de conexão",
-                    )
+                    err_txt = str(res_item)
+                    if plan["mode"] == "recent" and "422" in err_txt:
+                        sc.recent_exhausted = True
+                        sc.next_page = 1
+                        sc.consecutive_zero_recent_pages = 0
+                        sc.last_error = None
+                        self._record_event(
+                            sk,
+                            f"Página {sc.next_page}",
+                            "ok",
+                            (
+                                f"{sk.upper()}: páginas recentes esgotadas (422) "
+                                "→ migrando para catálogo."
+                            ),
+                        )
+                        step_notes.append(f"{sk} recent->cat")
+                    else:
+                        sc.last_error = err_txt
+                        self._record_event(
+                            sk,
+                            f"Página {sc.next_page}",
+                            "error",
+                            f"{sk.upper()}: falha de conexão",
+                        )
                     state.sources[sk] = sc
                     continue
 
@@ -983,14 +1009,13 @@ class HydrationOrchestratorService:
                             batch_size=sweep_batch,
                         )
                         sc.last_error = sw_res.get("aborted_reason")
-                        if not sw_res.get("aborted_reason"):
-                            sc.catalog_sweep_offset = int(
-                                sw_res.get("next_offset") or sc.catalog_sweep_offset
-                            )
-                            if sw_res.get("exhausted"):
-                                sc.bootstrap_completed = True
-                                sc.catalog_sweep_offset = 0
-                                sc.mode = "DELTA"
+                        next_off = int(sw_res.get("next_offset") or sc.catalog_sweep_offset)
+                        if next_off > sc.catalog_sweep_offset:
+                            sc.catalog_sweep_offset = next_off
+                        if not sw_res.get("aborted_reason") and sw_res.get("exhausted"):
+                            sc.bootstrap_completed = True
+                            sc.catalog_sweep_offset = 0
+                            sc.mode = "DELTA"
                     scanned_sw = int(sw_res.get("titles_scanned") or 0)
                     added_sw = int(sw_res.get("releases_indexed") or 0)
                     step_sidecar_counts[sk] = scanned_sw

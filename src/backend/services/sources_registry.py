@@ -2009,6 +2009,7 @@ class SourcesRegistryService:
         eff_offset = max(0, int(offset))
         eff_batch = max(1, min(int(batch_size), 50))
         scanned = len(outcomes)
+        ok_count = 0
         matched_titles = 0
         releases_indexed = 0
         aborted_reason: Optional[str] = None
@@ -2029,6 +2030,7 @@ class SourcesRegistryService:
                 inst.last_error = aborted_reason
                 inst.cooldown_until = _utc_now() + timedelta(seconds=60)
                 continue
+            ok_count += 1
             verified = [
                 c
                 for c in item.releases
@@ -2061,11 +2063,11 @@ class SourcesRegistryService:
         return {
             "source": inst.source_key,
             "offset": eff_offset,
-            "next_offset": eff_offset + scanned,
+            "next_offset": eff_offset + (scanned if not aborted_reason else ok_count),
             "titles_scanned": scanned,
             "titles_matched": matched_titles,
             "releases_indexed": releases_indexed,
-            "exhausted": scanned < eff_batch,
+            "exhausted": (not aborted_reason) and scanned < eff_batch,
             "aborted_reason": aborted_reason,
         }
 
