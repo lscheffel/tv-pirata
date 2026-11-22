@@ -195,12 +195,26 @@ export const ShowCard: React.FC<ShowCardProps> = ({
 
         {/* Top-Right: IMDb Rating + MediaBadge directly below it */}
         <div className="absolute top-2 right-2 z-10 flex flex-col items-end gap-1">
-          {show.rating > 0 && (
-            <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md text-yellow-300 text-xs font-bold border border-yellow-500/30">
-              <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-              <span>{show.rating.toFixed(1)}</span>
-            </div>
-          )}
+          {show.rating > 0 &&
+            (show.imdb_id ? (
+              <a
+                href={`https://www.imdb.com/title/${encodeURIComponent(show.imdb_id)}/`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                title={`Abrir ${show.title} no IMDb (${show.imdb_id})`}
+                aria-label={`Abrir ${show.title} no IMDb`}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md text-yellow-300 text-xs font-bold border border-yellow-500/30 hover:bg-yellow-500/20 hover:border-yellow-400 transition-colors cursor-pointer"
+              >
+                <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                <span>{show.rating.toFixed(1)}</span>
+              </a>
+            ) : (
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md text-yellow-300 text-xs font-bold border border-yellow-500/30">
+                <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                <span>{show.rating.toFixed(1)}</span>
+              </div>
+            ))}
           {hasMedia && (
             <MediaBadge
               compact={isNarrowCard}
