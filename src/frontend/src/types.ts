@@ -600,6 +600,11 @@ export interface PillarSourceCursor {
   bootstrap_completed: boolean;
   last_run_at?: string | null;
   last_error?: string | null;
+  sweep_pct?: number;
+  sweep_total?: number;
+  eta_seconds?: number | null;
+  rate_per_minute?: number;
+  consecutive_zero_recent_pages?: number;
 }
 
 export interface WaterfallProvenanceCounts {
@@ -626,6 +631,14 @@ export interface CanonicalCoverageSnapshot {
   synopsis_ptbr_pct: number;
   eztv_shows: number;
   eztv_missing_meta: number;
+  total_episodes?: number;
+  with_tmdb_id?: number;
+  tmdb_pct?: number;
+  series_total?: number;
+  series_with_tvmaze_id?: number;
+  tvmaze_pct?: number;
+  tmdb_configured?: boolean;
+  imdb_last_sync_at?: string | null;
 }
 
 export interface HydrationActivityEvent {
@@ -644,6 +657,7 @@ export interface HydrationPipelineStatus {
   imdb_backbone_mode: "BOOTSTRAP" | "DELTA";
   eztv_mode: "BOOTSTRAP" | "DELTA";
   steps_executed: number;
+  metadata_batches_executed?: number;
   last_step_summary?: string | null;
   last_error?: string | null;
   updated_at?: string | null;
@@ -658,9 +672,32 @@ export interface HydrationPipelineStatus {
   eta_seconds?: number | null;
   sources_eta_seconds?: number | null;
   metadata_eta_seconds?: number | null;
+  sidecar_eta_seconds?: number | null;
+  ema_rates?: Record<string, number>;
+  target_provider?: string | null;
+  metadata_mode?: "pending" | "missing_synopsis_ptbr";
   recent_events?: HydrationActivityEvent[];
   coverage: CanonicalCoverageSnapshot;
   sources: Record<string, PillarSourceCursor>;
   provenance: WaterfallProvenanceCounts;
+}
+
+export interface IMDbSyncJobStatus {
+  state: "IDLE" | "RUNNING" | "COMPLETED" | "ERROR";
+  stage:
+    | "idle"
+    | "downloading"
+    | "importing_works"
+    | "importing_episodes"
+    | "rebuilding_fts"
+    | "completed"
+    | "error";
+  progress_pct: number;
+  include_episodes: boolean;
+  works_processed: number;
+  episodes_processed: number;
+  last_sync_at?: string | null;
+  last_error?: string | null;
+  message?: string | null;
 }
 

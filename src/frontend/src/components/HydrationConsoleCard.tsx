@@ -4,16 +4,23 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  Database,
+  FastForward,
+  Film,
   Gauge,
+  KeyRound,
   Pause,
   Play,
   RefreshCw,
   RotateCcw,
+  Search,
   Sparkles,
   StepForward,
+  Table2,
+  Tv,
 } from "lucide-react";
 import { api } from "../services/api";
-import { HydrationPipelineStatus, PillarSourceCursor } from "../types";
+import { HydrationPipelineStatus, IMDbSyncJobStatus, PillarSourceCursor } from "../types";
 import { useToast } from "../context/ToastContext";
 
 interface HydrationConsoleCardProps {
@@ -58,8 +65,24 @@ function formatDuration(totalSeconds?: number | null): string {
 function formatSourceProgress(key: string, cur: PillarSourceCursor): string {
   if (key === "yify") return `Página ${cur.next_page} de ${cur.total_pages}`;
   if (key === "eztv") return `${cur.releases_indexed.toLocaleString("pt-BR")} episódios`;
-  if (cur.recent_exhausted) return `Verificando catálogo (item ${cur.catalog_sweep_offset})`;
-  return `Lendo página ${cur.next_page}`;
+  if (cur.recent_exhausted) {
+    const pct = cur.sweep_pct ?? 0;
+    const total = cur.sweep_total ?? 0;
+    return total > 0
+      ? `Catálogo ${pct}% (${cur.catalog_sweep_offset.toLocaleString("pt-BR")}/${total.toLocaleString("pt-BR")})`
+      : `Verificando catálogo (item ${cur.catalog_sweep_offset})`;
+  }
+  return `Recentes p.${cur.next_page}`;
+}
+
+function formatRelativeDays(iso?: string | null): string {
+  if (!iso) return "Base local pronta";
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return "Base local pronta";
+  const days = Math.max(0, Math.floor((Date.now() - ts) / 86400000));
+  if (days === 0) return "Atualizada hoje";
+  if (days === 1) return "Atualizada há 1 dia";
+  return `Atualizada há ${days} dias`;
 }
 
 export const HydrationConsoleCard: React.FC<HydrationConsoleCardProps> = ({
@@ -69,9 +92,12 @@ export const HydrationConsoleCard: React.FC<HydrationConsoleCardProps> = ({
 }) => {
   const { showToast } = useToast();
   const [status, setStatus] = useState<HydrationPipelineStatus | null>(null);
+  const [imdbStatus, setImdbStatus] = useState<IMDbSyncJobStatus | null>(null);
+  const [includeEpisodes, setIncludeEpisodes] = useState(false);
   const [scope, setScope] = useState<"all" | "sources" | "metadata">("all");
   const [busy, setBusy] = useState(false);
   const [activityOpen, setActivityOpen] = useState(!compact);
+  const [techTableOpen, setTechTableOpen] = useState(false);
 
   const applyStatus = useCallback(
     (next: HydrationPipelineStatus) => {
@@ -86,87 +112,162 @@ export const HydrationConsoleCard: React.FC<HydrationConsoleCardProps> = ({
       .getStatus()
       .then((res) => applyStatus(res))
       .catch(() => null);
-}, [applyStatus]);
+    api.explore.imdb
+      .getStatus()
+      .then((res) => setImdbStatus(res))
+      .catch(() => null);
+  }, [applyStatus]);
 
-useEffect(() => {
-  loadStatus();
-}, [loadStatus]);
+  useEffect(() => {
+    loadStatus();
+  }, [loadStatus]);
 
-useEffect(() => {
-  if (!status || status.state !== "RUNNING") return;
-  const poll = () => {
-    if (!document.hidden) loadStatus();
-  };
-  const id = window.setInterval(poll, 1000);
-  const onVis = () => {
-    if (!document.hidden) loadStatus();
-  };
-  document.addEventListener("visibilitychange", onVis);
-  return () => {
-    window.clearInterval(id);
-    document.removeEventListener("visibilitychange", onVis);
-  };
-}, [status, loadStatus]);
+  useEffect(() => {
+    const shouldPoll =
+      (status && status.state === "RUNNING") || (imdbStatus && imdbStatus.state === "RUNNING");
+    if (!shouldPoll) return;
+    const poll = () => {
+      if (!document.hidden) loadStatus();
+    };
+    const id = window.setInterval(poll, 1000);
+    const onVis = () => {
+      if (!document.hidden) loadStatus();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [status, imdbStatus, loadStatus]);
 
-const handleToggleRun = async () => {
-  if (!status) return;
-  setBusy(true);
-  try {
-    const next =
-      status.state === "RUNNING"
-        ? await api.explore.hydration.pause()
-        : await api.explore.hydration.start(scope);
-    applyStatus(next);
-    showToast(
-      next.state === "RUNNING"
+  const handleToggleRun = async () => {
+    if (!status) return;
+    setBusy(true);
+    try {
+      const next =
+        status.state === "RUNNING"
+          ? await api.explore.hydration.pause()
+          : await api.explore.hydration.start(scope);
+      applyStatus(next);
+      showToast(
+        next.state === "RUNNING"
           ? "Atualização do catálogo iniciada em segundo plano."
-      : "Atualização pausada. Seu progresso foi salvo.",
-      "info"
+          : "Atualização pausada. Seu progresso foi salvo.",
+        "info"
       );
-onStepCompleted?.();
+      onStepCompleted?.();
     } catch (err: any) {
-  showToast(`Erro na atualização: ${err?.message || "falha inesperada"}`, "error");
-} finally {
-  setBusy(false);
-}
+      showToast(`Erro na atualização: ${err?.message || "falha inesperada"}`, "error");
+    } finally {
+      setBusy(false);
+    }
   };
 
-const handleSingleStep = async () => {
-  setBusy(true);
-  try {
-    const out = await api.explore.hydration.step(scope);
-    applyStatus(out.status);
-    showToast("Lote processado e progresso salvo.", "success");
-    onStepCompleted?.();
-  } catch (err: any) {
-    showToast(`Falha ao processar lote: ${err?.message || "erro"}`, "error");
-  } finally {
-    setBusy(false);
+  const handleFocusProvider = async (
+    provider: "tmdb" | "tvmaze",
+    metaMode: "pending" | "missing_synopsis_ptbr"
+  ) => {
+    setBusy(true);
+    try {
+      const next = await api.explore.hydration.start("metadata", provider, metaMode);
+      applyStatus(next);
+      showToast(
+        `Focando ${provider.toUpperCase()} (${
+          metaMode === "missing_synopsis_ptbr" ? "re-enriquecer PT-BR" : "pendentes"
+        }).`,
+        "info"
+      );
+    } catch (err: any) {
+      showToast(`Erro ao focar ${provider.toUpperCase()}: ${err?.message || "erro"}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSkipRecent = async (sourceKey: string) => {
+    setBusy(true);
+    try {
+      const next = await api.explore.hydration.skipRecent(sourceKey);
+      applyStatus(next);
+      showToast(`${SOURCE_LABELS[sourceKey] || sourceKey} avançado para varredura.`, "info");
+    } catch (err: any) {
+      showToast(`Erro ao pular recentes: ${err?.message || "erro"}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleImdbSync = async () => {
+    setBusy(true);
+    try {
+      const next = await api.explore.imdb.sync(includeEpisodes);
+      setImdbStatus(next);
+      showToast("Atualização dos datasets IMDb iniciada em segundo plano.", "info");
+    } catch (err: any) {
+      showToast(`Erro ao iniciar sync IMDb: ${err?.message || "erro"}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleImdbReindex = async () => {
+    setBusy(true);
+    try {
+      const next = await api.explore.imdb.reindexFts();
+      setImdbStatus(next);
+      showToast("Reindexação FTS5 iniciada em segundo plano.", "info");
+    } catch (err: any) {
+      showToast(`Erro ao reindexar FTS5: ${err?.message || "erro"}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSingleStep = async () => {
+    setBusy(true);
+    try {
+      const out = await api.explore.hydration.step(scope);
+      applyStatus(out.status);
+      showToast("Lote processado e progresso salvo.", "success");
+      onStepCompleted?.();
+    } catch (err: any) {
+      showToast(`Falha ao processar lote: ${err?.message || "erro"}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleReset = async () => {
+    setBusy(true);
+    try {
+      const next = await api.explore.hydration.resetCursor("all");
+      applyStatus(next);
+      showToast("Progresso de varredura inicial reiniciado.", "info");
+    } catch (err: any) {
+      showToast(`Erro ao reiniciar varredura: ${err?.message || "erro"}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!status) {
+    return null;
   }
-};
 
-const handleReset = async () => {
-  setBusy(true);
-  try {
-    const next = await api.explore.hydration.resetCursor("all");
-    applyStatus(next);
-    showToast("Progresso de varredura inicial reiniciado.", "info");
-  } catch (err: any) {
-    showToast(`Erro ao reiniciar varredura: ${err?.message || "erro"}`, "error");
-  } finally {
-    setBusy(false);
-  }
-};
-
-if (!status) {
-  return null;
-}
-
-const cov = status.coverage;
-const prov = status.provenance;
-const isRunning = status.state === "RUNNING";
-const sourceOrder = ["yify", "tgx", "nyaasi", "bitsearch", "glodls", "eztv"];
-const events = status.recent_events || [];
+  const cov = status.coverage;
+  const prov = status.provenance;
+  const isRunning = status.state === "RUNNING";
+  const sourceOrder = ["yify", "tgx", "nyaasi", "bitsearch", "glodls", "eztv"];
+  const events = status.recent_events || [];
+  const coreReady =
+    (cov.pending_details ?? 0) === 0 && Boolean(status.sources?.yify?.bootstrap_completed);
+  const sidecarSweeping = sourceOrder
+    .filter((k) => k !== "yify" && k !== "eztv")
+    .filter((k) => status.sources[k]?.mode === "BOOTSTRAP");
+  const emaRates = status.ema_rates || {};
+  const sidecarTotalRate = sourceOrder
+    .filter((k) => k !== "yify" && k !== "eztv")
+    .reduce((acc, k) => acc + (emaRates[k] || 0), 0);
 
 return (
   <div
@@ -253,6 +354,20 @@ return (
       </div>
     </div>
 
+    {/* Two-Level Readiness Banner (ADR-018) */}
+    {coreReady && (
+      <div className="px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+        <span className="font-bold text-emerald-200">
+          Pronto para uso: Catálogo Principal, Capas e YTS em dia
+        </span>
+        {sidecarSweeping.length > 0 && (
+          <span className="text-[11px] text-cyan-200 font-semibold">
+            Varredura P2P contínua ({sidecarSweeping.map((k) => SOURCE_LABELS[k] || k).join(", ")})
+          </span>
+        )}
+      </div>
+    )}
+
     {/* Live Telemetry Bar (Speed, Elapsed, ETA, Processed) */}
     {(isRunning ||
       (status.total_elapsed_seconds ?? status.elapsed_seconds ?? 0) > 0 ||
@@ -265,6 +380,11 @@ return (
             <div className="text-xs font-extrabold text-white">
               {status.rate_per_minute ? `${status.rate_per_minute} itens/min` : "Medindo..."}
             </div>
+            {sidecarTotalRate > 0 && (
+              <div className="text-[10px] text-slate-400 truncate">
+                Sidecar: {sidecarTotalRate.toFixed(1)}/min
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2.5">
@@ -286,9 +406,15 @@ return (
           <div>
             <div className="text-[11px] text-slate-400">Tempo restante (est.)</div>
             <div className="text-xs font-extrabold text-white">
-              {formatDuration(status.eta_seconds)}
+              {status.eta_seconds != null
+                ? formatDuration(status.eta_seconds)
+                : coreReady && sidecarSweeping.length === 0
+                  ? "Concluído"
+                  : "Calculando..."}
             </div>
-            {(status.sources_eta_seconds != null || status.metadata_eta_seconds != null) && (
+            {(status.sources_eta_seconds != null ||
+              status.metadata_eta_seconds != null ||
+              status.sidecar_eta_seconds != null) && (
               <div className="text-[10px] text-slate-400 truncate">
                 {status.sources_eta_seconds != null
                   ? `YTS: ${formatDuration(status.sources_eta_seconds)}`
@@ -298,6 +424,13 @@ return (
                   : ""}
                 {status.metadata_eta_seconds != null
                   ? `Capas: ${formatDuration(status.metadata_eta_seconds)}`
+                  : ""}
+                {(status.sources_eta_seconds != null || status.metadata_eta_seconds != null) &&
+                status.sidecar_eta_seconds != null
+                  ? " • "
+                  : ""}
+                {status.sidecar_eta_seconds != null
+                  ? `Sidecar: ${formatDuration(status.sidecar_eta_seconds)}`
                   : ""}
               </div>
             )}
@@ -309,6 +442,9 @@ return (
             <div className="text-[11px] text-slate-400">Nesta sessão</div>
             <div className="text-xs font-extrabold text-white">
               {(status.items_processed_in_run ?? 0).toLocaleString("pt-BR")} processados
+            </div>
+            <div className="text-[10px] text-slate-400">
+              {status.steps_executed.toLocaleString("pt-BR")} ciclos do motor
             </div>
           </div>
         </div>
@@ -330,7 +466,13 @@ return (
         </div>
         <p className="text-[11px] text-slate-400">
           {cov.with_poster.toLocaleString("pt-BR")} de {cov.total_shows.toLocaleString("pt-BR")}{" "}
-          ({(cov.pending_details ?? cov.missing_posters).toLocaleString("pt-BR")} na fila)
+          {(cov.pending_details ?? 0) === 0 ? (
+            <span className="text-emerald-300 font-semibold">
+              • 100% verificado (máximo das APIs)
+            </span>
+          ) : (
+            `(${(cov.pending_details ?? cov.missing_posters).toLocaleString("pt-BR")} na fila)`
+          )}
         </p>
       </div>
 
@@ -358,54 +500,294 @@ return (
       <div className="p-3 rounded-xl bg-canvas border border-white/10 space-y-1.5">
         <div className="flex items-center justify-between text-xs">
           <span className="font-bold text-slate-200">Metadados por Provedor</span>
-          <span className="font-black text-amber-200">{status.steps_executed} lotes</span>
+          <span className="font-black text-amber-200">
+            {(status.metadata_batches_executed ?? status.steps_executed).toLocaleString("pt-BR")} lotes
+          </span>
         </div>
-            <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold">
-              <span className="px-2 py-0.5 rounded bg-white/5 text-slate-200">IMDb {prov.imdb}</span>
-              <span className="px-2 py-0.5 rounded bg-white/5 text-slate-200">TMDB {prov.tmdb}</span>
-              <span className="px-2 py-0.5 rounded bg-white/5 text-slate-200">
-                TVMaze {prov.tvmaze}
-              </span>
-                <span className="px-2 py-0.5 rounded bg-white/5 text-slate-200">
-                  EZTV {prov.eztv + prov.self_healed_eztv}
-                </span>
-                  <span className="px-2 py-0.5 rounded bg-white/5 text-slate-200">YTS {prov.yify}</span>
-                  <span className="px-2 py-0.5 rounded bg-white/5 text-slate-200">
-                    Wikipédia/Outros {prov.open_sources}
-                  </span>
-                </div>
+        <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold">
+          <span className="px-2 py-0.5 rounded bg-white/5 text-slate-200">IMDb {prov.imdb}</span>
+          <span className="px-2 py-0.5 rounded bg-white/5 text-slate-200">TMDB {prov.tmdb}</span>
+          <span className="px-2 py-0.5 rounded bg-white/5 text-slate-200">
+            TVMaze {prov.tvmaze}
+          </span>
+          <span className="px-2 py-0.5 rounded bg-white/5 text-slate-200">
+            EZTV {prov.eztv + prov.self_healed_eztv}
+          </span>
+          <span className="px-2 py-0.5 rounded bg-white/5 text-slate-200">YTS {prov.yify}</span>
+          <span className="px-2 py-0.5 rounded bg-white/5 text-slate-200">
+            Wikipédia/Outros {prov.open_sources}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    {/* Mainstream Canonical & Enrichment Providers (ADR-018) */}
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-extrabold uppercase tracking-wider text-slate-300">
+          Base Canônica &amp; Metadados (Mainstream)
+        </span>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+        {/* IMDb Canonical Base Card */}
+        <div className="p-3 rounded-xl bg-canvas border border-amber-400/25 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-white">
+              <Database className="w-3.5 h-3.5 text-amber-300" />
+              IMDb (Base Canônica)
+            </span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-200 border border-amber-400/30">
+              {imdbStatus?.state === "RUNNING"
+                ? `${Math.round(imdbStatus.progress_pct)}%`
+                : formatRelativeDays(imdbStatus?.last_sync_at || cov.imdb_last_sync_at)}
+            </span>
+          </div>
+          {imdbStatus?.state === "RUNNING" ? (
+            <div className="space-y-1">
+              <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full bg-amber-400 transition-all duration-300"
+                  style={{ width: `${Math.min(100, imdbStatus.progress_pct)}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-amber-200 truncate">
+                {imdbStatus.message || imdbStatus.stage}
+              </p>
             </div>
+          ) : (
+            <p className="text-[11px] text-slate-400">
+              {cov.total_shows.toLocaleString("pt-BR")} obras •{" "}
+              {(cov.total_episodes ?? 0).toLocaleString("pt-BR")} episódios
+            </p>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <label className="inline-flex items-center gap-1.5 text-[10px] text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeEpisodes}
+                onChange={(e) => setIncludeEpisodes(e.target.checked)}
+                disabled={busy || imdbStatus?.state === "RUNNING"}
+                className="rounded border-white/20 bg-canvas"
+              />
+              Incluir episódios
+            </label>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={busy || imdbStatus?.state === "RUNNING"}
+                onClick={handleImdbSync}
+                className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-[10px] font-bold text-amber-100 cursor-pointer disabled:opacity-50"
+              >
+                Atualizar TSV
+              </button>
+              <button
+                type="button"
+                disabled={busy || imdbStatus?.state === "RUNNING"}
+                onClick={handleImdbReindex}
+                title="Reconstruir índice de busca FTS5"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-[10px] font-bold text-slate-200 cursor-pointer disabled:opacity-50"
+              >
+                <Search className="w-3 h-3" />
+                FTS5
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* Per-Source Human-Readable Progress Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-          {sourceOrder.map((key) => {
-            const cur = status.sources[key];
-            if (!cur) return null;
-            const badge = MODE_LABELS[cur.mode];
-            return (
-              <div
-                key={key}
-                className="p-2.5 rounded-xl bg-canvas border border-white/10 flex flex-col justify-between gap-1"
-              >
-                <div className="flex items-center justify-between gap-1">
-                    <span className="text-xs font-extrabold text-white">
-                      {SOURCE_LABELS[key] || key}
-                    </span>
-                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${badge.style}`}>
-                      {cur.mode === "DELTA" ? "Em dia" : "Inicial"}
-                    </span>
-                </div>
-                <div className="text-[11px] font-bold text-cyan-300">
-                  {cur.titles_indexed.toLocaleString("pt-BR")} títulos
-                </div>
-                <div className="text-[10px] text-slate-400 truncate">
-                  {formatSourceProgress(key, cur)}
-                </div>
-              </div>
-            );
-          })}
+        {/* TMDB Card */}
+        <div className="p-3 rounded-xl bg-canvas border border-sky-400/25 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-white">
+              <Film className="w-3.5 h-3.5 text-sky-400" />
+              TMDB
+            </span>
+            {cov.tmdb_configured === false ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-200 border border-amber-400/40">
+                <KeyRound className="w-3 h-3" />
+                Chave ausente
+              </span>
+            ) : (
+              <span className="text-xs font-black text-sky-300">{cov.tmdb_pct ?? 0}%</span>
+            )}
+          </div>
+          <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div
+              className="h-full bg-sky-400 transition-all duration-300"
+              style={{ width: `${Math.min(100, cov.tmdb_pct ?? 0)}%` }}
+            />
+          </div>
+          <p className="text-[11px] text-slate-400">
+            {(cov.with_tmdb_id ?? 0).toLocaleString("pt-BR")} de{" "}
+            {cov.total_shows.toLocaleString("pt-BR")} obras vinculadas
+          </p>
+          <div className="flex items-center gap-1.5 pt-0.5">
+            <button
+              type="button"
+              disabled={busy || cov.tmdb_configured === false}
+              onClick={() => handleFocusProvider("tmdb", "pending")}
+              className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-[10px] font-bold text-sky-100 cursor-pointer disabled:opacity-50"
+            >
+              Focar pendentes
+            </button>
+            <button
+              type="button"
+              disabled={busy || cov.tmdb_configured === false}
+              onClick={() => handleFocusProvider("tmdb", "missing_synopsis_ptbr")}
+              className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-[10px] font-bold text-slate-200 cursor-pointer disabled:opacity-50"
+            >
+              Re-enriquecer PT-BR
+            </button>
+          </div>
         </div>
+
+        {/* TVMaze Card */}
+        <div className="p-3 rounded-xl bg-canvas border border-cyan-400/25 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-white">
+              <Tv className="w-3.5 h-3.5 text-cyan-400" />
+              TVMaze (Séries)
+            </span>
+            <span className="text-xs font-black text-cyan-300">{cov.tvmaze_pct ?? 0}%</span>
+          </div>
+          <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div
+              className="h-full bg-cyan-400 transition-all duration-300"
+              style={{ width: `${Math.min(100, cov.tvmaze_pct ?? 0)}%` }}
+            />
+          </div>
+          <p className="text-[11px] text-slate-400">
+            {(cov.series_with_tvmaze_id ?? 0).toLocaleString("pt-BR")} de{" "}
+            {(cov.series_total ?? 0).toLocaleString("pt-BR")} séries vinculadas
+          </p>
+          <div className="flex items-center gap-1.5 pt-0.5">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => handleFocusProvider("tvmaze", "pending")}
+              className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-[10px] font-bold text-cyan-100 cursor-pointer disabled:opacity-50"
+            >
+              Focar pendentes
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => handleFocusProvider("tvmaze", "missing_synopsis_ptbr")}
+              className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-[10px] font-bold text-slate-200 cursor-pointer disabled:opacity-50"
+            >
+              Re-enriquecer PT-BR
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* Per-Source Human-Readable Progress Cards */}
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-extrabold uppercase tracking-wider text-slate-300">
+          Fontes P2P
+        </span>
+        <button
+          type="button"
+          onClick={() => setTechTableOpen((v) => !v)}
+          className="inline-flex items-center gap-1.5 text-[11px] font-bold text-cyan-300 hover:text-cyan-200 cursor-pointer"
+        >
+          <Table2 className="w-3.5 h-3.5" />
+          {techTableOpen ? "Ocultar tabela técnica" : "Ver tabela técnica"}
+        </button>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        {sourceOrder.map((key) => {
+          const cur = status.sources[key];
+          if (!cur) return null;
+          const badge = MODE_LABELS[cur.mode];
+          const canSkipRecent =
+            key !== "yify" && key !== "eztv" && cur.mode === "BOOTSTRAP" && !cur.recent_exhausted;
+          const pct = cur.sweep_pct ?? 0;
+          return (
+            <div
+              key={key}
+              className="p-2.5 rounded-xl bg-canvas border border-white/10 flex flex-col justify-between gap-1.5"
+            >
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-xs font-extrabold text-white">
+                  {SOURCE_LABELS[key] || key}
+                </span>
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${badge.style}`}>
+                  {cur.mode === "DELTA" ? "Em dia" : "Inicial"}
+                </span>
+              </div>
+              <div className="text-[11px] font-bold text-cyan-300">
+                {cur.titles_indexed.toLocaleString("pt-BR")} títulos
+              </div>
+              {cur.recent_exhausted && cur.mode === "BOOTSTRAP" && (
+                <div className="w-full h-1 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full bg-cyan-400 transition-all duration-300"
+                    style={{ width: `${Math.min(100, pct)}%` }}
+                  />
+                </div>
+              )}
+              <div className="text-[10px] text-slate-400 truncate">
+                {formatSourceProgress(key, cur)}
+              </div>
+              {canSkipRecent && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => handleSkipRecent(key)}
+                  className="inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-[9px] font-bold text-slate-300 cursor-pointer disabled:opacity-50"
+                >
+                  <FastForward className="w-2.5 h-2.5" />
+                  Pular recentes
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {techTableOpen && (
+        <div className="overflow-x-auto rounded-xl bg-canvas border border-white/10">
+          <table className="w-full text-left text-[11px] text-slate-300">
+            <thead className="bg-white/5 text-slate-400 uppercase text-[10px]">
+              <tr>
+                <th className="px-3 py-2">Fonte</th>
+                <th className="px-3 py-2">Modo</th>
+                <th className="px-3 py-2">Progresso</th>
+                <th className="px-3 py-2">Taxa EMA</th>
+                <th className="px-3 py-2">ETA</th>
+                <th className="px-3 py-2">Erro / Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {sourceOrder.map((key) => {
+                const cur = status.sources[key];
+                if (!cur) return null;
+                return (
+                  <tr key={key} className="hover:bg-white/5">
+                    <td className="px-3 py-1.5 font-bold text-white">
+                      {SOURCE_LABELS[key] || key}
+                    </td>
+                    <td className="px-3 py-1.5">{cur.mode}</td>
+                    <td className="px-3 py-1.5">{formatSourceProgress(key, cur)}</td>
+                    <td className="px-3 py-1.5">
+                      {(cur.rate_per_minute ?? 0) > 0 ? `${cur.rate_per_minute}/min` : "-"}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      {cur.eta_seconds != null ? formatDuration(cur.eta_seconds) : "-"}
+                    </td>
+                    <td className="px-3 py-1.5 text-rose-300 truncate max-w-[200px]">
+                      {cur.last_error || "OK"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
 
         {/* Collapsible Live Activity Monitor */}
         {!compact && (

@@ -583,3 +583,78 @@ def test_domain_semaphore_loop_isolation_and_parallel_fanout(hydration_client, m
         assert report["provenance"]["tmdb"] == 6
 
 
+def test_adr018_telemetry_skip_recent_and_imdb_admin(hydration_client, monkeypatch) -> None:
+    """ADR-018: Mainstream coverage, EMA, 0-of-0 suppression, skip-recent, and IMDb endpoints."""
+    client, main_e, _src_e = hydration_client
+    monkeypatch.setenv("TMDB_API_KEY", "dummy_tmdb_key")
+
+    with Session(main_e) as ms:
+        ms.add(
+            IMDbCatalogShow(
+                imdb_id="tt8100001",
+                title_type="movie",
+                primary_title="Mainstream Movie",
+                start_year=2022,
+                tmdb_id=101,
+                poster_url="https://img.example/m.jpg",
+                synopsis="Complete movie.",
+                synopsis_ptbr="Filme completo.",
+                details_fetched=1,
+            )
+        )
+        ms.add(
+            IMDbCatalogShow(
+                imdb_id="tt8100002",
+                title_type="tvSeries",
+                primary_title="Mainstream Series",
+                start_year=2023,
+                tvmaze_id=202,
+                poster_url="https://img.example/s.jpg",
+                synopsis="Complete series.",
+                synopsis_ptbr="Série completa.",
+                details_fetched=1,
+            )
+        )
+        ms.commit()
+
+    st_res = client.get("/api/explore/hydration/status")
+    assert st_res.status_code == 200
+    cov = st_res.json()["coverage"]
+    assert cov["total_shows"] == 2
+    assert cov["with_tmdb_id"] == 1
+    assert cov["tmdb_pct"] == 50.0
+    assert cov["series_total"] == 1
+    assert cov["series_with_tvmaze_id"] == 1
+    assert cov["tvmaze_pct"] == 100.0
+    assert cov["tmdb_configured"] is True
+
+    # Step on empty metadata queue should silence repeated 0-of-0 events
+    step1 = client.post("/api/explore/hydration/step?scope=metadata")
+    assert step1.status_code == 200
+    assert step1.json()["status"]["metadata_batches_executed"] == 0
+    step2 = client.post("/api/explore/hydration/step?scope=metadata")
+    assert step2.status_code == 200
+    events = step2.json()["status"]["recent_events"]
+    zero_msgs = [e for e in events if "0 de 0" in e["message"]]
+    assert len(zero_msgs) == 0
+
+    # Manual skip-recent advances Sidecar cursor into sweep mode
+    skip_res = client.post("/api/explore/hydration/sources/nyaasi/skip-recent")
+    assert skip_res.status_code == 200
+    assert skip_res.json()["sources"]["nyaasi"]["recent_exhausted"] is True
+
+    # IMDb admin endpoints (Bloco 2)
+    imdb_st = client.get("/api/explore/imdb/status")
+    assert imdb_st.status_code == 200
+    assert imdb_st.json()["state"] in ("IDLE", "COMPLETED")
+
+    imdb_sync = client.post("/api/explore/imdb/sync?include_episodes=false")
+    assert imdb_sync.status_code == 200
+    assert imdb_sync.json()["state"] == "COMPLETED"
+
+    imdb_fts = client.post("/api/explore/imdb/reindex-fts")
+    assert imdb_fts.status_code == 200
+    assert imdb_fts.json()["state"] == "COMPLETED"
+
+
+

@@ -19,6 +19,7 @@ from src.backend.services.hydration_orchestrator import (
     HydrationPipelineStatus,
     hydration_orchestrator,
 )
+from src.backend.services.imdb_sync_service import IMDbSyncJobStatus, imdb_sync_service
 
 router = APIRouter(prefix="/explore", tags=["Audiovisual Discovery Engine"])
 
@@ -275,11 +276,23 @@ async def start_hydration_pipeline(
     scope: Literal["all", "sources", "metadata"] = Query(
         "all", description="Escopo do motor unificado: all, sources ou metadata"
     ),
+    target_provider: Optional[str] = Query(
+        None, description="Foco opcional: tmdb, tvmaze, yify, tgx, nyaasi, bitsearch, glodls"
+    ),
+    metadata_mode: Literal["pending", "missing_synopsis_ptbr"] = Query(
+        "pending", description="Modo da fila de metadados: pending ou missing_synopsis_ptbr"
+    ),
     session: Session = Depends(get_session),
     sources_session: Session = Depends(get_eztv_session),
 ) -> HydrationPipelineStatus:
     """Start or resume the cooperative background 3-pillar hydration pipeline."""
-    return hydration_orchestrator.start(session, sources_session, scope=scope)
+    return hydration_orchestrator.start(
+        session,
+        sources_session,
+        scope=scope,
+        target_provider=target_provider,
+        metadata_mode=metadata_mode,
+    )
 
 
 @router.post("/hydration/pause", response_model=HydrationPipelineStatus)
@@ -294,6 +307,8 @@ async def pause_hydration_pipeline(
 @router.post("/hydration/step")
 async def step_hydration_pipeline(
     scope: Literal["all", "sources", "metadata"] = Query("all"),
+    target_provider: Optional[str] = Query(None),
+    metadata_mode: Literal["pending", "missing_synopsis_ptbr"] = Query("pending"),
     yts_pages: int = Query(6, ge=1, le=20),
     sidecar_pages: int = Query(2, ge=1, le=5),
     sweep_batch: int = Query(12, ge=1, le=25),
@@ -306,6 +321,8 @@ async def step_hydration_pipeline(
         session,
         sources_session,
         scope=scope,
+        target_provider=target_provider,
+        metadata_mode=metadata_mode,
         yts_pages=yts_pages,
         sidecar_pages=sidecar_pages,
         sweep_batch=sweep_batch,
@@ -324,4 +341,41 @@ def reset_hydration_cursor(
 ) -> HydrationPipelineStatus:
     """Reset persisted checkpoints back to BOOTSTRAP page 1 / offset 0."""
     return hydration_orchestrator.reset_cursor(session, sources_session, target=target)
+
+
+@router.post("/hydration/sources/{source_key}/skip-recent", response_model=HydrationPipelineStatus)
+def skip_recent_source_pagination(
+    source_key: str,
+    session: Session = Depends(get_session),
+    sources_session: Session = Depends(get_eztv_session),
+) -> HydrationPipelineStatus:
+    """Manually advance a Sidecar source from recent pages directly into catalog sweep."""
+    return hydration_orchestrator.skip_recent(session, sources_session, source_key=source_key)
+
+
+@router.get("/imdb/status", response_model=IMDbSyncJobStatus)
+def get_imdb_canonical_sync_status(
+    session: Session = Depends(get_session),
+) -> IMDbSyncJobStatus:
+    """Return status of IMDb canonical TSV sync and FTS5 rebuild."""
+    return imdb_sync_service.get_status(session)
+
+
+@router.post("/imdb/sync", response_model=IMDbSyncJobStatus)
+async def trigger_imdb_canonical_sync(
+    include_episodes: bool = Query(
+        False, description="Incluir atualização de episódios (~4,5M linhas)"
+    ),
+    session: Session = Depends(get_session),
+) -> IMDbSyncJobStatus:
+    """Trigger cooperative asynchronous IMDb TSV dataset sync."""
+    return await imdb_sync_service.start_sync(session, include_episodes=include_episodes)
+
+
+@router.post("/imdb/reindex-fts", response_model=IMDbSyncJobStatus)
+async def trigger_imdb_fts_reindex(
+    session: Session = Depends(get_session),
+) -> IMDbSyncJobStatus:
+    """Trigger cooperative asynchronous FTS5 index rebuild on shows_fts."""
+    return await imdb_sync_service.start_reindex_fts(session)
 

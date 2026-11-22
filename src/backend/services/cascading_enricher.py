@@ -670,12 +670,38 @@ class CascadingMetadataEnricher:
         sources_session: Optional[Session] = None,
         *,
         batch_size: int = 12,
+        metadata_mode: str = "pending",
+        ptbr_offset: int = 0,
+        target_provider: Optional[str] = None,
     ) -> tuple[dict[str, int], list[IMDbCatalogShow], dict[str, EZTVShow]]:
         """Phase 1 (Prepare DB): run cross-DB self-heal and pick priority queue."""
         heal_stats = cls.cross_db_self_heal(mainstream_session, sources_session)
-        candidates = cls._select_priority_queue(
-            mainstream_session, sources_session, batch_size=batch_size
-        )
+        if metadata_mode == "missing_synopsis_ptbr":
+            stmt = select(IMDbCatalogShow).where(
+                or_(
+                    col(IMDbCatalogShow.synopsis_ptbr).is_(None),
+                    col(IMDbCatalogShow.synopsis_ptbr) == "",
+                ),
+                col(IMDbCatalogShow.id) > max(0, ptbr_offset),
+            )
+            if target_provider == "tvmaze":
+                stmt = stmt.where(
+                    col(IMDbCatalogShow.title_type).in_(
+                        ["tvSeries", "tvMiniSeries", "tv_show", "mini_series"]
+                    ),
+                    col(IMDbCatalogShow.tvmaze_id).is_(None),
+                )
+            elif target_provider == "tmdb":
+                stmt = stmt.where(col(IMDbCatalogShow.tmdb_id).is_(None))
+            candidates = list(
+                mainstream_session.exec(
+                    stmt.order_by(col(IMDbCatalogShow.id).asc()).limit(batch_size)
+                ).all()
+            )
+        else:
+            candidates = cls._select_priority_queue(
+                mainstream_session, sources_session, batch_size=batch_size
+            )
         ez_by_imdb: dict[str, EZTVShow] = {}
         if candidates and sources_session is not None:
             cand_ids = [c.imdb_id for c in candidates]
@@ -695,6 +721,7 @@ class CascadingMetadataEnricher:
         timeout: float = 8.0,
         client: Optional[httpx.AsyncClient] = None,
         on_progress: Optional[Callable[[str, str], None]] = None,
+        target_provider: Optional[str] = None,
     ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
         """Phase 2 (Pure HTTP Fan-out): parallel Tiers 1-5 + batch Tier 6 without DB writes."""
         if not candidates:
@@ -740,6 +767,27 @@ class CascadingMetadataEnricher:
             snap = snapshots[show_id]
             if on_progress is not None:
                 on_progress("metadata", f"{snap['primary_title']} ({show_id})")
+
+            if target_provider == "tmdb":
+                t2 = await cls._fetch_tier2_tmdb(http_client, show_id, read_token, api_key)
+                if t2:
+                    collected[show_id].append(("tmdb", t2))
+                    _mark_filled(snap, t2)
+                return
+
+            if target_provider == "tvmaze":
+                is_tv_only = snap["title_type"] in (
+                    "tvSeries",
+                    "tvMiniSeries",
+                    "tv_show",
+                    "mini_series",
+                )
+                if is_tv_only:
+                    t3 = await cls._fetch_tier3_tvmaze(http_client, show_id)
+                    if t3:
+                        collected[show_id].append(("tvmaze", t3))
+                        _mark_filled(snap, t3)
+                return
 
             if not snap["has_poster"] or not snap["has_syn_en"]:
                 t1 = await cls._fetch_tier1_imdb(http_client, show_id)
@@ -792,7 +840,11 @@ class CascadingMetadataEnricher:
                 return_exceptions=True,
             )
 
-            incomplete_ids = [sid for sid, snap in snapshots.items() if not _is_done(snap)]
+            incomplete_ids = (
+                []
+                if target_provider in ("tmdb", "tvmaze")
+                else [sid for sid, snap in snapshots.items() if not _is_done(snap)]
+            )
             if incomplete_ids:
                 wd_map = await cls._fetch_tier6_wikidata_batch(http_client, incomplete_ids)
 

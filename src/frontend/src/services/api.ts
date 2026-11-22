@@ -9,6 +9,7 @@ import {
   CollectionRecord,
   ExploreWorksResponse,
   HydrationPipelineStatus,
+  IMDbSyncJobStatus,
   MediaWorkDossier,
   PersonDossier,
   PersonSummary,
@@ -186,23 +187,51 @@ export const api = {
       }),
     hydration: {
       getStatus: () => request<HydrationPipelineStatus>("/explore/hydration/status"),
-      start: (scope: "all" | "sources" | "metadata" = "all") =>
-        request<HydrationPipelineStatus>(
-          `/explore/hydration/start?scope=${encodeURIComponent(scope)}`,
-          { method: "POST" }
-        ),
+      start: (
+        scope: "all" | "sources" | "metadata" = "all",
+        targetProvider?: string | null,
+        metadataMode: "pending" | "missing_synopsis_ptbr" = "pending"
+      ) => {
+        const q = new URLSearchParams({ scope, metadata_mode: metadataMode });
+        if (targetProvider) q.set("target_provider", targetProvider);
+        return request<HydrationPipelineStatus>(`/explore/hydration/start?${q.toString()}`, {
+          method: "POST",
+        });
+      },
       pause: () =>
         request<HydrationPipelineStatus>("/explore/hydration/pause", { method: "POST" }),
-      step: (scope: "all" | "sources" | "metadata" = "all") =>
-        request<{ status: HydrationPipelineStatus; step_telemetry: Record<string, any> }>(
-          `/explore/hydration/step?scope=${encodeURIComponent(scope)}`,
+      step: (
+        scope: "all" | "sources" | "metadata" = "all",
+        targetProvider?: string | null,
+        metadataMode: "pending" | "missing_synopsis_ptbr" = "pending"
+      ) => {
+        const q = new URLSearchParams({ scope, metadata_mode: metadataMode });
+        if (targetProvider) q.set("target_provider", targetProvider);
+        return request<{ status: HydrationPipelineStatus; step_telemetry: Record<string, any> }>(
+          `/explore/hydration/step?${q.toString()}`,
           { method: "POST" }
-        ),
+        );
+      },
       resetCursor: (target = "all") =>
         request<HydrationPipelineStatus>(
           `/explore/hydration/reset-cursor?target=${encodeURIComponent(target)}`,
           { method: "POST" }
         ),
+      skipRecent: (sourceKey: string) =>
+        request<HydrationPipelineStatus>(
+          `/explore/hydration/sources/${encodeURIComponent(sourceKey)}/skip-recent`,
+          { method: "POST" }
+        ),
+    },
+    imdb: {
+      getStatus: () => request<IMDbSyncJobStatus>("/explore/imdb/status"),
+      sync: (includeEpisodes = false) =>
+        request<IMDbSyncJobStatus>(
+          `/explore/imdb/sync?include_episodes=${includeEpisodes ? "true" : "false"}`,
+          { method: "POST" }
+        ),
+      reindexFts: () =>
+        request<IMDbSyncJobStatus>("/explore/imdb/reindex-fts", { method: "POST" }),
     },
   },
 
