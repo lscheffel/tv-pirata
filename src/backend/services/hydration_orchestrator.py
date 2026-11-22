@@ -713,7 +713,7 @@ class HydrationOrchestratorService:
                         target_provider=eff_target if eff_target in ("tmdb", "tvmaze") else None,
                     )
                 )
-                if eff_meta_mode == "missing_synopsis_ptbr":
+                if eff_meta_mode == "missing_synopsis_ptbr" or eff_target in ("tmdb", "tvmaze"):
                     if meta_candidates:
                         state.ptbr_recheck_offset = max(
                             int(c.id or 0) for c in meta_candidates
@@ -722,6 +722,9 @@ class HydrationOrchestratorService:
                         state.ptbr_recheck_offset = 0
                         state.metadata_mode = "pending"
                         state.target_provider = None
+                        self._active_target_provider = None
+                        self._active_metadata_mode = "pending"
+                        self._active_scope = "all"
 
             # Multi-lane progress summary during parallel Fan-out
             active_lanes: list[str] = []
@@ -1150,7 +1153,9 @@ class HydrationOrchestratorService:
         state.scope = scope
         state.target_provider = eff_target
         state.metadata_mode = metadata_mode
-        if metadata_mode == "pending":
+        if not eff_target and metadata_mode == "pending":
+            state.ptbr_recheck_offset = 0
+        elif eff_target != (state.target_provider or eff_target):
             state.ptbr_recheck_offset = 0
         state.last_error = None
         state = self._apply_live_telemetry(state)

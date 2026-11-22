@@ -10,6 +10,7 @@ import os
 import re
 from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import quote
 
@@ -48,10 +49,40 @@ def _strip_html(raw: Optional[str]) -> Optional[str]:
     return cleaned or None
 
 
+_ENV_LOADED = False
+
+
+def _ensure_env_loaded() -> None:
+    """Load root .env into os.environ once in runtime (skipped under pytest)."""
+    global _ENV_LOADED
+    if _ENV_LOADED or os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    _ENV_LOADED = True
+    env_path = Path(__file__).resolve().parents[3] / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            if line.startswith("export "):
+                line = line[7:].strip()
+            key, val = line.split("=", 1)
+            key = key.strip()
+            val = val.strip().strip("'\"")
+            if key and key not in os.environ:
+                os.environ[key] = val
+    except Exception:
+        pass
+
+
 def resolve_tmdb_credential() -> tuple[Optional[str], Optional[str]]:
     """Resolve TMDB bearer read token or v3 API key from environment without hardcoding secrets."""
+    _ensure_env_loaded()
     token_keys = (
         "TMDB_READ_TOKEN",
+        "TMDB_READ_KEY",
         "TMDB_READ_ACCESS_TOKEN",
         "TMDB_ACCESS_TOKEN",
         "TMDB_BEARER_TOKEN",
@@ -693,6 +724,29 @@ class CascadingMetadataEnricher:
                 )
             elif target_provider == "tmdb":
                 stmt = stmt.where(col(IMDbCatalogShow.tmdb_id).is_(None))
+            candidates = list(
+                mainstream_session.exec(
+                    stmt.order_by(col(IMDbCatalogShow.id).asc()).limit(batch_size)
+                ).all()
+            )
+        elif target_provider == "tvmaze":
+            stmt = select(IMDbCatalogShow).where(
+                col(IMDbCatalogShow.title_type).in_(
+                    ["tvSeries", "tvMiniSeries", "tv_show", "mini_series"]
+                ),
+                col(IMDbCatalogShow.tvmaze_id).is_(None),
+                col(IMDbCatalogShow.id) > max(0, ptbr_offset),
+            )
+            candidates = list(
+                mainstream_session.exec(
+                    stmt.order_by(col(IMDbCatalogShow.id).asc()).limit(batch_size)
+                ).all()
+            )
+        elif target_provider == "tmdb":
+            stmt = select(IMDbCatalogShow).where(
+                col(IMDbCatalogShow.tmdb_id).is_(None),
+                col(IMDbCatalogShow.id) > max(0, ptbr_offset),
+            )
             candidates = list(
                 mainstream_session.exec(
                     stmt.order_by(col(IMDbCatalogShow.id).asc()).limit(batch_size)
