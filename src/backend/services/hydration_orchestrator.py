@@ -79,6 +79,7 @@ class CanonicalCoverageSnapshot(BaseModel):
     with_synopsis_ptbr: int = 0
     missing_posters: int = 0
     missing_synopsis: int = 0
+    pending_details: int = 0
     posters_pct: float = 0.0
     synopsis_pct: float = 0.0
     synopsis_ptbr_pct: float = 0.0
@@ -157,6 +158,17 @@ class SmartBootstrapDetector:
                                 WHEN synopsis_ptbr IS NOT NULL AND synopsis_ptbr != '' THEN 1
                                 ELSE 0
                             END
+                        ),
+                        SUM(
+                            CASE
+                                WHEN details_fetched = 0
+                                 AND (
+                                     poster_url IS NULL OR poster_url = ''
+                                     OR synopsis IS NULL OR synopsis = ''
+                                     OR synopsis_ptbr IS NULL OR synopsis_ptbr = ''
+                                 )
+                                THEN 1 ELSE 0
+                            END
                         )
                     FROM shows
                     """
@@ -167,12 +179,14 @@ class SmartBootstrapDetector:
                 with_p = int(row[1] or 0)
                 with_s = int(row[2] or 0)
                 with_pt = int(row[3] or 0)
+                pending_d = int(row[4] or 0)
                 cov.total_shows = total
                 cov.with_poster = with_p
                 cov.with_synopsis = with_s
                 cov.with_synopsis_ptbr = with_pt
                 cov.missing_posters = max(0, total - with_p)
                 cov.missing_synopsis = max(0, total - max(with_s, with_pt))
+                cov.pending_details = pending_d
                 cov.posters_pct = round((with_p / total) * 100.0, 2) if total else 0.0
                 cov.synopsis_pct = round((with_s / total) * 100.0, 2) if total else 0.0
                 cov.synopsis_ptbr_pct = round((with_pt / total) * 100.0, 2) if total else 0.0
@@ -350,7 +364,7 @@ class HydrationOrchestratorService:
 
         meta_eta: Optional[int] = None
         if state.scope in ("all", "metadata") and meta_rate_per_min > 0.0:
-            rem_meta = max(state.coverage.missing_posters, state.coverage.missing_synopsis)
+            rem_meta = state.coverage.pending_details
             if rem_meta > 0:
                 meta_eta = int((rem_meta / meta_rate_per_min) * 60)
 
@@ -457,7 +471,7 @@ class HydrationOrchestratorService:
         yts_pages: int = 6,
         sidecar_pages: int = 2,
         sweep_batch: int = 12,
-        meta_batch: int = 20,
+        meta_batch: int = 60,
     ) -> dict[str, Any]:
         """Execute 3-phase bifurcated step: Prepare DB -> Fan-out HTTP -> Fan-in DB (ADR-017)."""
         async with self._get_lock():

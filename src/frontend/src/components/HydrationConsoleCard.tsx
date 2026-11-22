@@ -330,7 +330,7 @@ return (
         </div>
         <p className="text-[11px] text-slate-400">
           {cov.with_poster.toLocaleString("pt-BR")} de {cov.total_shows.toLocaleString("pt-BR")}{" "}
-          ({cov.missing_posters.toLocaleString("pt-BR")} pendentes)
+          ({(cov.pending_details ?? cov.missing_posters).toLocaleString("pt-BR")} na fila)
         </p>
       </div>
 

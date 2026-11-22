@@ -620,6 +620,7 @@ export interface CanonicalCoverageSnapshot {
   with_synopsis_ptbr: number;
   missing_posters: number;
   missing_synopsis: number;
+  pending_details?: number;
   posters_pct: number;
   synopsis_pct: number;
   synopsis_ptbr_pct: number;

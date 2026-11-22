@@ -266,7 +266,7 @@ class CascadingMetadataEnricher:
         batch_size: int = 20,
     ) -> list[IMDbCatalogShow]:
         """Pick gap candidates prioritizing Media-First works: Sem Capa first, then Sem Sinopse."""
-        eff_batch = max(1, min(batch_size, 50))
+        eff_batch = max(1, min(batch_size, 100))
         priority_ids: list[str] = []
         lib_ids = [
             str(x).strip()
@@ -319,7 +319,7 @@ class CascadingMetadataEnricher:
                     select(IMDbCatalogShow)
                     .where(
                         col(IMDbCatalogShow.imdb_id).in_(priority_ids),
-                        IMDbCatalogShow.details_fetched != -1,
+                        IMDbCatalogShow.details_fetched == 0,
                         missing_poster_cond,
                     )
                     .order_by(col(IMDbCatalogShow.rating_votes).desc())
@@ -334,7 +334,7 @@ class CascadingMetadataEnricher:
                         select(IMDbCatalogShow)
                         .where(
                             col(IMDbCatalogShow.imdb_id).in_(priority_ids),
-                            IMDbCatalogShow.details_fetched != -1,
+                            IMDbCatalogShow.details_fetched == 0,
                             missing_synopsis_cond,
                         )
                         .order_by(col(IMDbCatalogShow.rating_votes).desc())
@@ -348,7 +348,7 @@ class CascadingMetadataEnricher:
                 mainstream_session.exec(
                     select(IMDbCatalogShow)
                     .where(
-                        IMDbCatalogShow.details_fetched != -1,
+                        IMDbCatalogShow.details_fetched == 0,
                         missing_poster_cond,
                     )
                     .order_by(col(IMDbCatalogShow.rating_votes).desc())
@@ -362,7 +362,7 @@ class CascadingMetadataEnricher:
                 mainstream_session.exec(
                     select(IMDbCatalogShow)
                     .where(
-                        IMDbCatalogShow.details_fetched != -1,
+                        IMDbCatalogShow.details_fetched == 0,
                         missing_synopsis_cond,
                     )
                     .order_by(col(IMDbCatalogShow.rating_votes).desc())

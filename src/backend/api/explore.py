@@ -297,7 +297,7 @@ async def step_hydration_pipeline(
     yts_pages: int = Query(6, ge=1, le=20),
     sidecar_pages: int = Query(2, ge=1, le=5),
     sweep_batch: int = Query(12, ge=1, le=25),
-    meta_batch: int = Query(20, ge=1, le=30),
+    meta_batch: int = Query(60, ge=1, le=100),
     session: Session = Depends(get_session),
     sources_session: Session = Depends(get_eztv_session),
 ) -> dict[str, Any]:
