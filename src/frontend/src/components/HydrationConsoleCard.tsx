@@ -63,8 +63,17 @@ function formatDuration(totalSeconds?: number | null): string {
 }
 
 function formatSourceProgress(key: string, cur: PillarSourceCursor): string {
-  if (key === "yify") return `Página ${cur.next_page} de ${cur.total_pages}`;
+  if (key === "yify") {
+    if (cur.mode === "DELTA" || cur.bootstrap_completed) {
+      return `100% varrido (${cur.total_pages.toLocaleString("pt-BR")} págs.) • checando novidades`;
+    }
+    const pct = cur.total_pages > 0 ? Math.round((cur.next_page / cur.total_pages) * 100) : 0;
+    return `Página ${cur.next_page} de ${cur.total_pages} (${pct}%)`;
+  }
   if (key === "eztv") return `${cur.releases_indexed.toLocaleString("pt-BR")} episódios`;
+  if (cur.mode === "DELTA" || cur.bootstrap_completed) {
+    return "100% varrido • em dia";
+  }
   if (cur.recent_exhausted) {
     const pct = cur.sweep_pct ?? 0;
     const total = cur.sweep_total ?? 0;
@@ -798,11 +807,25 @@ return (
               <div className="text-[11px] font-bold text-cyan-300">
                 {cur.titles_indexed.toLocaleString("pt-BR")} títulos
               </div>
-              {cur.recent_exhausted && cur.mode === "BOOTSTRAP" && (
+              {((cur.recent_exhausted && cur.mode === "BOOTSTRAP") ||
+                (key === "yify" && cur.total_pages > 1)) && (
                 <div className="w-full h-1 rounded-full bg-white/10 overflow-hidden">
                   <div
-                    className="h-full bg-cyan-400 transition-all duration-300"
-                    style={{ width: `${Math.min(100, pct)}%` }}
+                    className={`h-full transition-all duration-300 ${
+                      cur.mode === "DELTA" || cur.bootstrap_completed
+                        ? "bg-emerald-400"
+                        : "bg-cyan-400"
+                    }`}
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        cur.mode === "DELTA" || cur.bootstrap_completed
+                          ? 100
+                          : key === "yify"
+                            ? Math.round((cur.next_page / Math.max(1, cur.total_pages)) * 100)
+                            : pct
+                      )}%`,
+                    }}
                   />
                 </div>
               )}
