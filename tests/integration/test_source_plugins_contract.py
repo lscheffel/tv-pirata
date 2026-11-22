@@ -522,6 +522,111 @@ def test_adr014_yts_accel_enrichment_eztv_rss_numeric_imdb_and_bipartite_prune(p
         assert idx_y == 1
         assert upd_y == 0
 
+
+@respx.mock
+def test_adr019_yify_mirror_strategy_series_filter_and_jit_self_heal(plugin_client) -> None:
+    """ADR-019: official_first mirrors, valid BTIH + tvSeries exclusion, and JIT self-heal."""
+    from sqlmodel import select
+
+    client, main_e, src_e = plugin_client
+
+    from src.backend.providers.sources.yify_adapter import (
+        YIFYAdapterConfig,
+        YIFYSourceAdapter,
+        _is_valid_btih,
+    )
+    from src.backend.services.sources_registry import SourcesRegistryService
+
+    # 1. mirror_strategy ordering + BTIH validation (40-hex & 32-base32)
+    off_urls = YIFYSourceAdapter._candidate_endpoints(
+        YIFYAdapterConfig(mirror_strategy="official_first")
+    )
+    assert off_urls[0].startswith("https://yts.mx")
+    acc_urls = YIFYSourceAdapter._candidate_endpoints(
+        YIFYAdapterConfig(mirror_strategy="accel_first")
+    )
+    assert acc_urls[0].startswith("https://movies-api.accel.li")
+
+    assert _is_valid_btih("A" * 40) is True
+    assert _is_valid_btih("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567") is True
+    assert _is_valid_btih("bad-hash") is False
+
+    # 2. tvSeries excluded on Stage 1B persist_sync_candidates & pruned by prune_obsolete_releases
+    with Session(main_e) as ms, Session(src_e) as ss:
+        ms.add(
+            IMDbCatalogShow(
+                imdb_id="tt0413550",
+                title_type="tvSeries",
+                primary_title="CMT Top 20 Countdown",
+                start_year=2001,
+            )
+        )
+        ms.commit()
+        SourcesRegistryService.ensure_sources_registered(ss)
+
+        raw_cands = YIFYSourceAdapter._movies_to_presence_candidates(
+            [
+                {
+                    "id": 9001,
+                    "imdb_code": "tt0413550",
+                    "title": "CMT Top 20 Countdown",
+                    "year": 2001,
+                    "torrents": [
+                        {"quality": "720p", "seeds": 10, "peers": 2, "hash": "A" * 40}
+                    ],
+                },
+                {
+                    "id": 9002,
+                    "imdb_code": "tt1160419",
+                    "title": "Dune",
+                    "year": 2021,
+                    "torrents": [
+                        {"quality": "1080p", "seeds": 50, "peers": 10, "hash": "B" * 40}
+                    ],
+                },
+            ]
+        )
+        idx, _ = YIFYSourceAdapter.persist_sync_candidates(
+            ss, "yify", raw_cands, mainstream_session=ms
+        )
+        assert idx == 1  # tt0413550 (tvSeries) skipped!
+
+        # Inject phantom presence for tt0413550 and verify prune_obsolete_releases removes it
+        ss.add(
+            ExternalRelease(
+                source_key="yify",
+                external_id="yts:presence:tt0413550",
+                imdb_id="tt0413550",
+                title="CMT Top 20 Countdown (2001)",
+                seeds=5,
+                magnet_url="magnet:?xt=urn:btih:" + ("A" * 40),
+            )
+        )
+        ss.commit()
+        prune_res = SourcesRegistryService.prune_obsolete_releases(
+            ss, ms, source_key="yify", max_zero_seed_hours=48
+        )
+        assert prune_res["removed_releases"] >= 1
+
+    # 3. Stage 2 JIT self-heal: empty ok response removes phantom yts:presence:tt1160419
+    respx.get(url__regex=r"https://.*/api/v2/list_movies\.json.*").mock(
+        return_value=httpx.Response(200, json={"status": "ok", "data": {"movies": []}})
+    )
+    respx.get(url__regex=r"https://.*/api/v2/movie_details\.json.*").mock(
+        return_value=httpx.Response(200, json={"status": "ok", "data": {"movie": {}}})
+    )
+    jit_res = client.get("/api/sources/releases?imdb_id=tt1160419&source=yify&live=force")
+    assert jit_res.status_code == 200
+    assert jit_res.json().get("exact", []) == []
+    with Session(src_e) as ss:
+        rem = ss.exec(
+            select(ExternalRelease).where(
+                ExternalRelease.source_key == "yify",
+                ExternalRelease.imdb_id == "tt1160419",
+            )
+        ).all()
+        assert len(rem) == 0
+
     # 5. Embedded Torrent-Api-py Sidecar (:8009) contract (/health, /api/v1/sites)
     with TestClient(sidecar_app) as sc:
         h_res = sc.get("/health")

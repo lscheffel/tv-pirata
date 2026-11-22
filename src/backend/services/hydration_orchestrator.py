@@ -836,7 +836,10 @@ class HydrationOrchestratorService:
                     cands = y_res["candidates"]
                     meta = dict(y_res["meta"])
                     idx_y, upd_y = YIFYSourceAdapter.persist_sync_candidates(
-                        sources_session, "yify", cands
+                        sources_session,
+                        "yify",
+                        cands,
+                        mainstream_session=mainstream_session,
                     )
                     meta["releases_indexed"] = idx_y
                     meta["releases_updated"] = upd_y

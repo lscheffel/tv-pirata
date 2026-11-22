@@ -5,13 +5,17 @@ from __future__ import annotations
 import asyncio
 import json
 import math
-from typing import Any, Optional
+import os
+import re
+import time
+from typing import Any, Literal, Optional
 
 import httpx
 from pydantic import BaseModel, Field
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from src.backend.core.domain_concurrency import create_shared_http_client, domain_semaphores
+from src.backend.models.catalog_domain import IMDbCatalogShow
 from src.backend.models.sources_db import ExternalRelease, ExternalSourceRecord
 from src.backend.providers.sources.base import (
     AdapterSearchOutcome,
@@ -29,11 +33,23 @@ from src.backend.services.entity_resolution import EntityResolutionService
 
 DEFAULT_YTS_BASE_URL = "https://movies-api.accel.li/api/v2/list_movies.json"
 DEFAULT_YTS_API_ROOT = "https://movies-api.accel.li/api/v2"
+DEFAULT_YTS_OFFICIAL_MIRRORS: list[str] = [
+    "https://yts.mx/api/v2/list_movies.json",
+    "https://yts.lt/api/v2/list_movies.json",
+    "https://yts.gg/api/v2/list_movies.json",
+]
 DEFAULT_YTS_MIRRORS: list[str] = [
     "https://yts.gg/api/v2/list_movies.json",
     "https://yts.mx/api/v2/list_movies.json",
     "https://yts.lt/api/v2/list_movies.json",
 ]
+_BTIH_RE = re.compile(r"^(?:[0-9a-fA-F]{40}|[A-Z2-7]{32})$")
+
+
+def _is_valid_btih(info_hash: Optional[str]) -> bool:
+    """Validate BitTorrent v1 info_hash (40 hex or 32 base32 chars)."""
+    h = (info_hash or "").strip()
+    return bool(h and _BTIH_RE.match(h))
 
 
 class YIFYAdapterConfig(BaseModel):
@@ -42,6 +58,10 @@ class YIFYAdapterConfig(BaseModel):
     base_url: str = Field(
         default=DEFAULT_YTS_BASE_URL,
         title="Endpoint YTS API v2 (movies-api.accel.li)",
+    )
+    mirror_strategy: Literal["official_first", "accel_first"] = Field(
+        default="official_first",
+        title="Estratégia de Mirrors (official_first: yts.mx/lt antes de accel.li)",
     )
     mirrors: list[str] = Field(
         default_factory=lambda: list(DEFAULT_YTS_MIRRORS),
@@ -98,15 +118,30 @@ class YIFYSourceAdapter(BaseSourceAdapter):
             raw["base_url"] = instance.base_url
         return YIFYAdapterConfig.model_validate(raw)
 
-    @staticmethod
-    def _candidate_endpoints(cfg: YIFYAdapterConfig) -> list[str]:
-        urls = [cfg.base_url, *cfg.mirrors, DEFAULT_YTS_BASE_URL]
+    _healthy_endpoint: Optional[str] = None
+    _healthy_endpoint_ts: float = 0.0
+
+    @classmethod
+    def _candidate_endpoints(cls, cfg: YIFYAdapterConfig) -> list[str]:
+        if cfg.mirror_strategy == "official_first":
+            urls = [*DEFAULT_YTS_OFFICIAL_MIRRORS, cfg.base_url, *cfg.mirrors, DEFAULT_YTS_BASE_URL]
+        else:
+            urls = [cfg.base_url, *cfg.mirrors, DEFAULT_YTS_BASE_URL]
         out: list[str] = []
         for u in urls:
             safe = validate_safe_url(u, ("http", "https"))
             if safe and safe not in out:
                 out.append(safe)
-        return out or [DEFAULT_YTS_BASE_URL]
+        if not out:
+            out = [DEFAULT_YTS_BASE_URL]
+        if (
+            not os.environ.get("PYTEST_CURRENT_TEST")
+            and cls._healthy_endpoint
+            and cls._healthy_endpoint in out
+            and (time.monotonic() - cls._healthy_endpoint_ts) < 600.0
+        ):
+            out = [cls._healthy_endpoint] + [u for u in out if u != cls._healthy_endpoint]
+        return out
 
     @staticmethod
     def _api_root_from_endpoint(endpoint: str) -> str:
@@ -161,6 +196,11 @@ class YIFYSourceAdapter(BaseSourceAdapter):
 
             for tor in movie.get("torrents") or []:
                 info_hash = str(tor.get("hash") or "").strip()
+                if not _is_valid_btih(info_hash):
+                    continue
+                seeds_val = int(tor.get("seeds") or 0)
+                if query_ctx is None and seeds_val < 1:
+                    continue
                 raw_quality = str(tor.get("quality") or "Unknown")
                 codec = str(tor.get("video_codec") or "").lower()
                 quality = (
@@ -234,6 +274,9 @@ class YIFYSourceAdapter(BaseSourceAdapter):
             best_size = 0
             best_hash: Optional[str] = None
             for tor in torrents:
+                tor_hash = str(tor.get("hash") or "").strip()
+                if not _is_valid_btih(tor_hash):
+                    continue
                 raw_q = str(tor.get("quality") or "").strip()
                 codec = str(tor.get("video_codec") or "").lower()
                 q_label = (
@@ -249,9 +292,9 @@ class YIFYSourceAdapter(BaseSourceAdapter):
                     max_seeds = s_val
                     max_peers = p_val
                     best_size = int(tor.get("size_bytes") or 0)
-                    best_hash = str(tor.get("hash") or "").strip() or best_hash
+                    best_hash = tor_hash or best_hash
 
-            if max_seeds < 1:
+            if max_seeds < 1 or not _is_valid_btih(best_hash):
                 continue
 
             best_magnet = build_official_magnet(best_hash, title) if best_hash else None
@@ -453,6 +496,8 @@ class YIFYSourceAdapter(BaseSourceAdapter):
         sources_session: Session,
         source_key: str,
         candidates: list[NormalizedReleaseCandidate],
+        *,
+        mainstream_session: Optional[Session] = None,
     ) -> tuple[int, int]:
         """Fan-in SQLite batch SELECT/UPSERT for YTS candidates."""
         indexed = 0
@@ -460,12 +505,30 @@ class YIFYSourceAdapter(BaseSourceAdapter):
         if not candidates:
             return indexed, updated
 
+        excluded_series_imdbs: set[str] = set()
+        if mainstream_session is not None:
+            cand_imdbs = sorted({c.imdb_id for c in candidates if c.imdb_id})
+            for i in range(0, len(cand_imdbs), 500):
+                chunk = cand_imdbs[i : i + 500]
+                rows = mainstream_session.exec(
+                    select(IMDbCatalogShow.imdb_id).where(
+                        col(IMDbCatalogShow.imdb_id).in_(chunk),
+                        col(IMDbCatalogShow.title_type).in_(["tvSeries", "tvMiniSeries"]),
+                    )
+                ).all()
+                excluded_series_imdbs.update(str(r) for r in rows if r)
+
         deduped: list[NormalizedReleaseCandidate] = []
         seen_ext: set[str] = set()
         for c in candidates:
+            if c.imdb_id and c.imdb_id in excluded_series_imdbs:
+                continue
             if c.external_id not in seen_ext:
                 seen_ext.add(c.external_id)
                 deduped.append(c)
+
+        if not deduped:
+            return indexed, updated
 
         ext_ids = [c.external_id for c in deduped]
         with sources_session.no_autoflush:
@@ -615,6 +678,8 @@ class YIFYSourceAdapter(BaseSourceAdapter):
                                 movies = [det_movie]
 
                     candidates = self._movies_to_candidates(movies, query_ctx=query_ctx)
+                    YIFYSourceAdapter._healthy_endpoint = endpoint
+                    YIFYSourceAdapter._healthy_endpoint_ts = time.monotonic()
                     return AdapterSearchOutcome(status="ok", releases=candidates)
                 except httpx.TimeoutException:
                     last_error_msg = f"Timeout ao consultar {endpoint}"

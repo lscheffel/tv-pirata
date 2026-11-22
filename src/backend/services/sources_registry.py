@@ -1023,6 +1023,26 @@ class SourcesRegistryService:
                     for ap in approx:
                         ap["source_name"] = inst.display_name
                         approx_matches.append(ap)
+                elif (
+                    outcome.status == "ok"
+                    and not outcome.releases
+                    and not q_override
+                    and inst.source_key == "yify"
+                ):
+                    # Self-heal phantom yts:presence:* markers when live query returns 0 torrents
+                    del_res = sources_session.execute(
+                        delete(ExternalRelease).where(
+                            ExternalRelease.source_key == "yify",
+                            ExternalRelease.imdb_id == norm_imdb,
+                            col(ExternalRelease.external_id).like("yts:presence:%"),
+                        )
+                    )
+                    if getattr(del_res, "rowcount", 0):
+                        sources_session.commit()
+                        cls._recompute_source_counters(sources_session)
+                        catalog_cache.invalidate()
+                        discovery_cache.invalidate()
+                        cached_by_src.pop("yify", None)
                 elif outcome.status == "ok" and outcome.releases and inst.source_key == "eztv":
                     cached_by_src["eztv_live"] = [
                         ExternalRelease(
@@ -1520,6 +1540,44 @@ class SourcesRegistryService:
 
         res = sources_session.execute(del_stmt)
         removed = int(getattr(res, "rowcount", 0) or 0)
+
+        # Prune incompatible yts:presence:* markers linked to tvSeries/tvMiniSeries (ADR-019)
+        if mainstream_session is not None and (
+            not source_key or source_key.lower() in ("all", "yify")
+        ):
+            yts_presence_imdbs = list(
+                sources_session.exec(
+                    select(ExternalRelease.imdb_id)
+                    .where(
+                        ExternalRelease.source_key == "yify",
+                        col(ExternalRelease.external_id).like("yts:presence:%"),
+                        col(ExternalRelease.imdb_id).is_not(None),
+                    )
+                    .distinct()
+                ).all()
+            )
+            series_imdbs: list[str] = []
+            for i in range(0, len(yts_presence_imdbs), 500):
+                chunk = [str(x) for x in yts_presence_imdbs[i : i + 500] if x]
+                if not chunk:
+                    continue
+                found = mainstream_session.exec(
+                    select(IMDbCatalogShow.imdb_id).where(
+                        col(IMDbCatalogShow.imdb_id).in_(chunk),
+                        col(IMDbCatalogShow.title_type).in_(["tvSeries", "tvMiniSeries"]),
+                    )
+                ).all()
+                series_imdbs.extend(str(f) for f in found if f)
+            for i in range(0, len(series_imdbs), 500):
+                s_chunk = series_imdbs[i : i + 500]
+                s_del = sources_session.execute(
+                    delete(ExternalRelease).where(
+                        ExternalRelease.source_key == "yify",
+                        col(ExternalRelease.external_id).like("yts:presence:%"),
+                        col(ExternalRelease.imdb_id).in_(s_chunk),
+                    )
+                )
+                removed += int(getattr(s_del, "rowcount", 0) or 0)
 
         if removed > 0:
             sources_session.commit()
