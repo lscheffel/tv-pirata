@@ -356,6 +356,9 @@ class HydrationOrchestratorService:
         self._current_target: Optional[str] = None
         self._recent_events: deque[HydrationActivityEvent] = deque(maxlen=15)
         self._step_window: deque[tuple[float, int, int]] = deque(maxlen=8)
+        self._active_scope: Literal["all", "sources", "metadata"] = "all"
+        self._active_target_provider: Optional[str] = None
+        self._active_metadata_mode: Literal["pending", "missing_synopsis_ptbr"] = "pending"
 
     def _get_lock(self) -> asyncio.Lock:
         if self._step_lock is None:
@@ -729,9 +732,11 @@ class HydrationOrchestratorService:
             if run_metadata and meta_candidates:
                 active_lanes.append(f"Metadados ({len(meta_candidates)} obras)")
             if active_lanes:
-                self._set_live_progress(
-                    scope, f"{' + '.join(active_lanes)} em paralelo..."
-                )
+                msg = f"{' + '.join(active_lanes)} em paralelo..."
+                if eff_target:
+                    msg = f"[{eff_target.upper()} • {eff_meta_mode}] {msg}"
+                self._set_live_progress(scope, msg)
+                print(f"[Hydration] Ciclo #{state.steps_executed + 1}: {msg}", flush=True)
 
             # --- PHASE 2: FAN-OUT HTTP (Pure async HTTP, zero Session mutations) ---
             async def _run_yts_http(
@@ -773,10 +778,18 @@ class HydrationOrchestratorService:
                 for sk, plan in sidecar_plans.items():
                     fanout_tasks[f"sidecar:{sk}"] = _run_sidecar_http(sk, plan, shared_client)
                 if run_metadata and meta_candidates:
+                    def _on_meta_prog(_st: str, label: str) -> None:
+                        prefix = f"{eff_target.upper()}" if eff_target else "Metadados"
+                        mode_lbl = (
+                            "PT-BR" if eff_meta_mode == "missing_synopsis_ptbr" else "Pendentes"
+                        )
+                        self._set_live_progress("metadata", f"{prefix} ({mode_lbl}): {label}")
+
                     fanout_tasks["metadata"] = CascadingMetadataEnricher.fetch_metadata_fanout(
                         meta_candidates,
                         ez_by_imdb,
                         client=shared_client,
+                        on_progress=_on_meta_prog,
                         target_provider=eff_target if eff_target in ("tmdb", "tvmaze") else None,
                     )
 
@@ -1055,19 +1068,18 @@ class HydrationOrchestratorService:
             state = SmartBootstrapDetector.refresh_modes(state, mainstream_session, sources_session)
             state = self._apply_live_telemetry(state)
             self._save_state(mainstream_session, state)
+            print(
+                f"[Hydration] Ciclo #{state.steps_executed} concluído em {step_dur:.1f}s "
+                f"({state.rate_per_minute} itens/min): {state.last_step_summary}",
+                flush=True,
+            )
             return {
                 "status": state.model_dump(),
                 "step_telemetry": step_telemetry,
             }
 
-    async def _worker_loop(
-        self,
-        scope: Literal["all", "sources", "metadata"],
-        interval_seconds: float,
-        target_provider: Optional[str] = None,
-        metadata_mode: Literal["pending", "missing_synopsis_ptbr"] = "pending",
-    ) -> None:
-        logger.info("HydrationOrchestrator worker loop started (scope=%s)", scope)
+    async def _worker_loop(self, interval_seconds: float) -> None:
+        logger.info("HydrationOrchestrator worker loop started (scope=%s)", self._active_scope)
         try:
             while not self._stop_event.is_set():
                 try:
@@ -1075,14 +1087,15 @@ class HydrationOrchestratorService:
                         await self.run_single_step(
                             ms_sess,
                             src_sess,
-                            scope=scope,
-                            target_provider=target_provider,
-                            metadata_mode=metadata_mode,
+                            scope=self._active_scope,
+                            target_provider=self._active_target_provider,
+                            metadata_mode=self._active_metadata_mode,
                         )
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
                     logger.warning("HydrationOrchestrator step error: %s", exc)
+                    print(f"[Hydration] Erro no ciclo: {exc}", flush=True)
                 try:
                     await asyncio.wait_for(self._stop_event.wait(), timeout=interval_seconds)
                 except asyncio.TimeoutError:
@@ -1112,18 +1125,25 @@ class HydrationOrchestratorService:
     ) -> HydrationPipelineStatus:
         """Start or resume the cooperative background hydration loop."""
         state = self.get_status(mainstream_session, sources_session)
-        self._persisted_elapsed_base = float(state.total_elapsed_seconds or 0.0)
-        self._run_started_mono = time.monotonic()
-        self._run_started_iso = _utc_iso()
-        self._accumulated_elapsed = 0.0
-        self._items_in_run = 0
-        self._step_window.clear()
         eff_target = (target_provider or "").strip().lower() or None
+        already_active = bool(self._task and not self._task.done())
+        if not already_active:
+            self._persisted_elapsed_base = float(state.total_elapsed_seconds or 0.0)
+            self._run_started_mono = time.monotonic()
+            self._run_started_iso = _utc_iso()
+            self._accumulated_elapsed = 0.0
+            self._items_in_run = 0
+            self._step_window.clear()
+        self._active_scope = scope
+        self._active_target_provider = eff_target
+        self._active_metadata_mode = metadata_mode
         self._record_event(
             "sistema",
             eff_target.upper() if eff_target else "Atualização do Catálogo",
             "ok",
-            f"Atualização iniciada ({eff_target})." if eff_target else "Atualização iniciada.",
+            f"Foco alterado para {eff_target.upper()} ({metadata_mode})."
+            if eff_target
+            else "Atualização iniciada.",
         )
 
         state.state = "RUNNING"
@@ -1139,18 +1159,13 @@ class HydrationOrchestratorService:
         if os.environ.get("PYTEST_CURRENT_TEST"):
             return state
 
-        if self._task and not self._task.done():
+        if already_active:
             state.is_worker_active = True
             return state
 
         self._stop_event.clear()
         self._task = asyncio.create_task(
-            self._worker_loop(
-                scope,
-                interval_seconds,
-                target_provider=eff_target,
-                metadata_mode=metadata_mode,
-            ),
+            self._worker_loop(interval_seconds),
             name="tv-pirata-hydration-orchestrator",
         )
         state.is_worker_active = True

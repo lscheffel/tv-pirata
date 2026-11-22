@@ -163,6 +163,19 @@ export const HydrationConsoleCard: React.FC<HydrationConsoleCardProps> = ({
     }
   };
 
+  const handleClearFocus = async () => {
+    setBusy(true);
+    try {
+      const next = await api.explore.hydration.start("all", null, "pending");
+      applyStatus(next);
+      showToast("Foco removido: retomando atualização completa.", "info");
+    } catch (err: any) {
+      showToast(`Erro ao limpar foco: ${err?.message || "erro"}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleFocusProvider = async (
     provider: "tmdb" | "tvmaze",
     metaMode: "pending" | "missing_synopsis_ptbr"
@@ -378,7 +391,11 @@ return (
           <div>
             <div className="text-[11px] text-slate-400">Velocidade</div>
             <div className="text-xs font-extrabold text-white">
-              {status.rate_per_minute ? `${status.rate_per_minute} itens/min` : "Medindo..."}
+              {status.rate_per_minute
+                ? `${status.rate_per_minute} itens/min`
+                : isRunning
+                  ? "1º lote em andamento..."
+                  : "Aguardando"}
             </div>
             {sidecarTotalRate > 0 && (
               <div className="text-[10px] text-slate-400 truncate">
@@ -595,14 +612,29 @@ return (
         </div>
 
         {/* TMDB Card */}
-        <div className="p-3 rounded-xl bg-canvas border border-sky-400/25 space-y-2">
+        <div
+          className={`p-3 rounded-xl bg-canvas border space-y-2 transition-all ${
+            isRunning && status.target_provider === "tmdb"
+              ? "border-sky-400 ring-1 ring-sky-400/50"
+              : "border-sky-400/25"
+          }`}
+        >
           <div className="flex items-center justify-between gap-2">
             <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-white">
               <Film className="w-3.5 h-3.5 text-sky-400" />
               TMDB
+              {isRunning && status.target_provider === "tmdb" && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-500/25 text-sky-200 text-[9px] font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-sky-300 animate-ping" />
+                  Em foco ({status.metadata_mode === "missing_synopsis_ptbr" ? "PT-BR" : "Pendentes"})
+                </span>
+              )}
             </span>
             {cov.tmdb_configured === false ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-200 border border-amber-400/40">
+              <span
+                title="Configure TMDB_API_KEY ou TMDB_READ_TOKEN no .env para habilitar o TMDB"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-200 border border-amber-400/40"
+              >
                 <KeyRound className="w-3 h-3" />
                 Chave ausente
               </span>
@@ -612,19 +644,23 @@ return (
           </div>
           <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
             <div
-              className="h-full bg-sky-400 transition-all duration-300"
+              className={`h-full bg-sky-400 transition-all duration-300 ${
+                isRunning && status.target_provider === "tmdb" ? "animate-pulse" : ""
+              }`}
               style={{ width: `${Math.min(100, cov.tmdb_pct ?? 0)}%` }}
             />
           </div>
-          <p className="text-[11px] text-slate-400">
-            {(cov.with_tmdb_id ?? 0).toLocaleString("pt-BR")} de{" "}
-            {cov.total_shows.toLocaleString("pt-BR")} obras vinculadas
+          <p className="text-[11px] text-slate-400 truncate">
+            {isRunning && status.target_provider === "tmdb" && status.current_target
+              ? status.current_target
+              : `${(cov.with_tmdb_id ?? 0).toLocaleString("pt-BR")} de ${cov.total_shows.toLocaleString("pt-BR")} obras vinculadas`}
           </p>
-          <div className="flex items-center gap-1.5 pt-0.5">
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
             <button
               type="button"
               disabled={busy || cov.tmdb_configured === false}
               onClick={() => handleFocusProvider("tmdb", "pending")}
+              title="Pausa outras fontes temporariamente e dedica o motor às obras pendentes no TMDB."
               className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-[10px] font-bold text-sky-100 cursor-pointer disabled:opacity-50"
             >
               Focar pendentes
@@ -633,37 +669,65 @@ return (
               type="button"
               disabled={busy || cov.tmdb_configured === false}
               onClick={() => handleFocusProvider("tmdb", "missing_synopsis_ptbr")}
+              title="Varre obras sem sinopse em português buscando tradução/sinopse diretamente no TMDB."
               className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-[10px] font-bold text-slate-200 cursor-pointer disabled:opacity-50"
             >
               Re-enriquecer PT-BR
             </button>
+            {isRunning && status.target_provider === "tmdb" && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={handleClearFocus}
+                title="Remove o foco exclusivo e volta para o modo completo (Tudo)."
+                className="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-[10px] font-bold text-amber-100 cursor-pointer disabled:opacity-50"
+              >
+                Limpar foco
+              </button>
+            )}
           </div>
         </div>
 
         {/* TVMaze Card */}
-        <div className="p-3 rounded-xl bg-canvas border border-cyan-400/25 space-y-2">
+        <div
+          className={`p-3 rounded-xl bg-canvas border space-y-2 transition-all ${
+            isRunning && status.target_provider === "tvmaze"
+              ? "border-cyan-400 ring-1 ring-cyan-400/50"
+              : "border-cyan-400/25"
+          }`}
+        >
           <div className="flex items-center justify-between gap-2">
             <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-white">
               <Tv className="w-3.5 h-3.5 text-cyan-400" />
               TVMaze (Séries)
+              {isRunning && status.target_provider === "tvmaze" && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/25 text-cyan-200 text-[9px] font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-300 animate-ping" />
+                  Em foco ({status.metadata_mode === "missing_synopsis_ptbr" ? "PT-BR" : "Pendentes"})
+                </span>
+              )}
             </span>
             <span className="text-xs font-black text-cyan-300">{cov.tvmaze_pct ?? 0}%</span>
           </div>
           <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
             <div
-              className="h-full bg-cyan-400 transition-all duration-300"
+              className={`h-full bg-cyan-400 transition-all duration-300 ${
+                isRunning && status.target_provider === "tvmaze" ? "animate-pulse" : ""
+              }`}
               style={{ width: `${Math.min(100, cov.tvmaze_pct ?? 0)}%` }}
             />
           </div>
-          <p className="text-[11px] text-slate-400">
-            {(cov.series_with_tvmaze_id ?? 0).toLocaleString("pt-BR")} de{" "}
-            {(cov.series_total ?? 0).toLocaleString("pt-BR")} séries vinculadas
+          <p className="text-[11px] text-slate-400 truncate">
+            {isRunning && status.target_provider === "tvmaze" && status.current_target
+              ? status.current_target
+              : `${(cov.series_with_tvmaze_id ?? 0).toLocaleString("pt-BR")} de ${(cov.series_total ?? 0).toLocaleString("pt-BR")} séries vinculadas`}
           </p>
-          <div className="flex items-center gap-1.5 pt-0.5">
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
             <button
               type="button"
               disabled={busy}
               onClick={() => handleFocusProvider("tvmaze", "pending")}
+              title="Pausa outras fontes temporariamente e dedica o motor às séries pendentes no TVMaze."
               className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-[10px] font-bold text-cyan-100 cursor-pointer disabled:opacity-50"
             >
               Focar pendentes
@@ -672,10 +736,22 @@ return (
               type="button"
               disabled={busy}
               onClick={() => handleFocusProvider("tvmaze", "missing_synopsis_ptbr")}
+              title="Varre séries sem sinopse em português buscando metadados atualizados no TVMaze."
               className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-[10px] font-bold text-slate-200 cursor-pointer disabled:opacity-50"
             >
               Re-enriquecer PT-BR
             </button>
+            {isRunning && status.target_provider === "tvmaze" && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={handleClearFocus}
+                title="Remove o foco exclusivo e volta para o modo completo (Tudo)."
+                className="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-[10px] font-bold text-amber-100 cursor-pointer disabled:opacity-50"
+              >
+                Limpar foco
+              </button>
+            )}
           </div>
         </div>
       </div>
