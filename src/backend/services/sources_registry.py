@@ -1936,11 +1936,13 @@ class SourcesRegistryService:
         source_key: str,
         offset: int = 0,
         batch_size: int = 12,
+        min_votes: int = 1000,
     ) -> list[IMDbCatalogShow]:
         """Prepare-phase read: select canonical works for catalog presence sweep."""
         eff_offset = max(0, int(offset))
         eff_batch = max(1, min(int(batch_size), 50))
-        stmt = select(IMDbCatalogShow).where(IMDbCatalogShow.rating_votes >= 1000)
+        eff_min_votes = max(0, int(min_votes))
+        stmt = select(IMDbCatalogShow).where(IMDbCatalogShow.rating_votes >= eff_min_votes)
         if source_key == "nyaasi":
             stmt = stmt.where(col(IMDbCatalogShow.genres).ilike("%Animation%"))
         stmt = (

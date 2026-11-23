@@ -657,4 +657,83 @@ def test_adr018_telemetry_skip_recent_and_imdb_admin(hydration_client, monkeypat
     assert imdb_fts.json()["state"] == "COMPLETED"
 
 
+@respx.mock
+def test_adr020_run_mode_novidades_varredura_and_config(hydration_client) -> None:
+    """ADR-020: finite run_mode='novidades', varredura skipping DELTA, and /hydration/config."""
+    client, main_e, _src_e = hydration_client
+
+    with Session(main_e) as ms:
+        ms.add(
+            IMDbCatalogShow(
+                imdb_id="tt8200001",
+                title_type="movie",
+                primary_title="Popular Movie",
+                start_year=2024,
+                rating_votes=2500,
+                poster_url="https://img.example/p1.jpg",
+                synopsis="S1",
+                synopsis_ptbr="S1 PT",
+                details_fetched=1,
+            )
+        )
+        ms.add(
+            IMDbCatalogShow(
+                imdb_id="tt8200002",
+                title_type="movie",
+                primary_title="Niche Movie",
+                start_year=2024,
+                rating_votes=150,
+                poster_url="https://img.example/p2.jpg",
+                synopsis="S2",
+                synopsis_ptbr="S2 PT",
+                details_fetched=1,
+            )
+        )
+        ms.commit()
+
+    # Check vote_tier_counts in coverage
+    st_res = client.get("/api/explore/hydration/status")
+    assert st_res.status_code == 200
+    tiers = st_res.json()["coverage"]["vote_tier_counts"]
+    assert tiers["0"] == 2
+    assert tiers["100"] == 2
+    assert tiers["1000"] == 1
+    assert tiers["5000"] == 0
+
+    # Update config via POST /api/explore/hydration/config
+    cfg_res = client.post(
+        "/api/explore/hydration/config",
+        json={
+            "sweep_min_votes": 100,
+            "sweep_enabled_sources": ["tgx"],
+            "recent_pages_per_source": 3,
+        },
+    )
+    assert cfg_res.status_code == 200
+    cfg_data = cfg_res.json()
+    assert cfg_data["sweep_min_votes"] == 100
+    assert cfg_data["sweep_enabled_sources"] == ["tgx"]
+    assert cfg_data["recent_pages_per_source"] == 3
+    assert cfg_data["sources"]["tgx"]["sweep_total"] == 2
+
+    # Mock YTS & Sidecar recent for 1 finite novidades step -> COMPLETED
+    respx.get(url__regex=r"https://.*/api/v2/list_movies\.json.*").mock(
+        return_value=httpx.Response(
+            200, json={"status": "ok", "data": {"movie_count": 0, "movies": []}}
+        )
+    )
+    respx.get(url__regex=r"http://127\.0\.0\.1:8009/api/v1/recent.*").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    nov_start = client.post("/api/explore/hydration/start?scope=all&run_mode=novidades")
+    assert nov_start.status_code == 200
+    assert nov_start.json()["run_mode"] == "novidades"
+
+    nov_step = client.post("/api/explore/hydration/step?scope=all")
+    assert nov_step.status_code == 200
+    nov_st = nov_step.json()["status"]
+    assert nov_st["state"] == "COMPLETED"
+    assert nov_st["last_novidades_at"] is not None
+
+
 

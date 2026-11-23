@@ -102,6 +102,8 @@ class CanonicalCoverageSnapshot(BaseModel):
     tvmaze_pct: float = 0.0
     tmdb_configured: bool = False
     imdb_last_sync_at: Optional[str] = None
+    vote_tier_counts: dict[str, int] = Field(default_factory=dict)
+    nyaasi_sweep_totals: dict[str, int] = Field(default_factory=dict)
 
 
 class HydrationActivityEvent(BaseModel):
@@ -146,6 +148,12 @@ class HydrationPipelineStatus(BaseModel):
     ptbr_recheck_offset: int = 0
     focus_cursor_imdb: Optional[str] = None
     metadata_completed_notified: bool = False
+    run_mode: Literal["novidades", "varredura"] = "novidades"
+    sweep_min_votes: int = 1000
+    sweep_enabled_sources: list[str] = Field(default_factory=lambda: ["tgx", "nyaasi"])
+    recent_pages_per_source: int = 2
+    last_novidades_at: Optional[str] = None
+    last_novidades_count: int = 0
     recent_events: list[HydrationActivityEvent] = Field(default_factory=list)
     coverage: CanonicalCoverageSnapshot = Field(default_factory=CanonicalCoverageSnapshot)
     sources: dict[str, PillarSourceCursor] = Field(default_factory=dict)
@@ -214,6 +222,28 @@ class SmartBootstrapDetector:
                                 WHEN title_type IN ('tvSeries', 'tvMiniSeries')
                                  AND tvmaze_id IS NOT NULL THEN 1 ELSE 0
                             END
+                        ),
+                        SUM(CASE WHEN rating_votes >= 100 THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN rating_votes >= 1000 THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN rating_votes >= 5000 THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN genres LIKE '%Animation%' THEN 1 ELSE 0 END),
+                        SUM(
+                            CASE
+                                WHEN rating_votes >= 100 AND genres LIKE '%Animation%'
+                                THEN 1 ELSE 0
+                            END
+                        ),
+                        SUM(
+                            CASE
+                                WHEN rating_votes >= 1000 AND genres LIKE '%Animation%'
+                                THEN 1 ELSE 0
+                            END
+                        ),
+                        SUM(
+                            CASE
+                                WHEN rating_votes >= 5000 AND genres LIKE '%Animation%'
+                                THEN 1 ELSE 0
+                            END
                         )
                     FROM shows
                     """
@@ -228,6 +258,18 @@ class SmartBootstrapDetector:
                 with_tmdb = int(row[5] or 0)
                 series_tot = int(row[6] or 0)
                 series_tvm = int(row[7] or 0)
+                cov.vote_tier_counts = {
+                    "0": total,
+                    "100": int(row[8] or 0),
+                    "1000": int(row[9] or 0),
+                    "5000": int(row[10] or 0),
+                }
+                cov.nyaasi_sweep_totals = {
+                    "0": int(row[11] or 0),
+                    "100": int(row[12] or 0),
+                    "1000": int(row[13] or 0),
+                    "5000": int(row[14] or 0),
+                }
                 cov.total_shows = total
                 cov.with_poster = with_p
                 cov.with_synopsis = with_s
@@ -360,6 +402,7 @@ class HydrationOrchestratorService:
         self._active_scope: Literal["all", "sources", "metadata"] = "all"
         self._active_target_provider: Optional[str] = None
         self._active_metadata_mode: Literal["pending", "missing_synopsis_ptbr"] = "pending"
+        self._active_run_mode: Literal["novidades", "varredura"] = "novidades"
 
     def _get_lock(self) -> asyncio.Lock:
         if self._step_lock is None:
@@ -463,22 +506,29 @@ class HydrationOrchestratorService:
                 meta_eta = int((rem_meta / meta_rate_per_min) * 60)
 
         sidecar_etas: list[int] = []
-        total_canonical = max(0, int(state.coverage.total_shows or 0))
+        tier_key = str(
+            state.sweep_min_votes if state.sweep_min_votes in (0, 100, 1000, 5000) else 1000
+        )
+        fallback_total = max(0, int(state.coverage.total_shows or 0))
         for sk in SIDECAR_PILLAR_KEYS:
             sc = state.sources.get(sk)
             if not sc:
                 continue
             sc_rate = float(state.ema_rates.get(sk, 0.0) or 0.0)
             sc.rate_per_minute = round(sc_rate, 1)
-            sc.sweep_total = total_canonical
+            if sk == "nyaasi":
+                total_for_sk = int(state.coverage.nyaasi_sweep_totals.get(tier_key, fallback_total))
+            else:
+                total_for_sk = int(state.coverage.vote_tier_counts.get(tier_key, fallback_total))
+            sc.sweep_total = total_for_sk
             if sc.bootstrap_completed or sc.mode == "DELTA":
                 sc.sweep_pct = 100.0
                 sc.eta_seconds = None
-            elif sc.recent_exhausted and total_canonical > 0:
+            elif sc.recent_exhausted and total_for_sk > 0:
                 sc.sweep_pct = round(
-                    min(100.0, (sc.catalog_sweep_offset / total_canonical) * 100.0), 1
+                    min(100.0, (sc.catalog_sweep_offset / total_for_sk) * 100.0), 1
                 )
-                rem_sc = max(0, total_canonical - sc.catalog_sweep_offset)
+                rem_sc = max(0, total_for_sk - sc.catalog_sweep_offset)
                 if rem_sc > 0 and sc_rate > 0.0 and state.scope in ("all", "sources"):
                     sc.eta_seconds = int((rem_sc / sc_rate) * 60)
                     sidecar_etas.append(sc.eta_seconds)
@@ -592,6 +642,54 @@ class HydrationOrchestratorService:
         state = SmartBootstrapDetector.refresh_modes(state, mainstream_session, sources_session)
         return self._save_state(mainstream_session, state)
 
+    def update_config(
+        self,
+        mainstream_session: Session,
+        sources_session: Optional[Session] = None,
+        *,
+        sweep_min_votes: Optional[int] = None,
+        sweep_enabled_sources: Optional[list[str]] = None,
+        recent_pages_per_source: Optional[int] = None,
+    ) -> HydrationPipelineStatus:
+        """Update sweep threshold, enabled sweep sources, and recent pages count (ADR-020)."""
+        state = self.get_status(mainstream_session, sources_session)
+        if sweep_min_votes is not None:
+            if sweep_min_votes not in (0, 100, 1000, 5000):
+                raise ValueError("sweep_min_votes must be one of 0, 100, 1000, 5000")
+            state.sweep_min_votes = sweep_min_votes
+        if sweep_enabled_sources is not None:
+            valid = [
+                s.strip().lower()
+                for s in sweep_enabled_sources
+                if s.strip().lower() in SIDECAR_PILLAR_KEYS
+            ]
+            state.sweep_enabled_sources = list(dict.fromkeys(valid))
+        if recent_pages_per_source is not None:
+            state.recent_pages_per_source = max(1, min(int(recent_pages_per_source), 10))
+
+        state = SmartBootstrapDetector.refresh_modes(state, mainstream_session, sources_session)
+        state = self._apply_live_telemetry(state)
+
+        # Re-open sweep if user lowered sweep_min_votes and new total exceeds offset (AMP-02)
+        tier_key = str(state.sweep_min_votes)
+        for sk in state.sweep_enabled_sources:
+            cur = state.sources.get(sk)
+            if not cur:
+                continue
+            total_sk = int(
+                state.coverage.nyaasi_sweep_totals.get(tier_key, 0)
+                if sk == "nyaasi"
+                else state.coverage.vote_tier_counts.get(tier_key, 0)
+            )
+            if total_sk > 0 and cur.catalog_sweep_offset < total_sk and cur.bootstrap_completed:
+                cur.bootstrap_completed = False
+                cur.mode = "BOOTSTRAP"
+                cur.recent_exhausted = True
+                state.sources[sk] = cur
+
+        state = self._apply_live_telemetry(state)
+        return self._save_state(mainstream_session, state)
+
     def skip_recent(
         self,
         mainstream_session: Session,
@@ -625,6 +723,7 @@ class HydrationOrchestratorService:
         sources_session: Session,
         *,
         scope: Literal["all", "sources", "metadata"] = "all",
+        run_mode: Optional[Literal["novidades", "varredura"]] = None,
         target_provider: Optional[str] = None,
         metadata_mode: Literal["pending", "missing_synopsis_ptbr"] = "pending",
         yts_pages: int = 6,
@@ -632,11 +731,14 @@ class HydrationOrchestratorService:
         sweep_batch: int = 12,
         meta_batch: int = 80,
     ) -> dict[str, Any]:
-        """Execute 3-phase bifurcated step: Prepare DB -> Fan-out HTTP -> Fan-in DB (ADR-017)."""
+        """Execute 3-phase bifurcated step: Prepare -> Fan-out -> Fan-in (ADR-017/020)."""
         async with self._get_lock():
             step_t0 = time.monotonic()
             state = self.get_status(mainstream_session, sources_session)
             eff_target = (target_provider or state.target_provider or "").strip().lower() or None
+            eff_run_mode: Literal["novidades", "varredura"] = (
+                run_mode or state.run_mode or "novidades"
+            )
             eff_meta_mode: Literal["pending", "missing_synopsis_ptbr"] = (
                 metadata_mode
                 if metadata_mode != "pending"
@@ -645,11 +747,13 @@ class HydrationOrchestratorService:
             eff_meta_batch = (
                 max(meta_batch, 150) if eff_target in ("tmdb", "tvmaze") else meta_batch
             )
+            eff_sidecar_pages = max(1, min(int(state.recent_pages_per_source or sidecar_pages), 10))
             if self._persisted_elapsed_base <= 0.0 and state.total_elapsed_seconds > 0.0:
                 self._persisted_elapsed_base = state.total_elapsed_seconds
             standalone_step = self._run_started_mono is None
             step_yts_items = 0
             step_meta_items = 0
+            novidades_added = 0
             step_sidecar_counts: dict[str, int] = {}
             step_notes: list[str] = []
             step_telemetry: dict[str, Any] = {}
@@ -697,19 +801,52 @@ class HydrationOrchestratorService:
                     s_adp = adapters_map.get(s_rec.adapter_key)
                     if not isinstance(s_adp, TorrentApiPySourceAdapter):
                         continue
-                    if not sc.recent_exhausted:
+                    if eff_run_mode == "novidades" and eff_target is None:
                         sidecar_plans[sk] = {
                             "mode": "recent",
+                            "start_page": 1,
+                            "pages": eff_sidecar_pages,
+                            "ephemeral_novidades": True,
                             "inst": s_rec,
                             "adapter": s_adp,
                             "cursor": sc,
                         }
-                    else:
+                    elif eff_run_mode == "varredura":
+                        if eff_target is None and sk not in state.sweep_enabled_sources:
+                            continue
+                        if eff_target is None and sc.bootstrap_completed:
+                            continue
                         works = SourcesRegistryService.select_sweep_works(
                             mainstream_session,
                             source_key=sk,
                             offset=sc.catalog_sweep_offset,
                             batch_size=sweep_batch,
+                            min_votes=state.sweep_min_votes,
+                        )
+                        sidecar_plans[sk] = {
+                            "mode": "sweep",
+                            "inst": s_rec,
+                            "adapter": s_adp,
+                            "cursor": sc,
+                            "works": works,
+                        }
+                    elif not sc.recent_exhausted:
+                        sidecar_plans[sk] = {
+                            "mode": "recent",
+                            "start_page": sc.next_page,
+                            "pages": eff_sidecar_pages,
+                            "ephemeral_novidades": False,
+                            "inst": s_rec,
+                            "adapter": s_adp,
+                            "cursor": sc,
+                        }
+                    elif not sc.bootstrap_completed:
+                        works = SourcesRegistryService.select_sweep_works(
+                            mainstream_session,
+                            source_key=sk,
+                            offset=sc.catalog_sweep_offset,
+                            batch_size=sweep_batch,
+                            min_votes=state.sweep_min_votes,
                         )
                         sidecar_plans[sk] = {
                             "mode": "sweep",
@@ -783,9 +920,9 @@ class HydrationOrchestratorService:
                 if plan["mode"] == "recent":
                     return await plan["adapter"].fetch_recent_candidates(
                         plan["inst"],
-                        pages=min(sidecar_pages, 10),
+                        pages=int(plan.get("pages") or min(sidecar_pages, 10)),
                         limit=75,
-                        start_page=sc.next_page,
+                        start_page=int(plan.get("start_page") or sc.next_page),
                         client=http_client,
                     )
                 return await SourcesRegistryService.fetch_sweep_batch_fanout(
@@ -861,6 +998,7 @@ class HydrationOrchestratorService:
                     yts_cur.total_pages = int(meta.get("total_pages") or yts_cur.total_pages)
                     seen_movies = int(meta.get("movies_seen") or 0)
                     step_yts_items += max(seen_movies, idx_y)
+                    novidades_added += idx_y
                     self._items_in_run += max(seen_movies, idx_y)
                     if yts_cur.mode == "BOOTSTRAP":
                         if meta.get("bootstrap_completed"):
@@ -946,27 +1084,30 @@ class HydrationOrchestratorService:
                             )
                             indexed_s += len(p_rows)
 
-                    if indexed_s == 0 and matched_s == 0:
-                        sc.consecutive_zero_recent_pages += 1
-                    else:
-                        sc.consecutive_zero_recent_pages = 0
-
-                    is_exhausted = len(recent_cands) == 0 or (
-                        sc.mode == "BOOTSTRAP"
-                        and (
-                            (sc.next_page > 1 and indexed_s == 0)
-                            or sc.consecutive_zero_recent_pages >= 2
-                        )
-                    )
                     scanned = len(recent_cands)
                     step_sidecar_counts[sk] = scanned
+                    novidades_added += indexed_s
                     self._items_in_run += scanned
-                    if is_exhausted:
-                        sc.recent_exhausted = True
-                        sc.next_page = 1
-                        sc.consecutive_zero_recent_pages = 0
+                    if plan.get("ephemeral_novidades"):
+                        pass
                     else:
-                        sc.next_page = sc.next_page + min(sidecar_pages, 10)
+                        if indexed_s == 0 and matched_s == 0:
+                            sc.consecutive_zero_recent_pages += 1
+                        else:
+                            sc.consecutive_zero_recent_pages = 0
+                        is_exhausted = len(recent_cands) == 0 or (
+                            sc.mode == "BOOTSTRAP"
+                            and (
+                                (sc.next_page > 1 and indexed_s == 0)
+                                or sc.consecutive_zero_recent_pages >= 2
+                            )
+                        )
+                        if is_exhausted:
+                            sc.recent_exhausted = True
+                            sc.next_page = 1
+                            sc.consecutive_zero_recent_pages = 0
+                        else:
+                            sc.next_page = sc.next_page + min(sidecar_pages, 10)
                     sc.last_error = None
                     sc.last_run_at = _utc_iso()
                     s_inst.status = "ready"
@@ -976,18 +1117,27 @@ class HydrationOrchestratorService:
                     sources_session.commit()
                     step_telemetry[sk] = {
                         "source": sk,
-                        "exhausted": is_exhausted,
+                        "exhausted": bool(sc.recent_exhausted),
                         "candidates_scanned": scanned,
                         "canonical_matched": matched_s,
                         "releases_indexed": indexed_s,
                     }
+                    ev_target = (
+                        "Novidades"
+                        if plan.get("ephemeral_novidades")
+                        else f"Recentes p.{sc.next_page}"
+                    )
                     self._record_event(
                         sk,
-                        f"Recentes p.{sc.next_page}",
+                        ev_target,
                         "ok" if indexed_s else "skipped",
                         f"{sk.upper()}: {scanned} analisados (+{indexed_s} novos)",
                     )
-                    step_notes.append(f"{sk} p.{sc.next_page}(+{indexed_s})")
+                    step_notes.append(
+                        f"{sk} nov.(+{indexed_s})"
+                        if plan.get("ephemeral_novidades")
+                        else f"{sk} p.{sc.next_page}(+{indexed_s})"
+                    )
                 else:
                     works = plan["works"]
                     if not works:
@@ -1109,20 +1259,26 @@ class HydrationOrchestratorService:
             self._set_live_progress(None, None)
             state.steps_executed += 1
             state.scope = scope
+            state.run_mode = eff_run_mode
             state.last_step_summary = " | ".join(step_notes) if step_notes else "Ciclo verificado."
             state = SmartBootstrapDetector.refresh_modes(state, mainstream_session, sources_session)
 
-            # Auto-stop when active scope or focused target has no pending work left
-            pending_sources = [
+            # Auto-stop when active run_mode, scope, or focused target has no pending work left
+            pending_sweep_sources = [
                 k
-                for k, cur in state.sources.items()
-                if cur.mode == "BOOTSTRAP" and not cur.bootstrap_completed
+                for k in state.sweep_enabled_sources
+                if (cur := state.sources.get(k)) is not None and not cur.bootstrap_completed
             ]
             should_complete = False
             completion_msg = ""
             if focus_just_completed:
                 should_complete = True
                 completion_msg = "Foco concluído: todas as obras elegíveis foram verificadas."
+            elif eff_run_mode == "novidades" and not eff_target and scope in ("all", "sources"):
+                state.last_novidades_at = _utc_iso()
+                state.last_novidades_count = novidades_added
+                should_complete = True
+                completion_msg = f"Tudo atualizado • +{novidades_added} novidades"
             elif (
                 scope == "metadata"
                 and run_metadata
@@ -1131,12 +1287,19 @@ class HydrationOrchestratorService:
             ):
                 should_complete = True
                 completion_msg = "Fila de capas e sinopses concluída (0 pendentes)."
-            elif scope == "sources" and not pending_sources and not state.target_provider:
+            elif (
+                eff_run_mode == "varredura"
+                and not pending_sweep_sources
+                and not state.target_provider
+            ):
+                should_complete = True
+                completion_msg = "Varredura profunda concluída (100% em dia)."
+            elif scope == "sources" and not pending_sweep_sources and not state.target_provider:
                 should_complete = True
                 completion_msg = "Todas as fontes sincronizadas (varredura inicial concluída)."
             elif (
                 scope == "all"
-                and not pending_sources
+                and not pending_sweep_sources
                 and state.coverage.pending_details == 0
                 and not state.target_provider
             ):
@@ -1173,6 +1336,7 @@ class HydrationOrchestratorService:
                             ms_sess,
                             src_sess,
                             scope=self._active_scope,
+                            run_mode=self._active_run_mode,
                             target_provider=self._active_target_provider,
                             metadata_mode=self._active_metadata_mode,
                         )
@@ -1204,6 +1368,7 @@ class HydrationOrchestratorService:
         sources_session: Optional[Session] = None,
         *,
         scope: Literal["all", "sources", "metadata"] = "all",
+        run_mode: Literal["novidades", "varredura"] = "novidades",
         interval_seconds: float = 2.0,
         target_provider: Optional[str] = None,
         metadata_mode: Literal["pending", "missing_synopsis_ptbr"] = "pending",
@@ -1220,21 +1385,23 @@ class HydrationOrchestratorService:
             self._items_in_run = 0
             self._step_window.clear()
         self._active_scope = scope
+        self._active_run_mode = run_mode
         self._active_target_provider = eff_target
         self._active_metadata_mode = metadata_mode
         self._record_event(
             "sistema",
-            eff_target.upper() if eff_target else "Atualização do Catálogo",
+            eff_target.upper() if eff_target else f"Modo {run_mode.capitalize()}",
             "ok",
             f"Foco alterado para {eff_target.upper()} ({metadata_mode})."
             if eff_target
-            else "Atualização iniciada.",
+            else f"Atualização iniciada ({run_mode}).",
         )
 
         prev_target = state.target_provider
         prev_mode = state.metadata_mode
         state.state = "RUNNING"
         state.scope = scope
+        state.run_mode = run_mode
         state.target_provider = eff_target
         state.metadata_mode = metadata_mode
         if (not eff_target and metadata_mode == "pending") or (

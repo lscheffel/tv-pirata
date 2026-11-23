@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlmodel import Session
 
 from src.backend.core.cache import catalog_cache, discovery_cache
@@ -276,6 +277,9 @@ async def start_hydration_pipeline(
     scope: Literal["all", "sources", "metadata"] = Query(
         "all", description="Escopo do motor unificado: all, sources ou metadata"
     ),
+    run_mode: Literal["novidades", "varredura"] = Query(
+        "novidades", description="Modo finito: novidades (rápido) ou varredura (profunda)"
+    ),
     target_provider: Optional[str] = Query(
         None, description="Foco opcional: tmdb, tvmaze, yify, tgx, nyaasi, bitsearch, glodls"
     ),
@@ -290,9 +294,37 @@ async def start_hydration_pipeline(
         session,
         sources_session,
         scope=scope,
+        run_mode=run_mode,
         target_provider=target_provider,
         metadata_mode=metadata_mode,
     )
+
+
+class HydrationConfigUpdate(BaseModel):
+    """Configuração de varredura e novidades da hidratação (ADR-020)."""
+
+    sweep_min_votes: Optional[int] = None
+    sweep_enabled_sources: Optional[list[str]] = None
+    recent_pages_per_source: Optional[int] = None
+
+
+@router.post("/hydration/config", response_model=HydrationPipelineStatus)
+def update_hydration_config(
+    payload: HydrationConfigUpdate,
+    session: Session = Depends(get_session),
+    sources_session: Session = Depends(get_eztv_session),
+) -> HydrationPipelineStatus:
+    """Persist sweep threshold, eligible sweep sources, and recent pages count."""
+    try:
+        return hydration_orchestrator.update_config(
+            session,
+            sources_session,
+            sweep_min_votes=payload.sweep_min_votes,
+            sweep_enabled_sources=payload.sweep_enabled_sources,
+            recent_pages_per_source=payload.recent_pages_per_source,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/hydration/pause", response_model=HydrationPipelineStatus)

@@ -190,14 +190,28 @@ export const api = {
       start: (
         scope: "all" | "sources" | "metadata" = "all",
         targetProvider?: string | null,
-        metadataMode: "pending" | "missing_synopsis_ptbr" = "pending"
+        metadataMode: "pending" | "missing_synopsis_ptbr" = "pending",
+        runMode: "novidades" | "varredura" = "novidades"
       ) => {
-        const q = new URLSearchParams({ scope, metadata_mode: metadataMode });
+        const q = new URLSearchParams({
+          scope,
+          metadata_mode: metadataMode,
+          run_mode: runMode,
+        });
         if (targetProvider) q.set("target_provider", targetProvider);
         return request<HydrationPipelineStatus>(`/explore/hydration/start?${q.toString()}`, {
           method: "POST",
         });
       },
+      updateConfig: (payload: {
+        sweep_min_votes?: number;
+        sweep_enabled_sources?: string[];
+        recent_pages_per_source?: number;
+      }) =>
+        request<HydrationPipelineStatus>("/explore/hydration/config", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }),
       pause: () =>
         request<HydrationPipelineStatus>("/explore/hydration/pause", { method: "POST" }),
       step: (

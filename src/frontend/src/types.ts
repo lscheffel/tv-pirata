@@ -639,6 +639,8 @@ export interface CanonicalCoverageSnapshot {
   tvmaze_pct?: number;
   tmdb_configured?: boolean;
   imdb_last_sync_at?: string | null;
+  vote_tier_counts?: Record<string, number>;
+  nyaasi_sweep_totals?: Record<string, number>;
 }
 
 export interface HydrationActivityEvent {
@@ -677,6 +679,12 @@ export interface HydrationPipelineStatus {
   target_provider?: string | null;
   metadata_mode?: "pending" | "missing_synopsis_ptbr";
   focus_cursor_imdb?: string | null;
+  run_mode?: "novidades" | "varredura";
+  sweep_min_votes?: number;
+  sweep_enabled_sources?: string[];
+  recent_pages_per_source?: number;
+  last_novidades_at?: string | null;
+  last_novidades_count?: number;
   recent_events?: HydrationActivityEvent[];
   coverage: CanonicalCoverageSnapshot;
   sources: Record<string, PillarSourceCursor>;
