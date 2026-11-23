@@ -17,7 +17,8 @@ from src.backend.models.db import (
     ShowRecord,
     TagRecord,
 )
-from src.backend.models.unified import UnifiedShow
+from src.backend.models.unified import UnifiedSeason, UnifiedShow
+from src.backend.services.entity_resolution import EntityResolutionService
 
 
 def utc_now() -> datetime:
@@ -31,24 +32,174 @@ class LibraryRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    def find_show_by_unified(self, unified: UnifiedShow) -> Optional[ShowRecord]:
+        """Find an existing ShowRecord by IMDb ID, TMDB ID, or primary UnifiedShow ID."""
+        norm_imdb = EntityResolutionService.normalize_imdb_id(unified.imdb_id)
+        if norm_imdb:
+            show = self.session.exec(
+                select(ShowRecord).where(ShowRecord.imdb_id == norm_imdb)
+            ).first()
+            if show:
+                return show
+        if unified.tmdb_id:
+            show = self.session.exec(
+                select(ShowRecord).where(ShowRecord.tmdb_id == unified.tmdb_id)
+            ).first()
+            if show:
+                return show
+        if unified.id:
+            return self.session.exec(
+                select(ShowRecord).where(ShowRecord.tmdb_id == unified.id)
+            ).first()
+        return None
+
+    def sync_seasons_episodes(self, show: ShowRecord, seasons: list[UnifiedSeason]) -> None:
+        """Ensure relational SeasonRecord, EpisodeRecord and EpisodeWatchRecord rows exist."""
+        if show.id is None or not seasons:
+            return
+
+        existing_seasons = {
+            s.season_number: s
+            for s in self.session.exec(
+                select(SeasonRecord).where(SeasonRecord.show_id == show.id)
+            ).all()
+        }
+
+        for s in seasons:
+            season = existing_seasons.get(s.season_number)
+            if not season:
+                season = SeasonRecord(
+                    show_id=show.id,
+                    season_number=s.season_number,
+                    name=s.name or f"Temporada {s.season_number}",
+                    overview=s.overview,
+                    poster_url=s.poster_url,
+                    episode_count=s.episode_count or len(s.episodes),
+                )
+                self.session.add(season)
+                self.session.flush()
+                existing_seasons[s.season_number] = season
+
+            if season.id is None:
+                continue
+
+            existing_episodes = {
+                ep.episode_number: ep
+                for ep in self.session.exec(
+                    select(EpisodeRecord).where(EpisodeRecord.season_id == season.id)
+                ).all()
+            }
+
+            if s.episodes:
+                for ep in s.episodes:
+                    if ep.episode_number in existing_episodes:
+                        continue
+                    episode = EpisodeRecord(
+                        season_id=season.id,
+                        episode_number=ep.episode_number,
+                        title=ep.title,
+                        overview=ep.overview,
+                        air_date=ep.air_date,
+                        rating=ep.rating,
+                    )
+                    self.session.add(episode)
+                    self.session.flush()
+                    self.session.add(
+                        EpisodeWatchRecord(
+                            episode_id=episode.id,
+                            is_watched=False,
+                        )
+                    )
+                    existing_episodes[ep.episode_number] = episode
+            else:
+                for ep_num in range(1, (s.episode_count or 0) + 1):
+                    if ep_num in existing_episodes:
+                        continue
+                    episode = EpisodeRecord(
+                        season_id=season.id,
+                        episode_number=ep_num,
+                        title=f"Episódio {ep_num}",
+                    )
+                    self.session.add(episode)
+                    self.session.flush()
+                    self.session.add(
+                        EpisodeWatchRecord(
+                            episode_id=episode.id,
+                            is_watched=False,
+                        )
+                    )
+                    existing_episodes[ep_num] = episode
+
+    def attach_library_watch_state(self, unified: UnifiedShow) -> UnifiedShow:
+        """Attach relational SeasonRecord/EpisodeRecord IDs and watch flags when show is saved."""
+        show = self.find_show_by_unified(unified)
+        if not show or show.id is None:
+            return unified
+
+        if unified.seasons:
+            self.sync_seasons_episodes(show, unified.seasons)
+            self.session.flush()
+
+        season_rows = self.session.exec(
+            select(SeasonRecord).where(SeasonRecord.show_id == show.id)
+        ).all()
+        seasons_by_num = {s.season_number: s for s in season_rows if s.id is not None}
+        season_ids = [s.id for s in season_rows if s.id is not None]
+
+        episodes_by_key: dict[tuple[int, int], EpisodeRecord] = {}
+        ep_ids: list[int] = []
+        if season_ids:
+            ep_rows = self.session.exec(
+                select(EpisodeRecord).where(col(EpisodeRecord.season_id).in_(season_ids))
+            ).all()
+            season_id_to_num = {s.id: s.season_number for s in season_rows if s.id is not None}
+            for ep in ep_rows:
+                s_num = season_id_to_num.get(ep.season_id)
+                if s_num is not None:
+                    episodes_by_key[(s_num, ep.episode_number)] = ep
+                if ep.id is not None:
+                    ep_ids.append(ep.id)
+
+        watched_by_ep_id: dict[int, bool] = {}
+        if ep_ids:
+            watch_rows = self.session.exec(
+                select(EpisodeWatchRecord).where(
+                    col(EpisodeWatchRecord.episode_id).in_(ep_ids)
+                )
+            ).all()
+            for w in watch_rows:
+                watched_by_ep_id[w.episode_id] = bool(w.is_watched)
+
+        for season in unified.seasons:
+            s_rec = seasons_by_num.get(season.season_number)
+            if s_rec and s_rec.id is not None:
+                season.id = s_rec.id
+            for ep in season.episodes:
+                ep_rec = episodes_by_key.get((season.season_number, ep.episode_number))
+                if ep_rec and ep_rec.id is not None:
+                    ep.id = ep_rec.id
+                    ep.is_watched = watched_by_ep_id.get(ep_rec.id, False)
+
+        return unified
+
     def upsert_from_unified(
         self,
         unified: UnifiedShow,
         user_status: str = "plan_to_watch",
     ) -> ShowRecord:
         """Atomically import or update a UnifiedShow into the relational database."""
-        statement = select(ShowRecord).where(ShowRecord.tmdb_id == unified.id)
-        show = self.session.exec(statement).first()
+        show = self.find_show_by_unified(unified)
 
         genres_str = ", ".join(unified.genres) if unified.genres else ""
+        norm_imdb = EntityResolutionService.normalize_imdb_id(unified.imdb_id)
 
         if not show:
             now = utc_now()
             # Create new show entry
             show = ShowRecord(
-                tmdb_id=unified.id,
+                tmdb_id=unified.tmdb_id or unified.id,
                 tvmaze_id=unified.tvmaze_id,
-                imdb_id=unified.imdb_id,
+                imdb_id=norm_imdb or unified.imdb_id,
                 title=unified.title,
                 original_title=unified.original_title,
                 overview=unified.overview,
@@ -64,65 +215,20 @@ class LibraryRepository:
             )
             self.session.add(show)
             self.session.flush()
-
-            # Create seasons and episodes
-            for s in unified.seasons:
-                season = SeasonRecord(
-                    show_id=show.id,
-                    season_number=s.season_number,
-                    name=s.name or f"Temporada {s.season_number}",
-                    overview=s.overview,
-                    poster_url=s.poster_url,
-                    episode_count=s.episode_count or len(s.episodes),
-                )
-                self.session.add(season)
-                self.session.flush()
-
-                # If full episode list is provided
-                if s.episodes:
-                    for ep in s.episodes:
-                        episode = EpisodeRecord(
-                            season_id=season.id,
-                            episode_number=ep.episode_number,
-                            title=ep.title,
-                            overview=ep.overview,
-                            air_date=ep.air_date,
-                            rating=ep.rating,
-                        )
-                        self.session.add(episode)
-                        self.session.flush()
-
-                        watch = EpisodeWatchRecord(
-                            episode_id=episode.id,
-                            is_watched=False,
-                        )
-                        self.session.add(watch)
-                else:
-                    # Generate stub episodes for tracking based on episode_count
-                    for ep_num in range(1, (s.episode_count or 0) + 1):
-                        episode = EpisodeRecord(
-                            season_id=season.id,
-                            episode_number=ep_num,
-                            title=f"Episódio {ep_num}",
-                        )
-                        self.session.add(episode)
-                        self.session.flush()
-
-                        watch = EpisodeWatchRecord(
-                            episode_id=episode.id,
-                            is_watched=False,
-                        )
-                        self.session.add(watch)
         else:
             # Update mutable metadata preserving user state
-            show.overview = unified.overview
-            show.rating = unified.rating
+            show.overview = unified.overview or show.overview
+            show.rating = unified.rating or show.rating
             show.poster_url = unified.poster_url or show.poster_url
             show.backdrop_url = unified.backdrop_url or show.backdrop_url
             show.status = unified.status or show.status
+            show.imdb_id = show.imdb_id or norm_imdb or unified.imdb_id
+            show.tvmaze_id = show.tvmaze_id or unified.tvmaze_id
             show.updated_at = utc_now()
             self.session.add(show)
+            self.session.flush()
 
+        self.sync_seasons_episodes(show, unified.seasons)
         self.session.flush()
         return show
 

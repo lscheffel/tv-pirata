@@ -15,6 +15,7 @@ from src.backend.providers.tmdb import TMDBProvider
 from src.backend.providers.tvmaze import TVMazeProvider
 from src.backend.repositories.catalog import CatalogRepository
 from src.backend.repositories.discovery_engine import DiscoveryEngineRepository
+from src.backend.repositories.library import LibraryRepository
 from src.backend.services.entity_resolution import EntityResolutionService
 from src.backend.services.sources_registry import SourcesRegistryService
 
@@ -179,6 +180,7 @@ async def get_show_details(
     eztv_session: Session = Depends(get_eztv_session),
 ) -> UnifiedShow:
     """Fetch complete show metadata with seasons and episodes from mainstream.db or providers."""
+    lib_repo = LibraryRepository(session)
     if provider == "imdb" or DiscoveryEngineRepository._has_imdb_catalog(session):
         mainstream_show = DiscoveryEngineRepository.get_unified_show_from_mainstream(
             session=session,
@@ -187,7 +189,7 @@ async def get_show_details(
             imdb_id=imdb_id,
         )
         if mainstream_show is not None:
-            return mainstream_show
+            return lib_repo.attach_library_watch_state(mainstream_show)
 
     service = get_discovery_service()
 
@@ -200,22 +202,30 @@ async def get_show_details(
         try:
             enriched = await service.get_show_details(imdb_id=effective_imdb)
             if enriched:
-                return enriched
+                return lib_repo.attach_library_watch_state(enriched)
         except Exception:
             pass
 
         if detail:
-            return _catalog_item_to_unified(detail["show"], override_id=show_id)
+            return lib_repo.attach_library_watch_state(
+                _catalog_item_to_unified(detail["show"], override_id=show_id)
+            )
 
     try:
         if provider == "tvmaze":
-            return await service.get_show_details(tvmaze_id=show_id)
-        return await service.get_show_details(tmdb_id=show_id, tvmaze_id=tvmaze_id)
+            return lib_repo.attach_library_watch_state(
+                await service.get_show_details(tvmaze_id=show_id)
+            )
+        return lib_repo.attach_library_watch_state(
+            await service.get_show_details(tmdb_id=show_id, tvmaze_id=tvmaze_id)
+        )
     except Exception as exc:
         candidate_imdb = CatalogRepository.normalize_imdb_id(str(show_id))
         detail = CatalogRepository.get_show_detail(eztv_session, session, candidate_imdb)
         if detail:
-            return _catalog_item_to_unified(detail["show"], override_id=show_id)
+            return lib_repo.attach_library_watch_state(
+                _catalog_item_to_unified(detail["show"], override_id=show_id)
+            )
         raise HTTPException(
             status_code=502,
             detail=f"Failed to retrieve show details for ID {show_id}: {exc}",

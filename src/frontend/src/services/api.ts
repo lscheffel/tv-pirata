@@ -437,9 +437,12 @@ export const api = {
         { method: "POST" }
       ),
     watchAllSeason: (seasonId: number, watched = true) =>
-      request<{ status: string; season_id: number; episodes_updated: number }>(
-        `/watches/seasons/${seasonId}/watch-all?watched=${watched}`,
-        { method: "POST" }
+      request<{ status: string; season_id: number; updated_episodes: number }>(
+        `/watches/seasons/${seasonId}/watch-all`,
+        {
+          method: "POST",
+          body: JSON.stringify({ is_watched: watched }),
+        }
       ),
     getShowProgress: (showId: number) =>
       request<ShowProgress>(`/watches/shows/${showId}/progress`),

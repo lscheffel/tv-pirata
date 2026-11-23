@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlmodel import Session
 
@@ -39,11 +39,12 @@ def toggle_episode(
 def watch_entire_season(
     season_id: int,
     payload: Optional[WatchSeasonRequest] = None,
+    watched: Optional[bool] = Query(None),
     session: Session = Depends(get_session),
 ) -> dict:
     """Mark all episodes in a season as watched or unwatched."""
     repo = LibraryRepository(session)
-    is_watched = payload.is_watched if payload else True
+    is_watched = watched if watched is not None else (payload.is_watched if payload else True)
     count = repo.watch_all_in_season(season_id, is_watched=is_watched)
     return {
         "season_id": season_id,

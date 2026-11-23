@@ -177,3 +177,62 @@ def test_tags_and_smart_collections(session: Session):
     items = repo.query_smart_collection(collection.id)
     assert len(items) == 1
     assert items[0].title == "Severance"
+
+
+def test_attach_library_watch_state_syncs_missing_seasons(session: Session):
+    """Ensure shows saved without seasons get relational IDs and watch state attached."""
+    repo = LibraryRepository(session)
+
+    # Save card-level show without seasons (e.g. from Explorer card)
+    card_show = UnifiedShow(
+        id=33043892,
+        tmdb_id=259909,
+        imdb_id="tt33043892",
+        title="Dexter: Resurrection",
+        seasons=[],
+    )
+    saved = repo.upsert_from_unified(card_show)
+    assert saved.id is not None
+    assert session.exec(select(SeasonRecord).where(SeasonRecord.show_id == saved.id)).all() == []
+
+    # Detail fetch returns IMDb/EZTV seasons without relational IDs
+    detail_show = UnifiedShow(
+        id=33043892,
+        tmdb_id=259909,
+        imdb_id="tt33043892",
+        title="Dexter: Resurrection",
+        seasons=[
+            UnifiedSeason(
+                id=None,
+                season_number=1,
+                name="Temporada 1",
+                episode_count=2,
+                episodes=[
+                    UnifiedEpisode(
+                        id=990001,
+                        season_number=1,
+                        episode_number=1,
+                        title="Ep 1",
+                    ),
+                    UnifiedEpisode(
+                        id=990002,
+                        season_number=1,
+                        episode_number=2,
+                        title="Ep 2",
+                    ),
+                ],
+            )
+        ],
+    )
+
+    attached = repo.attach_library_watch_state(detail_show)
+    assert attached.seasons[0].id is not None
+    assert attached.seasons[0].episodes[0].id is not None
+    assert attached.seasons[0].episodes[0].id != 990001
+    assert attached.seasons[0].episodes[0].is_watched is False
+
+    # Mark whole season as watched and re-attach
+    updated = repo.watch_all_in_season(attached.seasons[0].id, is_watched=True)
+    assert updated == 2
+    reattached = repo.attach_library_watch_state(detail_show)
+    assert all(ep.is_watched for ep in reattached.seasons[0].episodes)

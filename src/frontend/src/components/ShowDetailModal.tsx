@@ -85,26 +85,57 @@ export const ShowDetailModal: React.FC<ShowDetailModalProps> = ({
     currentShow.seasons.find((s) => s.season_number === activeSeasonNum) ||
     currentShow.seasons[0];
 
-  const handleToggleEpisode = async (episodeId?: number) => {
-    if (!episodeId) {
+  const ensureRelationalSynced = async (): Promise<UnifiedShow> => {
+    await api.library.saveShow(currentShow);
+    const refreshed = await api.discovery.getShowDetails(
+      currentShow.id,
+      currentShow.source_provider,
+      currentShow.imdb_id
+    );
+    setFullShow(refreshed);
+    const watched = new Set<number>();
+    refreshed.seasons.forEach((s) => {
+      s.episodes.forEach((ep) => {
+        if (ep.is_watched && ep.id) watched.add(ep.id);
+      });
+    });
+    setWatchedEpisodeIds(watched);
+    return refreshed;
+  };
+
+  const handleToggleEpisode = async (seasonNum: number, episodeNum: number, episodeId?: number) => {
+    let targetEpId = episodeId;
+    if (!targetEpId) {
+      try {
+        const synced = await ensureRelationalSynced();
+        const sMatch = synced.seasons.find((s) => s.season_number === seasonNum);
+        const epMatch = sMatch?.episodes.find((ep) => ep.episode_number === episodeNum);
+        targetEpId = epMatch?.id;
+      } catch {
+        showToast("Falha ao sincronizar episódio na biblioteca", "error");
+        return;
+      }
+    }
+
+    if (!targetEpId) {
       showToast("Episódio sem ID registrado na biblioteca", "info");
       return;
     }
 
     // Optimistic toggle
-    const isCurrentlyWatched = watchedEpisodeIds.has(episodeId);
+    const isCurrentlyWatched = watchedEpisodeIds.has(targetEpId);
     setWatchedEpisodeIds((prev) => {
       const next = new Set(prev);
       if (isCurrentlyWatched) {
-        next.delete(episodeId);
+        next.delete(targetEpId);
       } else {
-        next.add(episodeId);
+        next.add(targetEpId);
       }
       return next;
     });
 
     try {
-      const res = await api.watches.toggleEpisode(episodeId);
+      const res = await api.watches.toggleEpisode(targetEpId);
       showToast(
         res.is_watched ? "Episódio marcado como assistido!" : "Episódio desmarcado",
         "success"
@@ -114,9 +145,9 @@ export const ShowDetailModal: React.FC<ShowDetailModalProps> = ({
       setWatchedEpisodeIds((prev) => {
         const next = new Set(prev);
         if (isCurrentlyWatched) {
-          next.add(episodeId);
+          next.add(targetEpId);
         } else {
-          next.delete(episodeId);
+          next.delete(targetEpId);
         }
         return next;
       });
@@ -125,24 +156,47 @@ export const ShowDetailModal: React.FC<ShowDetailModalProps> = ({
   };
 
   const handleWatchAllSeason = async (season: UnifiedSeason) => {
-    if (!season.id) {
+    let targetSeason = season;
+    if (!targetSeason.id) {
+      try {
+        const synced = await ensureRelationalSynced();
+        const found = synced.seasons.find((s) => s.season_number === season.season_number);
+        if (found) targetSeason = found;
+      } catch {
+        showToast("Falha ao sincronizar temporada no banco relacional", "error");
+        return;
+      }
+    }
+
+    if (!targetSeason.id) {
       showToast("Temporada ainda não sincronizada no banco relacional", "info");
       return;
     }
 
+    const epsWithIds = targetSeason.episodes.filter((ep) => Boolean(ep.id));
+    const allWatched =
+      epsWithIds.length > 0 && epsWithIds.every((ep) => ep.id && watchedEpisodeIds.has(ep.id));
+    const nextWatched = !allWatched;
+
     try {
-      await api.watches.watchAllSeason(season.id, true);
-      // Mark all episodes in season as watched locally
+      await api.watches.watchAllSeason(targetSeason.id, nextWatched);
       setWatchedEpisodeIds((prev) => {
         const next = new Set(prev);
-        season.episodes.forEach((ep) => {
-          if (ep.id) next.add(ep.id);
+        targetSeason.episodes.forEach((ep) => {
+          if (!ep.id) return;
+          if (nextWatched) next.add(ep.id);
+          else next.delete(ep.id);
         });
         return next;
       });
-      showToast(`Temporada ${season.season_number} marcada como assistida!`, "success");
+      showToast(
+        nextWatched
+          ? `Temporada ${targetSeason.season_number} marcada como assistida!`
+          : `Temporada ${targetSeason.season_number} desmarcada`,
+        "success"
+      );
     } catch {
-      showToast("Erro ao marcar temporada como assistida", "error");
+      showToast("Erro ao atualizar temporada", "error");
     }
   };
 
@@ -287,7 +341,13 @@ export const ShowDetailModal: React.FC<ShowDetailModalProps> = ({
                       >
                         <div className="flex items-center gap-3 flex-1 min-w-0 pr-3">
                           <button
-                            onClick={() => handleToggleEpisode(ep.id)}
+                            onClick={() =>
+                              handleToggleEpisode(
+                                currentSeason.season_number,
+                                ep.episode_number,
+                                ep.id
+                              )
+                            }
                             className="p-1 hover:scale-110 active:scale-95 transition-transform"
                           >
                             {isWatched ? (

@@ -90,6 +90,7 @@ class UnifiedEpisode(BaseModel):
     overview: str = ""
     air_date: Optional[str] = None
     rating: Optional[float] = None
+    is_watched: bool = False
 
 
 class UnifiedSeason(BaseModel):
