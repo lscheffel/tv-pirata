@@ -13,11 +13,11 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 from sqlalchemy import text
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 from src.backend.core.database import mainstream_engine, sources_engine
 from src.backend.core.domain_concurrency import create_shared_http_client
-from src.backend.models.sources_db import ExternalSourceRecord
+from src.backend.models.sources_db import ExternalRelease, ExternalSourceRecord
 from src.backend.providers.sources.torrent_api_py_adapter import TorrentApiPySourceAdapter
 from src.backend.providers.sources.yify_adapter import YIFYSourceAdapter
 from src.backend.repositories.preferences import ExplorePreferencesRepository
@@ -756,6 +756,7 @@ class HydrationOrchestratorService:
             step_yts_items = 0
             step_meta_items = 0
             novidades_added = 0
+            novidades_verified = 0
             step_sidecar_counts: dict[str, int] = {}
             step_notes: list[str] = []
             step_telemetry: dict[str, Any] = {}
@@ -1066,7 +1067,22 @@ class HydrationOrchestratorService:
 
                 if plan["mode"] == "recent":
                     recent_cands = res_item or []
+                    cand_ext_ids = [c.external_id for c in recent_cands if c.external_id]
+                    existing_ext_ids: set[str] = set()
+                    if cand_ext_ids:
+                        for i in range(0, len(cand_ext_ids), 500):
+                            chunk = cand_ext_ids[i : i + 500]
+                            existing_ext_ids.update(
+                                str(eid)
+                                for eid in sources_session.exec(
+                                    select(ExternalRelease.external_id).where(
+                                        ExternalRelease.source_key == sk,
+                                        col(ExternalRelease.external_id).in_(chunk),
+                                    )
+                                ).all()
+                            )
                     indexed_s = 0
+                    new_s = 0
                     matched_s = 0
                     for cand in recent_cands:
                         if cand.seeds < 1:
@@ -1089,11 +1105,16 @@ class HydrationOrchestratorService:
                             p_rows, _ = SourcesRegistryService._persist_verified_candidates(
                                 sources_session, sk, imdb, [cand]
                             )
-                            indexed_s += len(p_rows)
+                            if p_rows:
+                                indexed_s += len(p_rows)
+                                if cand.external_id not in existing_ext_ids:
+                                    new_s += len(p_rows)
+                                    existing_ext_ids.add(cand.external_id)
 
                     scanned = len(recent_cands)
                     step_sidecar_counts[sk] = scanned
-                    novidades_added += indexed_s
+                    novidades_added += new_s
+                    novidades_verified += indexed_s
                     self._items_in_run += scanned
                     if plan.get("ephemeral_novidades"):
                         pass
@@ -1137,13 +1158,16 @@ class HydrationOrchestratorService:
                     self._record_event(
                         sk,
                         ev_target,
-                        "ok" if indexed_s else "skipped",
-                        f"{sk.upper()}: {scanned} analisados (+{indexed_s} novos)",
+                        "ok" if new_s else "skipped",
+                        (
+                            f"{sk.upper()}: {scanned} analisados "
+                            f"(+{new_s} novos, {indexed_s} no catálogo)"
+                        ),
                     )
                     step_notes.append(
-                        f"{sk} nov.(+{indexed_s})"
+                        f"{sk} nov.(+{new_s}/{indexed_s})"
                         if plan.get("ephemeral_novidades")
-                        else f"{sk} p.{sc.next_page}(+{indexed_s})"
+                        else f"{sk} p.{sc.next_page}(+{new_s})"
                     )
                 else:
                     works = plan["works"]
@@ -1285,7 +1309,9 @@ class HydrationOrchestratorService:
                 state.last_novidades_at = _utc_iso()
                 state.last_novidades_count = novidades_added
                 should_complete = True
-                completion_msg = f"Tudo atualizado • +{novidades_added} novidades"
+                completion_msg = (
+                    f"Tudo atualizado • +{novidades_added} novos ({novidades_verified} verificados)"
+                )
             elif (
                 scope == "metadata"
                 and run_metadata
