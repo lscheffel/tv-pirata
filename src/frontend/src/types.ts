@@ -685,6 +685,8 @@ export interface HydrationPipelineStatus {
   recent_pages_per_source?: number;
   last_novidades_at?: string | null;
   last_novidades_count?: number;
+  tmdb_last_verified_at?: string | null;
+  tvmaze_last_verified_at?: string | null;
   recent_events?: HydrationActivityEvent[];
   coverage: CanonicalCoverageSnapshot;
   sources: Record<string, PillarSourceCursor>;

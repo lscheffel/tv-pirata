@@ -154,6 +154,8 @@ class HydrationPipelineStatus(BaseModel):
     recent_pages_per_source: int = 2
     last_novidades_at: Optional[str] = None
     last_novidades_count: int = 0
+    tmdb_last_verified_at: Optional[str] = None
+    tvmaze_last_verified_at: Optional[str] = None
     recent_events: list[HydrationActivityEvent] = Field(default_factory=list)
     coverage: CanonicalCoverageSnapshot = Field(default_factory=CanonicalCoverageSnapshot)
     sources: dict[str, PillarSourceCursor] = Field(default_factory=dict)
@@ -877,6 +879,11 @@ class HydrationOrchestratorService:
                         state.focus_cursor_imdb = meta_candidates[-1].imdb_id
                     else:
                         focus_just_completed = True
+                        now_iso = _utc_iso()
+                        if eff_target == "tmdb":
+                            state.tmdb_last_verified_at = now_iso
+                        elif eff_target == "tvmaze":
+                            state.tvmaze_last_verified_at = now_iso
                         state.focus_cursor_imdb = None
                         state.ptbr_recheck_offset = 0
                         state.metadata_mode = "pending"
