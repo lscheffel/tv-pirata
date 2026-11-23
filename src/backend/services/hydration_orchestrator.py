@@ -17,14 +17,17 @@ from sqlmodel import Session, col, select
 
 from src.backend.core.database import mainstream_engine, sources_engine
 from src.backend.core.domain_concurrency import create_shared_http_client
+from src.backend.models.eztv_db import EZTVEpisodeCatalog, EZTVShow
 from src.backend.models.sources_db import ExternalRelease, ExternalSourceRecord
 from src.backend.providers.sources.torrent_api_py_adapter import TorrentApiPySourceAdapter
 from src.backend.providers.sources.yify_adapter import YIFYSourceAdapter
 from src.backend.repositories.preferences import ExplorePreferencesRepository
 from src.backend.services.cascading_enricher import (
     CascadingMetadataEnricher,
+    _strip_html,
     resolve_tmdb_credential,
 )
+from src.backend.services.catalog_indexer import EZTVIndexerService
 from src.backend.services.imdb_sync_service import imdb_sync_service
 from src.backend.services.sources_registry import SourcesRegistryService
 
@@ -1211,6 +1214,92 @@ class HydrationOrchestratorService:
                     )
                     step_notes.append(f"{sk} cat.{sc.catalog_sweep_offset}(+{added_sw})")
                 state.sources[sk] = sc
+
+            if run_sources and (eff_run_mode == "novidades" or eff_target == "eztv"):
+                ez_inst = sources_session.get(ExternalSourceRecord, "eztv")
+                if ez_inst and ez_inst.enabled:
+                    try:
+                        ez_res = await EZTVIndexerService().sync_pages(
+                            session=sources_session,
+                            start_page=1,
+                            max_pages=eff_sidecar_pages,
+                            enrich_metadata=False,
+                        )
+                        ez_new = int(ez_res.get("torrents_indexed") or 0)
+                        ez_aff = ez_res.get("affected_imdb_ids") or []
+                        novidades_added += ez_new
+                        novidades_verified += len(ez_aff)
+                        ez_inst.status = "ready"
+                        ez_inst.last_error = None
+                        ez_inst.last_sync_at = _utc_now()
+                        sources_session.add(ez_inst)
+                        sources_session.commit()
+
+                        # Refresh missing episode summaries via TVMaze for affected series
+                        if ez_aff and not os.environ.get("PYTEST_CURRENT_TEST"):
+                            ez_shows = list(
+                                sources_session.exec(
+                                    select(EZTVShow).where(
+                                        col(EZTVShow.imdb_id).in_(ez_aff[:15]),
+                                        col(EZTVShow.tvmaze_id).is_not(None),
+                                    )
+                                ).all()
+                            )
+                            if ez_shows:
+                                async with create_shared_http_client(timeout=6.0) as ep_client:
+                                    for ezw in ez_shows[:10]:
+                                        missing_eps = list(
+                                            sources_session.exec(
+                                                select(EZTVEpisodeCatalog).where(
+                                                    EZTVEpisodeCatalog.show_id == ezw.id,
+                                                    col(EZTVEpisodeCatalog.summary).is_(None),
+                                                )
+                                            ).all()
+                                        )
+                                        if not missing_eps or not ezw.tvmaze_id:
+                                            continue
+                                        try:
+                                            r_ep = await ep_client.get(
+                                                f"https://api.tvmaze.com/shows/{ezw.tvmaze_id}/episodes"
+                                            )
+                                            if r_ep.status_code == 200:
+                                                tv_eps = {
+                                                    (
+                                                        int(e.get("season") or 0),
+                                                        int(e.get("number") or 0),
+                                                    ): e
+                                                    for e in (r_ep.json() or [])
+                                                    if isinstance(e, dict)
+                                                }
+                                                ep_dirty = False
+                                                for m_ep in missing_eps:
+                                                    hit = tv_eps.get((m_ep.season, m_ep.episode))
+                                                    if not hit:
+                                                        continue
+                                                    clean_sum = _strip_html(hit.get("summary"))
+                                                    if clean_sum:
+                                                        m_ep.summary = clean_sum
+                                                        sources_session.add(m_ep)
+                                                        ep_dirty = True
+                                                if ep_dirty:
+                                                    sources_session.commit()
+                                        except Exception:
+                                            pass
+
+                        self._record_event(
+                            "eztv",
+                            f"Novidades ({eff_sidecar_pages} págs)",
+                            "ok" if ez_new else "skipped",
+                            f"EZTV: +{ez_new} episódios novos ({len(ez_aff)} séries)",
+                        )
+                        step_notes.append(f"EZTV nov.(+{ez_new})")
+                    except Exception as exc:
+                        self._record_event(
+                            "eztv",
+                            "Novidades",
+                            "error",
+                            f"EZTV: {str(exc)[:80]}",
+                        )
 
             if run_sources:
                 SourcesRegistryService._recompute_source_counters(sources_session)

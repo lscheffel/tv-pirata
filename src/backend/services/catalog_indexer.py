@@ -291,6 +291,7 @@ class EZTVIndexerService:
             "shows_updated": shows_updated,
             "shows_enriched": shows_enriched,
             "affected_shows": len(affected_imdb_ids),
+            "affected_imdb_ids": sorted(affected_imdb_ids),
         }
 
     async def enrich_pending_shows(self, session: Session, limit: int = 100) -> int:
