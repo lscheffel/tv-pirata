@@ -2,7 +2,9 @@ import React from "react";
 import {
   ArrowDown,
   ArrowUp,
+  Globe,
   RotateCcw,
+  ShieldAlert,
   Shuffle,
   SlidersHorizontal,
   Sparkles,
@@ -10,7 +12,7 @@ import {
 } from "lucide-react";
 import { useExplorePreferences } from "../../context/PreferencesContext";
 import { useToast } from "../../context/ToastContext";
-import { SmartListConfig, SmartListSort } from "../../types";
+import { ForeignTitlesMode, SmartListConfig, SmartListSort } from "../../types";
 
 const SORT_LABELS: Array<{ key: SmartListSort; label: string }> = [
   { key: "balanced", label: "Equilibrada (Score)" },
@@ -82,6 +84,63 @@ export const DiscoveryFeedPanel: React.FC = () => {
             <RotateCcw className="w-3.5 h-3.5 text-brand-red" />
             Restaurar Padrão
           </button>
+        </div>
+      </div>
+
+      {/* Global Content Policy: Foreign Titles & Parental Control */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="p-4 rounded-2xl bg-surface-elevated border border-white/10 space-y-2.5">
+          <div className="flex items-center gap-2 text-xs font-bold text-white">
+            <Globe className="w-4 h-4 text-sky-400" />
+            <span>Controle de Títulos Estrangeiros (Global)</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                { key: "off", label: "Desativado (Apenas EN-US e PT-BR)" },
+                { key: "lite", label: "Lite (EN, PT-BR, ESP, CHI, KOR)" },
+                { key: "all", label: "Todos (Catálogo Completo)" },
+              ] as Array<{ key: ForeignTitlesMode; label: string }>
+            ).map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => updatePreferences({ foreign_titles_mode: opt.key })}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border cursor-pointer transition-colors ${
+                  preferences.foreign_titles_mode === opt.key
+                    ? "bg-sky-500/25 text-sky-100 border-sky-400/60"
+                    : "bg-canvas text-slate-300 border-white/10 hover:text-white"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Afeta globalmente a Vitrine Descobrir e o Catálogo (padrão: apenas EN-US e PT-BR).
+          </p>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-surface-elevated border border-white/10 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-2 text-xs font-bold text-white">
+              <ShieldAlert className="w-4 h-4 text-amber-400" />
+              <span>Controle Parental (Global)</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={preferences.parental_control_enabled}
+              onChange={(e) =>
+                updatePreferences({ parental_control_enabled: e.target.checked })
+              }
+              className="accent-amber-400 cursor-pointer"
+            />
+          </div>
+          <p className="text-[11px] text-slate-300">
+            {preferences.parental_control_enabled
+              ? "Ativo: animações, desenhos, animes e conteúdos infantis estão ocultos em todo o app."
+              : "Desativado por padrão: exibe animações, animes e conteúdos infantis normalmente."}
+          </p>
         </div>
       </div>
 

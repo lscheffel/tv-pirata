@@ -1,5 +1,6 @@
 import {
   CustomShortcutConfig,
+  ForeignTitlesMode,
   MediaBadgeAction,
   ProviderBadgeAction,
   SmartListConfig,
@@ -39,6 +40,8 @@ export const DEFAULT_EXPLORE_PREFERENCES: UserExplorePreferences = {
   hero_auto_rotate: true,
   hero_interval_sec: 12,
   impression_ttl_hours: 48,
+  foreign_titles_mode: "off",
+  parental_control_enabled: false,
   smart_lists: DEFAULT_SMART_LISTS_V2,
   hidden_builtin_shortcuts: [],
   custom_shortcuts: [],
@@ -57,6 +60,7 @@ const VALID_MEDIA_ACTIONS: MediaBadgeAction[] = [
 ];
 
 const VALID_SORTS: SmartListSort[] = ["balanced", "rating", "popularity", "newest", "p2p_recent"];
+const VALID_FOREIGN_MODES: ForeignTitlesMode[] = ["off", "lite", "all"];
 
 export function sanitizePreferences(raw: unknown): UserExplorePreferences {
   if (!raw || typeof raw !== "object") {
@@ -155,6 +159,15 @@ export function sanitizePreferences(raw: unknown): UserExplorePreferences {
       168,
       DEFAULT_EXPLORE_PREFERENCES.impression_ttl_hours
     ),
+    foreign_titles_mode: VALID_FOREIGN_MODES.includes(
+      obj.foreign_titles_mode as ForeignTitlesMode
+    )
+      ? (obj.foreign_titles_mode as ForeignTitlesMode)
+      : DEFAULT_EXPLORE_PREFERENCES.foreign_titles_mode,
+    parental_control_enabled:
+      typeof obj.parental_control_enabled === "boolean"
+        ? obj.parental_control_enabled
+        : DEFAULT_EXPLORE_PREFERENCES.parental_control_enabled,
     smart_lists: smartLists,
     hidden_builtin_shortcuts: Array.isArray(obj.hidden_builtin_shortcuts)
       ? obj.hidden_builtin_shortcuts.map(String)

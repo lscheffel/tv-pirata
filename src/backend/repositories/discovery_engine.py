@@ -24,6 +24,10 @@ from src.backend.core.canonical_taxonomy import (
     merge_canonical_providers,
     normalize_status_label,
 )
+from src.backend.core.content_filters import (
+    build_foreign_sql_clause,
+    build_parental_sql_clause,
+)
 from src.backend.models.catalog_domain import (
     DataProvenance,
     ExternalIdentifier,
@@ -869,7 +873,18 @@ class DiscoveryEngineRepository:
         page_size: int = 24,
     ) -> dict[str, Any]:
         """Execute 100% SQL Pushdown filtering, ordering, and pagination over 279k+ IMDb titles."""
+        from src.backend.repositories.preferences import ExplorePreferencesRepository
+
         filters: list[Any] = []
+        prefs = ExplorePreferencesRepository.get_preferences(session)
+        if not language:
+            f_clause = build_foreign_sql_clause(prefs.foreign_titles_mode)
+            if f_clause is not None:
+                filters.append(f_clause)
+        p_clause = build_parental_sql_clause(prefs.parental_control_enabled)
+        if p_clause is not None:
+            filters.append(p_clause)
+
         active_p2p_imdbs = cls._active_p2p_imdb_set(eztv_session)
         media_sources_by_imdb = cls._build_sources_media_index(eztv_session)
 

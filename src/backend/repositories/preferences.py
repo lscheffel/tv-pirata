@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlmodel import Session
 
+from src.backend.core.content_filters import ForeignTitlesMode
+
 PREFERENCES_SYNC_KEY = "user_explore_preferences_v1"
 
 ProviderBadgeAction = Literal["filter_provider", "open_details", "open_provider_info"]
@@ -170,6 +172,8 @@ class UserExplorePreferences(BaseModel):
     hero_auto_rotate: bool = True
     hero_interval_sec: int = Field(default=12, ge=5, le=60)
     impression_ttl_hours: int = Field(default=48, ge=12, le=168)
+    foreign_titles_mode: ForeignTitlesMode = "off"
+    parental_control_enabled: bool = False
     smart_lists: list[SmartListConfig] = Field(default_factory=default_smart_lists_v2)
     hidden_builtin_shortcuts: list[str] = Field(default_factory=list)
     custom_shortcuts: list[CustomShortcutConfig] = Field(default_factory=list)

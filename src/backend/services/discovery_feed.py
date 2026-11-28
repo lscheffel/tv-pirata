@@ -13,6 +13,11 @@ from sqlmodel import Session, col, select
 
 from src.backend.core.cache import discovery_cache
 from src.backend.core.canonical_taxonomy import expand_genre_synonyms, normalize_genre_tokens
+from src.backend.core.content_filters import (
+    ForeignTitlesMode,
+    build_foreign_sql_clause,
+    build_parental_sql_clause,
+)
 from src.backend.models.catalog_domain import IMDbCatalogShow
 from src.backend.models.db import ShowRecord
 from src.backend.repositories.discovery_engine import DiscoveryEngineRepository
@@ -261,10 +266,18 @@ class DiscoveryFeedService:
         profile: dict[str, Any],
         media_imdb_set: set[str],
         only_with_media: bool = False,
+        foreign_titles_mode: ForeignTitlesMode = "off",
+        parental_control_enabled: bool = False,
         pool_limit: int = 260,
     ) -> tuple[list[IMDbCatalogShow], dict[str, Any], str]:
         """Fetch pre-filtered quality pool + CatalogView FilterSnapshot for a category."""
         stmt = select(IMDbCatalogShow).where(col(IMDbCatalogShow.poster_url).is_not(None))
+        f_clause = build_foreign_sql_clause(foreign_titles_mode)
+        if f_clause is not None:
+            stmt = stmt.where(f_clause)
+        p_clause = build_parental_sql_clause(parental_control_enabled)
+        if p_clause is not None:
+            stmt = stmt.where(p_clause)
         catalog_filter: dict[str, Any] = {}
         display_title_override = ""
 
@@ -419,7 +432,10 @@ class DiscoveryFeedService:
         scope = discovery_cache.session_scope(session)
         top_key = ":".join(profile.get("top_genres", [])[:2])
         anchor_key = profile.get("anchor_imdb_id") or ""
-        cache_key = f"feed_bucket:{category}:{pool_limit}:{top_key}:{anchor_key}"
+        cache_key = (
+            f"feed_bucket:{category}:{pool_limit}:{foreign_titles_mode}"
+            f":{int(parental_control_enabled)}:{top_key}:{anchor_key}"
+        )
         rows = discovery_cache.get_or_set(
             scope,
             cache_key,
@@ -462,19 +478,23 @@ class DiscoveryFeedService:
 
         seen_global: set[str] = set()
         completed_ids: set[str] = profile["completed_imdb_ids"]
+        f_clause = build_foreign_sql_clause(prefs.foreign_titles_mode)
+        p_clause = build_parental_sql_clause(prefs.parental_control_enabled)
 
         # 1. Hero Pool (12–15 rotated candidates with backdrop + rating >= 7.0 + recency)
+        hero_stmt = select(IMDbCatalogShow).where(
+            col(IMDbCatalogShow.start_year) >= 2022,
+            col(IMDbCatalogShow.backdrop_url).is_not(None),
+            col(IMDbCatalogShow.poster_url).is_not(None),
+            col(IMDbCatalogShow.rating_score) >= 7.0,
+        )
+        if f_clause is not None:
+            hero_stmt = hero_stmt.where(f_clause)
+        if p_clause is not None:
+            hero_stmt = hero_stmt.where(p_clause)
         hero_candidates = list(
             session.exec(
-                select(IMDbCatalogShow)
-                .where(
-                    col(IMDbCatalogShow.start_year) >= 2022,
-                    col(IMDbCatalogShow.backdrop_url).is_not(None),
-                    col(IMDbCatalogShow.poster_url).is_not(None),
-                    col(IMDbCatalogShow.rating_score) >= 7.0,
-                )
-                .order_by(col(IMDbCatalogShow.rating_votes).desc())
-                .limit(120)
+                hero_stmt.order_by(col(IMDbCatalogShow.rating_votes).desc()).limit(120)
             ).all()
         )
         hero_candidates = [r for r in hero_candidates if r.imdb_id not in completed_ids]
@@ -514,6 +534,10 @@ class DiscoveryFeedService:
             col(IMDbCatalogShow.poster_url).is_not(None),
             col(IMDbCatalogShow.rating_score) >= 6.8,
         )
+        if f_clause is not None:
+            r_stmt = r_stmt.where(f_clause)
+        if p_clause is not None:
+            r_stmt = r_stmt.where(p_clause)
         if roulette_scope == "movie":
             r_stmt = r_stmt.where(col(IMDbCatalogShow.title_type) == "movie")
         elif roulette_scope == "tv_show":
@@ -580,7 +604,9 @@ class DiscoveryFeedService:
                 profile=profile,
                 media_imdb_set=media_imdb_set,
                 only_with_media=sl.only_with_media,
-                pool_limit=380,
+                foreign_titles_mode=prefs.foreign_titles_mode,
+                parental_control_enabled=prefs.parental_control_enabled,
+                pool_limit=260,
             )
             list_pools.append((sl, pool_rows, cat_filter, title_ovr))
 

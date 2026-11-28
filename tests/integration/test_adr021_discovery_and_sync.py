@@ -254,3 +254,93 @@ async def test_imdb_sync_service_pytest_isolation(adr021_engines):
         st = await svc.start_sync(ms, include_episodes=False)
         assert st.state == "COMPLETED"
         assert st.works_processed == 0
+
+
+def test_global_foreign_titles_and_parental_control(adr021_client: TestClient, adr021_engines):
+    ms_engine, _ = adr021_engines
+    with Session(ms_engine) as ms:
+        ms.add(
+            IMDbCatalogShow(
+                imdb_id="tt9900001",
+                imdb_num=9900001,
+                title_type="movie",
+                primary_title="French Film",
+                start_year=2025,
+                genres="Drama",
+                languages="Français",
+                countries="FR",
+                rating_score=8.5,
+                rating_votes=9000,
+                poster_url="https://img.example.com/fr.jpg",
+                backdrop_url="https://img.example.com/frb.jpg",
+            )
+        )
+        ms.add(
+            IMDbCatalogShow(
+                imdb_id="tt9900002",
+                imdb_num=9900002,
+                title_type="movie",
+                primary_title="Spanish Hit",
+                start_year=2025,
+                genres="Drama",
+                languages="Español",
+                countries="ES",
+                rating_score=8.5,
+                rating_votes=9000,
+                poster_url="https://img.example.com/es.jpg",
+                backdrop_url="https://img.example.com/esb.jpg",
+            )
+        )
+        ms.add(
+            IMDbCatalogShow(
+                imdb_id="tt9900003",
+                imdb_num=9900003,
+                title_type="animation",
+                primary_title="Kids Cartoon",
+                start_year=2025,
+                genres="Animation, Kids",
+                languages="English",
+                countries="US",
+                rating_score=8.5,
+                rating_votes=9000,
+                poster_url="https://img.example.com/anim.jpg",
+                backdrop_url="https://img.example.com/animb.jpg",
+            )
+        )
+        ms.commit()
+
+    # Default: foreign_titles_mode='off', parental_control_enabled=False
+    w_off = adr021_client.get("/api/explore/works?page_size=100").json()["items"]
+    titles_off = {w["title"] for w in w_off}
+    assert "French Film" not in titles_off
+    assert "Spanish Hit" not in titles_off
+    assert "Kids Cartoon" in titles_off
+
+    # Lite + Parental Control enabled
+    adr021_client.put(
+        "/api/explore/preferences",
+        json={"foreign_titles_mode": "lite", "parental_control_enabled": True},
+    )
+    w_lite = adr021_client.get("/api/explore/works?page_size=100").json()["items"]
+    titles_lite = {w["title"] for w in w_lite}
+    assert "Spanish Hit" in titles_lite
+    assert "French Film" not in titles_lite
+    assert "Kids Cartoon" not in titles_lite
+
+    # Also verify feed respects parental control
+    feed_pc = adr021_client.get("/api/explore/feed?session_seed=pc1").json()
+    feed_titles = {
+        it["title"] for sl in feed_pc["smart_lists"] for it in sl["items"]
+    } | {h["title"] for h in feed_pc["hero_pool"]}
+    assert "Kids Cartoon" not in feed_titles
+
+    # All languages + Parental Control off
+    adr021_client.put(
+        "/api/explore/preferences",
+        json={"foreign_titles_mode": "all", "parental_control_enabled": False},
+    )
+    w_all = adr021_client.get("/api/explore/works?page_size=100").json()["items"]
+    titles_all = {w["title"] for w in w_all}
+    assert "French Film" in titles_all
+    assert "Spanish Hit" in titles_all
+    assert "Kids Cartoon" in titles_all
