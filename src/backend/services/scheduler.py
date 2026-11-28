@@ -11,7 +11,7 @@ from typing import Optional
 
 from sqlmodel import Session
 
-from src.backend.core.database import engine
+from src.backend.core.database import engine, sources_engine
 from src.backend.services.catalog_indexer import EZTVIndexerService
 
 logger = logging.getLogger(__name__)
@@ -85,8 +85,10 @@ class BackgroundSyncService:
     async def execute_cycle(self) -> dict:
         """Execute a single atomic synchronization and reconciliation cycle."""
         self.status = "RUNNING"
-        with Session(engine) as session:
-            telemetry = await self._indexer.sync_and_reconcile_recent(session)
+        with Session(engine) as session, Session(sources_engine) as src_session:
+            telemetry = await self._indexer.sync_and_reconcile_recent(
+                session, sources_session=src_session
+            )
             self.last_releases_found = telemetry.get("releases_inspected", 0)
             self.last_notifications_created = telemetry.get("notifications_created", 0)
             self.last_run_at = datetime.now(timezone.utc)

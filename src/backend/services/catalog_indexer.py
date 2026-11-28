@@ -164,7 +164,10 @@ class EZTVIndexerService:
         now_utc = datetime.now(timezone.utc)
         bind = session.get_bind()
         has_ext_table = bool(bind is not None and sa_inspect(bind).has_table("external_releases"))
-        has_eztv_show_table = bool(bind is not None and sa_inspect(bind).has_table("shows"))
+        has_eztv_show_table = False
+        if bind is not None and sa_inspect(bind).has_table("shows"):
+            show_cols = {c["name"] for c in sa_inspect(bind).get_columns("shows")}
+            has_eztv_show_table = "slug" in show_cols and "id" in show_cols
 
         for idx, page in enumerate(range(start_page, start_page + max_pages)):
             if idx > 0 and request_delay > 0:
@@ -571,7 +574,11 @@ class EZTVIndexerService:
         session.commit()
         return enriched_count
 
-    async def sync_and_reconcile_recent(self, session: Session) -> dict:
+    async def sync_and_reconcile_recent(
+        self,
+        session: Session,
+        sources_session: Optional[Session] = None,
+    ) -> dict:
         """Fetch latest EZTV page and reconcile matching releases with user's library."""
         raw_torrents = await self.fetch_page(page=1, limit=100)
         if not raw_torrents:
@@ -581,9 +588,14 @@ class EZTVIndexerService:
                 "torrents_indexed": 0,
             }
 
-        # Index page 1 normally into local catalog
+        # Index page 1 into sources.db (when provided) or session fallback
+        target_cat_session = sources_session or session
         telemetry = await self.sync_pages(
-            session=session, start_page=1, max_pages=1, enrich_metadata=True
+            session=target_cat_session,
+            start_page=1,
+            max_pages=1,
+            enrich_metadata=True,
+            mainstream_session=session if sources_session is not None else None,
         )
 
         # Build lookup table of user's saved shows
