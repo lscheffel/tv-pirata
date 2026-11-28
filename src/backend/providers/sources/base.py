@@ -113,9 +113,7 @@ def validate_safe_url(
     return None
 
 
-def mask_secret_config(
-    config: dict[str, Any], secret_fields: set[str]
-) -> dict[str, Any]:
+def mask_secret_config(config: dict[str, Any], secret_fields: set[str]) -> dict[str, Any]:
     """Mask secret configuration values before returning over REST API."""
     masked: dict[str, Any] = {}
     for key, val in config.items():

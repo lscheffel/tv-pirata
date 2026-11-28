@@ -350,13 +350,14 @@ def test_cross_db_self_heal_and_strict_6_tier_waterfall(hydration_client, monkey
                 },
             )
         )
-        respx.get("https://pt.wikipedia.org/api/rest_v1/page/summary/Duna_%28filme_de_2021%29").mock(
+        respx.get(
+            "https://pt.wikipedia.org/api/rest_v1/page/summary/Duna_%28filme_de_2021%29"
+        ).mock(
             return_value=httpx.Response(
                 200,
                 json={
                     "extract": (
-                        "Duna é um filme épico de ficção científica dirigido por "
-                        "Denis Villeneuve."
+                        "Duna é um filme épico de ficção científica dirigido por Denis Villeneuve."
                     ),
                 },
             )
@@ -575,9 +576,7 @@ def test_domain_semaphore_loop_isolation_and_parallel_fanout(hydration_client, m
             )
         )
 
-        report = asyncio.run(
-            CascadingMetadataEnricher.enrich_batch(ms, ss, batch_size=6)
-        )
+        report = asyncio.run(CascadingMetadataEnricher.enrich_batch(ms, ss, batch_size=6))
         assert report["processed"] == 6
         assert report["updated"] == 6
         assert report["provenance"]["tmdb"] == 6
@@ -734,6 +733,3 @@ def test_adr020_run_mode_novidades_varredura_and_config(hydration_client) -> Non
     nov_st = nov_step.json()["status"]
     assert nov_st["state"] == "COMPLETED"
     assert nov_st["last_novidades_at"] is not None
-
-
-

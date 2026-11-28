@@ -530,7 +530,7 @@ export const HydrationConsoleCard: React.FC<HydrationConsoleCardProps> = ({
                   Fontes elegíveis na Varredura Profunda
                 </span>
                 <div className="flex flex-wrap gap-2 pt-1">
-                  {(["tgx", "nyaasi", "bitsearch", "glodls"] as const).map((sk) => {
+                  {(["tgx", "nyaasi", "bitsearch", "glodls", "eztv"] as const).map((sk) => {
                     const enabledList = status.sweep_enabled_sources ?? ["tgx", "nyaasi"];
                     const checked = enabledList.includes(sk);
                     return (
@@ -763,10 +763,22 @@ export const HydrationConsoleCard: React.FC<HydrationConsoleCardProps> = ({
                     </p>
                   </div>
                 ) : (
-                  <p className="text-[11px] text-slate-400">
-                    {cov.total_shows.toLocaleString("pt-BR")} obras •{" "}
-                    {(cov.total_episodes ?? 0).toLocaleString("pt-BR")} episódios
-                  </p>
+                  <div className="space-y-0.5">
+                    <p className="text-[11px] text-slate-400">
+                      {cov.total_shows.toLocaleString("pt-BR")} obras •{" "}
+                      {(cov.total_episodes ?? 0).toLocaleString("pt-BR")} episódios
+                    </p>
+                    {imdbStatus?.cache_status === "remote_check_failed" ? (
+                      <p className="text-[10px] font-semibold text-rose-300">
+                        Falha ao checar revisão remota (sem falso atualizado)
+                      </p>
+                    ) : imdbStatus && ((imdbStatus.delta_inserted ?? 0) > 0 || (imdbStatus.delta_updated ?? 0) > 0 || imdbStatus.remote_last_modified) ? (
+                      <p className="text-[10px] text-amber-200/80 truncate">
+                        +{imdbStatus.delta_inserted ?? 0} novas · +{imdbStatus.delta_updated ?? 0} notas
+                        {imdbStatus.remote_last_modified ? ` • Rev: ${imdbStatus.remote_last_modified.slice(5, 16)}` : ""}
+                      </p>
+                    ) : null}
+                  </div>
                 )}
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                   <label className="inline-flex items-center gap-1.5 text-[10px] text-slate-300 cursor-pointer">

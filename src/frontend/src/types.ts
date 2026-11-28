@@ -415,14 +415,85 @@ export interface SharedCollaborationResponse {
 
 export type ProviderBadgeAction = "filter_provider" | "open_details" | "open_provider_info";
 export type MediaBadgeAction = "open_sources_modal" | "filter_has_media" | "open_details";
+export type SmartListSort = "balanced" | "rating" | "popularity" | "newest" | "p2p_recent";
+export type RouletteScope = "all" | "movie" | "tv_show" | "with_media";
+
+export interface FilterSnapshot {
+  selectedTypes: string[];
+  genresAny: string[];
+  genresAll: string[];
+  genresNot: string[];
+  selectedProviders: string[];
+  selectedSources: string[];
+  selectedStatus: string;
+  yearFrom: string;
+  yearTo: string;
+  minRating: number;
+  minRuntime: string;
+  personFilter: string;
+  roleFilter: string;
+  excludeWatched: boolean;
+  onlyWithP2P: boolean;
+  sortBy: string;
+}
+
+export interface SmartListConfig {
+  id: string;
+  title: string;
+  category: string;
+  enabled: boolean;
+  order: number;
+  limit: number;
+  sort_by: SmartListSort;
+  only_with_media: boolean;
+  variance_override?: number | null;
+}
+
+export interface CustomShortcutConfig {
+  id: string;
+  label: string;
+  filters: Partial<FilterSnapshot>;
+  pinned: boolean;
+}
 
 export interface UserExplorePreferences {
-  schema_version: 1;
+  schema_version: 1 | 2;
   badge_provider_action: ProviderBadgeAction;
   badge_media_action: MediaBadgeAction;
   auto_apply_filters: boolean;
   show_all_genres: boolean;
   filter_panel_expanded: boolean;
+  discovery_variance_pct: number;
+  hero_auto_rotate: boolean;
+  hero_interval_sec: number;
+  impression_ttl_hours: number;
+  smart_lists: SmartListConfig[];
+  hidden_builtin_shortcuts: string[];
+  custom_shortcuts: CustomShortcutConfig[];
+}
+
+export interface SmartListFeedSection {
+  id: string;
+  title: string;
+  category: string;
+  limit: number;
+  sort_by: SmartListSort;
+  only_with_media: boolean;
+  catalog_filter: Partial<FilterSnapshot>;
+  items: UnifiedShow[];
+}
+
+export interface DiscoveryFeedResponse {
+  hero_pool: Array<UnifiedShow & { highlight_reason?: string }>;
+  roulette: Array<UnifiedShow & { roulette_tag?: string }>;
+  smart_lists: SmartListFeedSection[];
+  dynamic_shortcuts: Array<{ id: string; label: string; filters: Partial<FilterSnapshot> }>;
+  stats: {
+    unique_titles: number;
+    lists_count?: number;
+    variance_pct?: number;
+    active_impressions?: number;
+  };
 }
 
 export interface ExternalSourceSummary {
@@ -697,16 +768,23 @@ export interface IMDbSyncJobStatus {
   state: "IDLE" | "RUNNING" | "COMPLETED" | "ERROR";
   stage:
     | "idle"
+    | "checking_remote"
     | "downloading"
     | "importing_works"
     | "importing_episodes"
     | "rebuilding_fts"
+    | "refreshing_facets"
     | "completed"
     | "error";
   progress_pct: number;
   include_episodes: boolean;
   works_processed: number;
   episodes_processed: number;
+  delta_inserted?: number;
+  delta_updated?: number;
+  local_last_modified?: string | null;
+  remote_last_modified?: string | null;
+  cache_status?: "unknown" | "up_to_date" | "downloaded" | "remote_check_failed";
   last_sync_at?: string | null;
   last_error?: string | null;
   message?: string | null;

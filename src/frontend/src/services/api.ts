@@ -123,6 +123,27 @@ export const api = {
         method: "PUT",
         body: JSON.stringify(prefs),
       }),
+    getFeed: (
+      sessionSeed: string,
+      rouletteScope: "all" | "movie" | "tv_show" | "with_media" = "all",
+      rouletteSpin = 0,
+      options: { signal?: AbortSignal } = {}
+    ) => {
+      const q = new URLSearchParams({
+        session_seed: sessionSeed,
+        roulette_scope: rouletteScope,
+        roulette_spin: String(rouletteSpin),
+      });
+      return request<import("../types").DiscoveryFeedResponse>(
+        `/explore/feed?${q.toString()}`,
+        { signal: options.signal }
+      );
+    },
+    recordImpressions: (imdbIds: string[], surface: "hero" | "roulette" = "hero") =>
+      request<{ recorded: number; active_buffer: number }>("/explore/impressions", {
+        method: "POST",
+        body: JSON.stringify({ imdb_ids: imdbIds, surface }),
+      }),
     getWorkDossier: (workId: number | string) =>
       request<MediaWorkDossier>(`/explore/works/${encodeURIComponent(String(workId))}`),
     getPeople: (q?: string, department?: string) => {

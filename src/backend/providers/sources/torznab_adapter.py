@@ -201,11 +201,7 @@ class TorznabSourceAdapter(BaseSourceAdapter):
                 releases=[],
             )
 
-        q_term = (
-            query_ctx.custom_query
-            or query_ctx.original_title
-            or query_ctx.title
-        ).strip()
+        q_term = (query_ctx.custom_query or query_ctx.original_title or query_ctx.title).strip()
         params: dict[str, str] = {"t": "search", "q": q_term}
         if cfg.api_key:
             params["apikey"] = cfg.api_key

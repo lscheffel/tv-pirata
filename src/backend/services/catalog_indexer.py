@@ -9,9 +9,13 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
+from sqlalchemy import inspect as sa_inspect
 from sqlmodel import Session, select
 
+from src.backend.models.catalog_domain import IMDbCatalogShow
 from src.backend.models.db import CatalogRelease, CatalogShow, ShowRecord
+from src.backend.models.eztv_db import EZTVShow
+from src.backend.models.sources_db import ExternalRelease
 from src.backend.models.unified import TorrentRelease
 from src.backend.providers.tmdb import TMDBProvider
 from src.backend.providers.tvmaze import TVMazeProvider
@@ -76,17 +80,22 @@ class EZTVIndexerService:
         return clean.strip() or source
 
     async def fetch_page(self, page: int = 1, limit: int = 100) -> list[dict]:
-        """Fetch a single page of releases from EZTV API."""
+        """Fetch a single page of releases from EZTV API with 429/5xx backoff."""
         url = f"{self.base_url}/get-torrents"
         params = {"page": page, "limit": limit}
         client = self._client or httpx.AsyncClient(timeout=15.0)
         should_close = self._client is None
 
         try:
-            response = await client.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
-            return data.get("torrents", [])
+            for attempt in range(3):
+                response = await client.get(url, params=params)
+                if response.status_code in (429, 500, 502, 503, 504) and attempt < 2:
+                    await asyncio.sleep(0.6 * (2**attempt))
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                return data.get("torrents", [])
+            return []
         except Exception as exc:
             logger.warning("Error fetching EZTV page %s: %s", page, exc)
             return []
@@ -138,19 +147,50 @@ class EZTVIndexerService:
         start_page: int = 1,
         max_pages: int = 5,
         enrich_metadata: bool = True,
+        *,
+        stop_on_known_pages: int = 0,
+        request_delay: float = 0.0,
+        mainstream_session: Optional[Session] = None,
     ) -> dict:
-        """Synchronize a range of pages from EZTV and persist into catalog."""
+        """Synchronize a range of pages from EZTV with dual-write and optional watermark stop."""
         torrents_indexed = 0
         shows_created = 0
         shows_updated = 0
         shows_enriched = 0
+        pages_processed = 0
+        consecutive_known_pages = 0
 
         affected_imdb_ids: set[str] = set()
+        now_utc = datetime.now(timezone.utc)
+        bind = session.get_bind()
+        has_ext_table = bool(bind is not None and sa_inspect(bind).has_table("external_releases"))
+        has_eztv_show_table = bool(bind is not None and sa_inspect(bind).has_table("shows"))
 
-        for page in range(start_page, start_page + max_pages):
+        for idx, page in enumerate(range(start_page, start_page + max_pages)):
+            if idx > 0 and request_delay > 0:
+                await asyncio.sleep(request_delay)
             raw_torrents = await self.fetch_page(page=page, limit=100)
             if not raw_torrents:
                 break
+            pages_processed += 1
+            page_new_torrents = 0
+
+            # Preload existing ExternalRelease keys for this page
+            page_ext_ids = [
+                str(int(it.get("id", 0))) for it in raw_torrents if int(it.get("id", 0)) > 0
+            ]
+            existing_ext_map: dict[str, ExternalRelease] = {}
+            if has_ext_table and page_ext_ids:
+                try:
+                    ext_rows = session.exec(
+                        select(ExternalRelease).where(
+                            ExternalRelease.source_key == "eztv",
+                            ExternalRelease.external_id.in_(page_ext_ids),
+                        )
+                    ).all()
+                    existing_ext_map = {r.external_id: r for r in ext_rows}
+                except Exception:
+                    existing_ext_map = {}
 
             for item in raw_torrents:
                 norm_imdb = self.normalize_imdb_id(item.get("imdb_id"))
@@ -162,23 +202,17 @@ class EZTVIndexerService:
                 if eztv_id == 0:
                     continue
 
-                # Parse release attributes using existing TorrentRelease normalizer
                 parsed = TorrentRelease.from_eztv(item)
-
-                # Check if release exists
                 existing_rel = session.exec(
                     select(CatalogRelease).where(CatalogRelease.eztv_id == eztv_id)
                 ).first()
-
                 rel_timestamp = item.get("date_released_unix", 0)
 
                 if existing_rel:
-                    # Update dynamic seed and peer metrics
                     existing_rel.seeds = parsed.seeds
                     existing_rel.peers = parsed.peers
                     existing_rel.magnet_url = parsed.magnet_url
                 else:
-                    # Create new release
                     new_rel = CatalogRelease(
                         eztv_id=eztv_id,
                         hash=parsed.hash,
@@ -197,11 +231,47 @@ class EZTVIndexerService:
                     )
                     session.add(new_rel)
                     torrents_indexed += 1
+                    page_new_torrents += 1
+
+                # Dual-write idempotente para ExternalRelease (source_key="eztv")
+                if has_ext_table:
+                    ext_key = str(eztv_id)
+                    ext_rec = existing_ext_map.get(ext_key)
+                    if ext_rec is not None:
+                        ext_rec.seeds = parsed.seeds
+                        ext_rec.peers = parsed.peers
+                        ext_rec.magnet_url = parsed.magnet_url
+                        ext_rec.last_checked_at = now_utc
+                        session.add(ext_rec)
+                    else:
+                        new_ext = ExternalRelease(
+                            source_key="eztv",
+                            external_id=ext_key,
+                            imdb_id=norm_imdb,
+                            title=parsed.title or parsed.filename,
+                            work_type="tvSeries",
+                            season=parsed.season,
+                            episode=parsed.episode,
+                            quality=parsed.quality,
+                            seeds=parsed.seeds,
+                            peers=parsed.peers,
+                            size_bytes=parsed.size_bytes,
+                            release_type="magnet" if parsed.magnet_url else "torrent",
+                            magnet_url=parsed.magnet_url,
+                            torrent_url=parsed.torrent_url,
+                            info_hash=parsed.hash,
+                            matched_by="eztv_api",
+                            match_confidence=1.0,
+                            created_at=now_utc,
+                            last_checked_at=now_utc,
+                        )
+                        session.add(new_ext)
+                        existing_ext_map[ext_key] = new_ext
 
                 # Check/Create CatalogShow
+                clean_name = self.extract_clean_show_title(parsed.title, parsed.filename)
                 catalog_show = session.get(CatalogShow, norm_imdb)
                 if not catalog_show:
-                    clean_name = self.extract_clean_show_title(parsed.title, parsed.filename)
                     catalog_show = CatalogShow(
                         imdb_id=norm_imdb,
                         title=clean_name,
@@ -216,7 +286,33 @@ class EZTVIndexerService:
                 else:
                     shows_updated += 1
 
+                # Ensure EZTVShow exists in sources.db shows table
+                if has_eztv_show_table:
+                    ez_show = session.exec(
+                        select(EZTVShow).where(EZTVShow.imdb_id == norm_imdb)
+                    ).first()
+                    if ez_show is None:
+                        imdb_digits = norm_imdb.lstrip("t")
+                        ez_id = int(imdb_digits) if imdb_digits.isdigit() else None
+                        if ez_id and session.get(EZTVShow, ez_id) is None:
+                            session.add(
+                                EZTVShow(
+                                    id=ez_id,
+                                    imdb_id=norm_imdb,
+                                    name=clean_name,
+                                    updated_at=now_utc.isoformat(),
+                                )
+                            )
+
             session.commit()
+
+            if stop_on_known_pages > 0:
+                if page_new_torrents == 0:
+                    consecutive_known_pages += 1
+                    if consecutive_known_pages >= stop_on_known_pages:
+                        break
+                else:
+                    consecutive_known_pages = 0
 
         # Update aggregated metrics for affected shows
         for imdb_id in affected_imdb_ids:
@@ -245,6 +341,25 @@ class EZTVIndexerService:
             session.add(show)
 
         session.commit()
+
+        # Propagate has_eztv=True to mainstream.db when mainstream_session is supplied
+        if mainstream_session is not None and affected_imdb_ids:
+            try:
+                aff_list = list(affected_imdb_ids)
+                for i in range(0, len(aff_list), 400):
+                    chunk = aff_list[i : i + 400]
+                    rows = mainstream_session.exec(
+                        select(IMDbCatalogShow).where(
+                            IMDbCatalogShow.imdb_id.in_(chunk),
+                            IMDbCatalogShow.has_eztv.is_(False),
+                        )
+                    ).all()
+                    for ms_row in rows:
+                        ms_row.has_eztv = True
+                        mainstream_session.add(ms_row)
+                mainstream_session.commit()
+            except Exception as exc:
+                logger.warning("Failed to propagate has_eztv to mainstream.db: %s", exc)
 
         # High-throughput Concurrent Enrichment for Unenriched Shows
         if enrich_metadata:
@@ -285,13 +400,137 @@ class EZTVIndexerService:
                 session.commit()
 
         return {
-            "pages_processed": max_pages,
+            "pages_processed": pages_processed,
             "torrents_indexed": torrents_indexed,
             "shows_created": shows_created,
             "shows_updated": shows_updated,
             "shows_enriched": shows_enriched,
             "affected_shows": len(affected_imdb_ids),
             "affected_imdb_ids": sorted(affected_imdb_ids),
+        }
+
+    async def sync_pages_until_watermark(
+        self,
+        session: Session,
+        mainstream_session: Optional[Session] = None,
+        *,
+        max_pages: int = 25,
+        stop_on_known_pages: int = 2,
+        request_delay: float = 0.35,
+    ) -> dict:
+        """Scan recent EZTV pages until 2 consecutive known pages or max_pages ceiling."""
+        return await self.sync_pages(
+            session=session,
+            start_page=1,
+            max_pages=max_pages,
+            enrich_metadata=False,
+            stop_on_known_pages=stop_on_known_pages,
+            request_delay=request_delay,
+            mainstream_session=mainstream_session,
+        )
+
+    async def sync_library_shows_via_eztv(
+        self,
+        sources_session: Session,
+        mainstream_session: Session,
+        *,
+        offset: int = 0,
+        limit: int = 12,
+    ) -> dict:
+        """Sweep personal library ShowRecord rows against EZTV by imdb_id to backfill episodes."""
+        all_lib = list(
+            mainstream_session.exec(select(ShowRecord).where(ShowRecord.imdb_id.is_not(None))).all()
+        )
+        total = len(all_lib)
+        batch = all_lib[offset : offset + limit]
+        torrents_indexed = 0
+        now_utc = datetime.now(timezone.utc)
+        client = self._client or httpx.AsyncClient(timeout=12.0)
+        should_close = self._client is None
+        try:
+            for show in batch:
+                norm_imdb = self.normalize_imdb_id(show.imdb_id)
+                if not norm_imdb:
+                    continue
+                digits = norm_imdb.lstrip("t")
+                try:
+                    resp = await client.get(
+                        f"{self.base_url}/get-torrents",
+                        params={"imdb_id": digits, "limit": 100, "page": 1},
+                    )
+                    if resp.status_code != 200:
+                        continue
+                    torrents = resp.json().get("torrents") or []
+                except Exception:
+                    continue
+                for item in torrents:
+                    eztv_id = int(item.get("id", 0))
+                    if eztv_id == 0:
+                        continue
+                    parsed = TorrentRelease.from_eztv(item)
+                    if not sources_session.exec(
+                        select(CatalogRelease).where(CatalogRelease.eztv_id == eztv_id)
+                    ).first():
+                        sources_session.add(
+                            CatalogRelease(
+                                eztv_id=eztv_id,
+                                hash=parsed.hash,
+                                imdb_id=norm_imdb,
+                                title=parsed.title,
+                                filename=parsed.filename,
+                                season=parsed.season,
+                                episode=parsed.episode,
+                                quality=parsed.quality,
+                                seeds=parsed.seeds,
+                                peers=parsed.peers,
+                                size_bytes=parsed.size_bytes,
+                                magnet_url=parsed.magnet_url,
+                                torrent_url=parsed.torrent_url,
+                                date_released_unix=int(item.get("date_released_unix") or 0),
+                            )
+                        )
+                        torrents_indexed += 1
+                    ext_key = str(eztv_id)
+                    if not sources_session.exec(
+                        select(ExternalRelease).where(
+                            ExternalRelease.source_key == "eztv",
+                            ExternalRelease.external_id == ext_key,
+                        )
+                    ).first():
+                        sources_session.add(
+                            ExternalRelease(
+                                source_key="eztv",
+                                external_id=ext_key,
+                                imdb_id=norm_imdb,
+                                title=parsed.title or parsed.filename,
+                                work_type="tvSeries",
+                                season=parsed.season,
+                                episode=parsed.episode,
+                                quality=parsed.quality,
+                                seeds=parsed.seeds,
+                                peers=parsed.peers,
+                                size_bytes=parsed.size_bytes,
+                                release_type="magnet" if parsed.magnet_url else "torrent",
+                                magnet_url=parsed.magnet_url,
+                                torrent_url=parsed.torrent_url,
+                                info_hash=parsed.hash,
+                                matched_by="eztv_api",
+                                match_confidence=1.0,
+                                created_at=now_utc,
+                                last_checked_at=now_utc,
+                            )
+                        )
+                sources_session.commit()
+        finally:
+            if should_close:
+                await client.aclose()
+        next_offset = offset + len(batch)
+        return {
+            "titles_scanned": len(batch),
+            "releases_indexed": torrents_indexed,
+            "next_offset": next_offset,
+            "exhausted": next_offset >= total,
+            "total": total,
         }
 
     async def enrich_pending_shows(self, session: Session, limit: int = 100) -> int:

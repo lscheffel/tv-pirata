@@ -296,6 +296,138 @@ def _write_cache_meta(meta_path: Path, headers: dict, file_size: int) -> dict:
     return meta
 
 
+def cleanup_orphan_tmp_files() -> int:
+    """Remove leftover .tmp download artifacts in .imdb_cache/."""
+    if not CACHE_DIR.is_dir():
+        return 0
+    removed = 0
+    for p in CACHE_DIR.glob("*.tmp"):
+        try:
+            p.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
+def check_remote_revisions(
+    names: tuple[str, ...] = ("ratings", "basics", "akas"),
+    timeout: float = 12.0,
+) -> dict:
+    """Check remote IMDb TSV headers via HTTP HEAD against .imdb_cache/*.meta.json."""
+    CACHE_DIR.mkdir(exist_ok=True)
+    files_info: dict[str, dict] = {}
+    has_updates = False
+    check_failed = False
+    latest_remote_lm: str | None = None
+    latest_local_lm: str | None = None
+
+    for name in names:
+        url = FILES[name]
+        dest = CACHE_DIR / f"{name}.tsv.gz"
+        meta_path = CACHE_DIR / f"{name}.tsv.gz.meta.json"
+        local_meta = _read_cache_meta(meta_path)
+        local_etag = local_meta.get("etag", "")
+        local_lm = local_meta.get("last_modified", "")
+        local_size = dest.stat().st_size if dest.is_file() else 0
+        if local_lm and (latest_local_lm is None or name == "basics"):
+            latest_local_lm = local_lm
+
+        try:
+            head_resp = std_requests.head(url, allow_redirects=True, timeout=timeout)
+            head_resp.raise_for_status()
+            headers = dict(head_resp.headers)
+            remote_etag = (headers.get("ETag") or "").strip('"')
+            remote_lm = (headers.get("Last-Modified") or "").strip()
+            remote_len_str = headers.get("Content-Length")
+            remote_len = (
+                int(remote_len_str) if (remote_len_str and remote_len_str.isdigit()) else None
+            )
+            if remote_lm and (latest_remote_lm is None or name == "basics"):
+                latest_remote_lm = remote_lm
+
+            same_by_etag = bool(remote_etag and local_etag and remote_etag == local_etag)
+            same_by_lm = bool(
+                remote_lm
+                and local_lm
+                and remote_lm == local_lm
+                and (remote_len is None or remote_len == local_size)
+            )
+            same_legacy = bool(
+                not local_meta and dest.is_file() and remote_len is not None and remote_len == local_size
+            )
+            is_same = dest.is_file() and (same_by_etag or same_by_lm or same_legacy)
+            if not is_same:
+                has_updates = True
+            files_info[name] = {
+                "up_to_date": is_same,
+                "remote_last_modified": remote_lm or None,
+                "local_last_modified": local_lm or None,
+                "remote_etag": remote_etag or None,
+                "local_etag": local_etag or None,
+            }
+        except Exception as exc:
+            check_failed = True
+            files_info[name] = {
+                "up_to_date": False,
+                "error": str(exc),
+                "local_last_modified": local_lm or None,
+            }
+
+    return {
+        "has_updates": has_updates,
+        "check_failed": check_failed,
+        "remote_last_modified": latest_remote_lm,
+        "local_last_modified": latest_local_lm,
+        "files": files_info,
+    }
+
+
+def download_datasets_stage1(
+    *,
+    include_akas_br: bool = True,
+    include_episodes: bool = False,
+    force_download: bool = False,
+) -> dict:
+    """Stage 1: Clean orphan .tmp files and download updated TSVs without holding SQLite locks."""
+    cleanup_orphan_tmp_files()
+    targets: list[str] = ["ratings", "basics"]
+    if include_akas_br:
+        targets.append("akas")
+    if include_episodes:
+        targets.append("episodes")
+
+    downloaded_any = False
+    check_failed = False
+    local_lm: str | None = None
+    remote_lm: str | None = None
+
+    for name in targets:
+        dest = CACHE_DIR / f"{name}.tsv.gz"
+        meta_before = _read_cache_meta(CACHE_DIR / f"{name}.tsv.gz.meta.json")
+        mtime_before = dest.stat().st_mtime if dest.is_file() else 0.0
+        try:
+            _, _ = download_dataset_if_needed(name, FILES[name], force=force_download)
+        except Exception:
+            check_failed = True
+            raise
+        meta_after = _read_cache_meta(CACHE_DIR / f"{name}.tsv.gz.meta.json")
+        mtime_after = dest.stat().st_mtime if dest.is_file() else 0.0
+        if mtime_after > mtime_before:
+            downloaded_any = True
+        if name == "basics" or local_lm is None:
+            local_lm = meta_before.get("last_modified") or meta_after.get("last_modified")
+            remote_lm = meta_after.get("last_modified")
+
+    return {
+        "downloaded_any": downloaded_any,
+        "check_failed": check_failed,
+        "cache_status": "downloaded" if downloaded_any else "up_to_date",
+        "local_last_modified": local_lm,
+        "remote_last_modified": remote_lm,
+    }
+
+
 def download_dataset_if_needed(name: str, url: str, force: bool = False) -> tuple[Path, str]:
     """
     Valida via HTTP HEAD (ETag / Last-Modified / Content-Length) se o arquivo remoto
@@ -654,6 +786,14 @@ def sync_level1_datasets(
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if not get_sync_state(conn, "last_tmdb_changes_date"):
         set_sync_state(conn, "last_tmdb_changes_date", today_str)
+
+    basics_meta = _read_cache_meta(CACHE_DIR / "basics.tsv.gz.meta.json")
+    return {
+        "delta_inserted": locals().get("total_inserted", 0),
+        "delta_updated": locals().get("total_updated", 0),
+        "remote_last_modified": basics_meta.get("last_modified"),
+        "local_last_modified": basics_meta.get("last_modified"),
+    }
 
 
 # =====================================================================

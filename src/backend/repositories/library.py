@@ -163,9 +163,7 @@ class LibraryRepository:
         watched_by_ep_id: dict[int, bool] = {}
         if ep_ids:
             watch_rows = self.session.exec(
-                select(EpisodeWatchRecord).where(
-                    col(EpisodeWatchRecord.episode_id).in_(ep_ids)
-                )
+                select(EpisodeWatchRecord).where(col(EpisodeWatchRecord.episode_id).in_(ep_ids))
             ).all()
             for w in watch_rows:
                 watched_by_ep_id[w.episode_id] = bool(w.is_watched)

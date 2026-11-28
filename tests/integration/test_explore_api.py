@@ -107,4 +107,3 @@ def test_explore_calendar_and_rankings_endpoints():
     assert len(rankings["top_movies"]) >= 3
     assert len(rankings["top_series"]) >= 3
     assert len(rankings["upcoming_productions"]) >= 1
-

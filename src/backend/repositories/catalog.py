@@ -155,9 +155,7 @@ class CatalogRepository:
         ep_count, max_season, max_episode = ep_stats
         show_id = int(show.id or 0)
         imdb_id = (
-            CatalogRepository.normalize_imdb_id(show.imdb_id)
-            if show.imdb_id
-            else f"eztv-{show_id}"
+            CatalogRepository.normalize_imdb_id(show.imdb_id) if show.imdb_id else f"eztv-{show_id}"
         )
         return {
             "eztv_show_id": show_id,
@@ -373,9 +371,7 @@ class CatalogRepository:
         fp = CatalogRepository._fingerprint(eztv_session, p2p_session)
 
         def _compute() -> list[dict[str, Any]]:
-            all_serialized = CatalogRepository._get_all_serialized_shows(
-                eztv_session, p2p_session
-            )
+            all_serialized = CatalogRepository._get_all_serialized_shows(eztv_session, p2p_session)
             if not all_serialized:
                 return []
             has_p2p = any(item["max_seeds"] > 0 for item in all_serialized)
@@ -435,9 +431,7 @@ class CatalogRepository:
                         key=lambda x: (x["rating"], x["eztv_show_id"]),
                         reverse=True,
                     )
-                sections.append(
-                    {"id": sec_id, "title": title, "icon": icon, "items": matched[:20]}
-                )
+                sections.append({"id": sec_id, "title": title, "icon": icon, "items": matched[:20]})
             return sections
 
         return catalog_cache.get_or_set(scope, "sections", fp, _compute)
@@ -454,9 +448,7 @@ class CatalogRepository:
             return eztv_session.get(EZTVShow, int(raw[5:]))
 
         clean_imdb = CatalogRepository.normalize_imdb_id(raw)
-        return eztv_session.exec(
-            select(EZTVShow).where(EZTVShow.imdb_id == clean_imdb)
-        ).first()
+        return eztv_session.exec(select(EZTVShow).where(EZTVShow.imdb_id == clean_imdb)).first()
 
     @staticmethod
     def get_show_detail(
@@ -481,9 +473,7 @@ class CatalogRepository:
         )
         ep_count = len(episodes)
         max_season = max((e.season for e in episodes), default=0)
-        max_episode = max(
-            (e.episode for e in episodes if e.season == max_season), default=0
-        )
+        max_episode = max((e.episode for e in episodes if e.season == max_season), default=0)
 
         p2p_info = None
         releases: list[CatalogRelease] = []
@@ -524,9 +514,7 @@ class CatalogRepository:
         return list(p2p_session.exec(query).all())
 
     @staticmethod
-    def get_stats(
-        eztv_session: Session, p2p_session: Optional[Session] = None
-    ) -> dict[str, Any]:
+    def get_stats(eztv_session: Session, p2p_session: Optional[Session] = None) -> dict[str, Any]:
         """Get aggregate statistics using materialized episode counts and scoped cache."""
         scope = catalog_cache.session_scope(eztv_session, p2p_session)
         fp = CatalogRepository._fingerprint(eztv_session, p2p_session)
@@ -534,9 +522,7 @@ class CatalogRepository:
         def _compute() -> dict[str, Any]:
             total_shows = int(eztv_session.exec(select(func.count(EZTVShow.id))).one() or 0)
             materialized_eps = int(
-                eztv_session.exec(
-                    select(func.coalesce(func.sum(EZTVShow.episodes_count), 0))
-                ).one()
+                eztv_session.exec(select(func.coalesce(func.sum(EZTVShow.episodes_count), 0))).one()
                 or 0
             )
             if materialized_eps > 0:
@@ -572,9 +558,10 @@ class CatalogRepository:
                 max_seeds = int(
                     p2p_session.exec(select(func.max(CatalogShow.max_seeds))).one() or 0
                 )
-                latest_p2p_date = latest_p2p_date or p2p_session.exec(
-                    select(func.max(CatalogShow.latest_release_date))
-                ).one()
+                latest_p2p_date = (
+                    latest_p2p_date
+                    or p2p_session.exec(select(func.max(CatalogShow.latest_release_date))).one()
+                )
 
             return {
                 "total_shows": total_shows,

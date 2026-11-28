@@ -136,9 +136,9 @@ class EZTVSourceAdapter(BaseSourceAdapter):
                 continue
 
             _clean, year, season, episode, quality = parse_release_title_and_year(raw_title)
-            digest = hashlib.sha1(
-                f"eztv_rss:{info_hash or raw_title}".encode("utf-8")
-            ).hexdigest()[:14]
+            digest = hashlib.sha1(f"eztv_rss:{info_hash or raw_title}".encode("utf-8")).hexdigest()[
+                :14
+            ]
             candidates.append(
                 NormalizedReleaseCandidate(
                     external_id=f"eztv_rss:{digest}",

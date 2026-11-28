@@ -1,0 +1,105 @@
+---
+id: ADR-021
+title: "Confiabilidade dos Motores IMDb/EZTV, Motor de Vitrine Orgânica (Hero Vivo, Roleta Contrastante e 10 Listas Inteligentes em Loop de 100), Curadoria Configurável e Separação Descobrir vs. Catálogo"
+status: ACCEPTED (ELEVATED)
+tier: "Tier 2 — Quadra SOTA (DCI 7 | BR 12.25 — CRITICAL / Red-Blue Certified)"
+created: "2026-11-28"
+updated: "2026-11-28"
+depends_on:
+  - ADR-011
+  - ADR-012
+  - ADR-014
+  - ADR-015
+  - ADR-016
+  - ADR-018
+  - ADR-020
+implementation_status: PENDENTE
+decisions:
+  - DEC-001
+  - DEC-002
+  - DEC-003
+  - DEC-004
+  - DEC-005
+  - DEC-006
+  - DEC-007
+  - DEC-008
+  - DEC-009
+decision_set:
+  adr: docs/adr/ADR-021.md
+  blueprint: docs/adr/ADR-021-BP.md
+  todo: docs/adr/ADR-021-TODO.md
+  plan: docs/adr/ADR-021-PI.md
+elevation_dossier: docs/adr/elevation-ADR-021/
+---
+
+# ADR-021: Confiabilidade dos Motores IMDb/EZTV, Motor de Vitrine Orgânica (Hero Vivo, Roleta Contrastante e 10 Listas Inteligentes em Loop de 100), Curadoria Configurável e Separação Descobrir vs. Catálogo
+
+## 1. Contexto e Diagnóstico Forense
+
+A auditoria direta sobre `data/mainstream.db`, `data/sources.db`, `.imdb_cache/` e a interface React revelou quatro falhas estruturais interdependentes:
+
+1. **Motor IMDb Canônico ("Falso Atualizado"):**
+   - Em `2026-11-28`, `datasets.imdbws.com` já possuía revisões de **27/11/2026** (`ratings`: `8.779.386 B`, `basics`: `231.122.685 B`), mas `.imdb_cache/` estava parado em **15–16/11/2026** (com um `basics.tsv.tmp` truncado de `123 MB`).
+   - Os botões principais (**Atualizar Novidades** / **Varredura**) em `HydrationConsoleCard.tsx` nunca acionavam `imdb_sync_service.start_sync()`.
+   - `imdb_sync_service.py` sobrescrevia `sync_state['imdb_canonical_sync_v1']` no banco de produção durante `pytest` (`works_processed: 0`), não reportava delta real (`+novas`, `+atualizadas`), não recalculava `global_facets_v2` (`279.362`) e carimbava `COMPLETED` mesmo quando falhas de `HEAD` recaíam no cache antigo.
+2. **Motor EZTV (Esquizofrenia de 3 Tabelas + Contador Zerado + Omissão na Varredura):**
+   - `EZTVIndexerService.sync_pages` gravava em `catalogshow`/`catalogrelease` (`8.292` releases até `2026-11-28 02:46:15`), mas não atualizava `external_releases` nem inseria novas séries em `EZTVShow` (congelado em `860` desde `2026-11-23`).
+   - `SourcesRegistryService._recompute_source_counters` pulava `eztv` explicitamente (`if rec.source_key == "eztv": continue`), mantendo `external_sources.eztv` com `total_titles=0, total_releases=0` e `hydration_pipeline_v1.sources.eztv` com `releases_indexed=0, last_run_at=null`.
+   - O modo incremental fixava `eff_pages = 1` (apenas 100 torrents) e o EZTV não participava da *Varredura* para séries da Biblioteca.
+3. **Vitrine de Descoberta Congelada no Tempo:**
+   - **Hero:** `DiscoveryEngineRepository.get_trending_unified_shows` ordenava por `has_eztv DESC, rating_votes DESC` e `App.tsx` pegava sempre o índice `[0]` — travando eternamente em *A Casa do Dragão* (`578.018` votos).
+   - **Roleta:** `ExplorerView.tsx` fatiava linearmente `pool[(rouletteOffset * 3 + i) % pool.length]` começando em `0`, sem sorteio real nem contraste.
+   - **Atalhos:** apenas 5 presets fixos incluindo `Direção: Denis Villeneuve`.
+   - **Listas Inteligentes:** `CatalogRepository.get_curated_sections` lia apenas os `860` shows do EZTV com teto de `20` itens sem variância, e o frontend ainda cortava com `.slice(0, 3)` (4 listas no total).
+4. **Acoplamento de Páginas em `ExplorerView.tsx` (`1.686` linhas):**
+   - Unir Vitrine e Catálogo obrigava rolagem extensa para alcançar os filtros e misturava dois fluxos mentais opostos.
+
+---
+
+## 2. Decision Ledger (`DEC-XXX`)
+
+| DEC-ID | Decisão Técnica / Requisito | Origem | Classificação | Status | Alvo |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `DEC-001` | **IMDb Sync em 2 Estágios (`AMP-01`):** No *Atualizar Novidades*, executar `HEAD` leve em `ratings`, `basics` e `akas`. Se revisão remota > 24h e diferente do cache, disparar download paralelo em background (~760 MB, sem lock SQLite, limpando `.tmp` órfãos) seguido de commit cooperativo + FTS5 + `refresh_global_facets_cache`. Isolar `PYTEST_CURRENT_TEST` do `mainstream_engine` real e expor delta real (`delta_inserted`, `delta_updated`, `remote_last_modified`, `cache_status`). Manter `episodes.tsv.gz` sob checkbox manual. | Garimpo R1 `1B`, R2 `1B`, Elevação `F-01`/`F-02`/`F-07` | `ARCHITECTURAL_DECISION` | `CONFIRMED` | ADR-021, BP, PI, TODO |
+| `DEC-002` | **Motor EZTV Resiliente & Unificado (`AMP-02`):** Paginação por watermark de página (`max_pages=25`, parada após 2 páginas consecutivas sem novos `eztv_id`, delay `0.35s` + backoff em `429/5xx`); dual-write atômico na mesma transação em `sources.db` (`catalogshow`/`catalogrelease` + `ExternalRelease(source_key="eztv")` + criação de novos `EZTVShow`) + propagação `has_eztv` em `mainstream.db`; remover bypass de `eztv` em `_recompute_source_counters`; incluir EZTV como opção ativável no modo *Varredura* para retro-preencher séries salvas na Biblioteca (`showrecord`). | Garimpo R1 `2A`, R2 `2D`, Elevação `F-04` | `ARCHITECTURAL_DECISION` | `CONFIRMED` | ADR-021, BP, PI, TODO |
+| `DEC-003` | **DiscoveryFeedService Unificado com Deduplicação Total de 1.000 Títulos (`AMP-03`):** Novo serviço sobre `mainstream.db` + índice em memória de `sources.db` expondo `GET /api/explore/feed` (100% *read-only*) retornando `hero_pool` (12–15 candidatos), `roulette` (3 escolhas contrastantes por escopo) e `10` listas (7 Gerais + 3 Personalizadas, até 100 itens cada) com **deduplicação global de 1.000 títulos únicos** alocada em ordem de escassez crescente dos pools. | Garimpo R1 `6C`, R2 `3C`/`4A`, Elevação `F-03` | `ARCHITECTURAL_DECISION` | `CONFIRMED` | ADR-021, BP, PI, TODO |
+| `DEC-004` | **Motor de Perfil Bilíngue, Variância Orgânica (`0–100%`) e Ring-Buffer de Impressões (`AMP-03`):** Normalizar `showrecord.genres` (PT-BR/EN-US) via `canonical_taxonomy.py` com pesos por status (`watching=3.0`, `completed=2.0`, `plan_to_watch=1.0`, `abandoned=-1.0`); aplicar ruído pseudo-aleatório ponderado por `session_seed` proporcional à `variance_pct` (`0–100%`) apenas sobre pools pré-filtrados de qualidade; persistir ring-buffer de impressões (`discovery_impressions_v1`, máx. 200 `imdb_id`s, TTL padrão `48h`) em `sync_state` via `POST /api/explore/impressions` debounced. | Garimpo R1 `3C`/`10B`, R2 `7A`/`8C`, Elevação `F-03` | `ARCHITECTURAL_DECISION` | `CONFIRMED` | ADR-021, BP, PI, TODO |
+| `DEC-005` | **Hero Vivo, Roleta Contextual e `ShowCarousel` Virtualizado em Loop Circular (`AMP-04`):** `HeroBanner` com auto-rotação suave (12s, pausável no hover/foco), controles manuais e selo de motivo; Roleta com seletor de escopo (*Tudo / Filmes / Séries / Com Mídia*) e 3 arquétipos contrastantes (*Novidade c/ Mídia*, *Sua Afinidade*, *Joia Oculta*); `ShowCarousel` com janela circular virtualizada (~24 cards no DOM) em loop contínuo `1..100` + botão *"Abrir no Catálogo"* no cabeçalho de cada lista. | Garimpo R1 `3C`/`4D`/`7B`, R2 `5D+B` | `TECHNICAL_REQUIREMENT` | `CONFIRMED` | ADR-021, BP, PI, TODO |
+| `DEC-006` | **Separação Arquitetural em 2 Páginas + Navbar de 5 Abas + Atalhos Mistos (`AMP-05`):** Cindir `ExplorerView.tsx` em `DiscoverView.tsx` (Vitrine) e `CatalogView.tsx` (Busca FTS5, Filtros no topo, Pessoas, Calendário); `Navbar.tsx` com 5 abas de 1 palavra (**Descobrir · Catálogo · Fontes · Biblioteca · Coleções**); elevar `FilterSnapshot` em `App.tsx` preservando filtros entre trocas de aba; substituir *Diretor* por barra de Atalhos mista (essenciais + dinâmicos da Biblioteca + customizados via botão **"Fixar como Atalho"** no Catálogo). | Garimpo R1 `5B+C`/`9A`, R2 `6A`/`9A`, Elevação `F-06` | `ARCHITECTURAL_DECISION` | `CONFIRMED` | ADR-021, BP, PI, TODO |
+| `DEC-007` | **Preferências Retrocompatíveis (`v1 → v2`) & 5ª Categoria de Configurações (`AMP-06`):** Evoluir `UserExplorePreferences` aceitando `schema_version: Literal[1, 2] = 2` (migração transparente de v1) armazenando `discovery_variance_pct`, `hero_auto_rotate`, `impression_ttl_hours`, `smart_lists` (ativação, ordem, `limit: 20..100`, `sort_by`, `only_with_media`, `variance_override`) e `custom_shortcuts`. Criar 5ª categoria em `SettingsSidebar.tsx`: **"Vitrine & Listas Inteligentes"**. | Garimpo R1 `8B`, R2 `10B`, Elevação `F-05` | `TECHNICAL_REQUIREMENT` | `CONFIRMED` | ADR-021, BP, PI, TODO |
+| `DEC-008` | **Alternativas Rejeitadas:** Proibido (a) ampliar `CatalogRepository.get_curated_sections` sobre os `860` shows EZTV; (b) montar 1.000 `ShowCard`s simultâneos no DOM; (c) parar paginação EZTV no 1º item conhecido; (d) executar rebuild FTS5 concorrente a commits SQLite ou gravar impressões dentro de `GET /feed`; (e) personalizar exclusivamente via `episodewatchrecord`. | Garimpo Derrubadas, Elevação Fase 3 | `REJECTED_ALTERNATIVE` | `REJECTED` | ADR-021 |
+| `DEC-009` | **Restrição Operacional Zero-Dependência Extra:** Toda a solução (virtualização circular, ranking com variância, dual-write EZTV, 2-estágios IMDb) deve ser implementada com a stack nativa existente (FastAPI, SQLModel/SQLite, httpx, React 19, TypeScript, Tailwind) sem introduzir novos pacotes de runtime. | Política Global de Dependências | `SYSTEM_CONSTRAINT` | `CONFIRMED` | ADR-021, BP |
+
+---
+
+## 3. Alternativas Consideradas e Trade-offs (Matriz 11 Dimensões · `matrix_scorer.py`)
+
+| Alternativa | Score Ponderado | Veredicto | Motivo Principal |
+| :--- | :---: | :---: | :--- |
+| **Alt B — Arquitetura Amplificada & Blindada (`ADR-021` + `AMP-01`..`AMP-06`)** | **`8.94`** | **ACEITA (`KEEP + AMPLIFY`)** | Elimina locks SQLite, poluição de testes, desidratação de buckets e gargalo DOM mantendo single-process reversível. |
+| **Alt A — Proposta Original (Garimpo R3 bruto)** | `7.60` | Superada (`-1.34`) | Sofria de write lock IMDb (`F-01`), poluição de `pytest` (`F-02`) e alocação sequencial vulnerável (`F-03`). |
+| **Alt C — Worker Daemon Separado + Event Bus** | `7.39` | Rejeitada (`-1.55`) | Viola Zero Orphaned Servers e adiciona complexidade IPC/lock desproporcional para app local. |
+| **Alt D — Client-Side Shuffle Minimalista** | `7.22` | Rejeitada (`-1.72`) | Não resolve deduplicação de 1.000 itens sobre `279k` obras nem integridade de ingestão IMDb/EZTV. |
+
+---
+
+## 4. Consequências
+
+- **Positivas:**
+  - IMDb e EZTV passam a refletir novidades reais com telemetria auditável (zero "falsos atualizados" e zero contador zerado).
+  - Vitrine **Descobrir** viva, variada e personalizada com até 1.000 obras únicas em 10 listas de 100 itens a 60fps.
+  - Acesso imediato aos filtros na aba dedicada **Catálogo** e personalização completa via **Vitrine & Listas Inteligentes** nas Configurações.
+- **Negativas / Mitigações:**
+  - *Banda no auto-sync IMDb (~760 MB quando há revisão >24h):* Mitigado pelo `HEAD` leve prévio (zero download se revisão igual ou <24h) e download assíncrono sem bloquear SQLite nem a UI.
+  - *Dual-write EZTV em `sources.db`:* Mitigado por UPSERT idempotente dentro da mesma transação `sources_session`.
+  - *Maior superfície de preferências:* Mitigado por `schema_version: Literal[1, 2] = 2` com defaults determinísticos e validação Pydantic.
+
+---
+
+## 5. Referências
+
+- Dossiê de Elevação Completo (8 Fases): [docs/adr/elevation-ADR-021/](file:///home/loupan/projetosVS/tv-pirata/docs/adr/elevation-ADR-021/EXECUTIVE_SUMMARY.md)
+- Blueprint Técnico: [ADR-021-BP.md](file:///home/loupan/projetosVS/tv-pirata/docs/adr/ADR-021-BP.md)
+- Plano de Implementação: [ADR-021-PI.md](file:///home/loupan/projetosVS/tv-pirata/docs/adr/ADR-021-PI.md)
+- Checklist de Execução: [ADR-021-TODO.md](file:///home/loupan/projetosVS/tv-pirata/docs/adr/ADR-021-TODO.md)
+- Evidence Record: *(pendente de execução)*

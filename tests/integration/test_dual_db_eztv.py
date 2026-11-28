@@ -194,4 +194,3 @@ def test_catalog_reads_from_eztv_metadata_db_and_returns_episodes():
     assert stats.status_code == 200
     assert stats.json()["total_shows"] == 2
     assert stats.json()["total_episodes"] == 1
-

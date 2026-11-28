@@ -66,4 +66,3 @@ class EZTVEpisodeCatalog(EZTVBase, table=True):
     summary: Optional[str] = None
     source: str = Field(default="page")
     updated_at: Optional[str] = None
-

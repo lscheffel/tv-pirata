@@ -583,9 +583,7 @@ class SourcesRegistryService:
             }
 
     @classmethod
-    def get_media_index_by_imdb(
-        cls, sources_session: Optional[Session]
-    ) -> dict[str, list[str]]:
+    def get_media_index_by_imdb(cls, sources_session: Optional[Session]) -> dict[str, list[str]]:
         """Build cached mapping normalized_imdb_id -> sorted unique source keys in sources.db."""
         if sources_session is None:
             return {}
@@ -622,9 +620,7 @@ class SourcesRegistryService:
                 pass
             return {k: sorted(v) for k, v in mapping.items()}
 
-        return discovery_cache.get_or_set(
-            scope, "sources_media_index", "by_imdb", _fetch, ttl=60.0
-        )
+        return discovery_cache.get_or_set(scope, "sources_media_index", "by_imdb", _fetch, ttl=60.0)
 
     @classmethod
     def _resolve_work_context(
@@ -1201,8 +1197,7 @@ class SourcesRegistryService:
         cls.ensure_sources_registered(sources_session)
         target_src = source.strip().lower() if source and source.strip().lower() != "all" else None
         inst_map = {
-            r.source_key: r
-            for r in sources_session.exec(select(ExternalSourceRecord)).all()
+            r.source_key: r for r in sources_session.exec(select(ExternalSourceRecord)).all()
         }
 
         combined: list[dict[str, Any]] = []
@@ -1440,9 +1435,7 @@ class SourcesRegistryService:
                 if fts_ids:
                     rows = list(
                         mainstream_session.exec(
-                            select(IMDbCatalogShow).where(
-                                col(IMDbCatalogShow.imdb_id).in_(fts_ids)
-                            )
+                            select(IMDbCatalogShow).where(col(IMDbCatalogShow.imdb_id).in_(fts_ids))
                         ).all()
                     )
             except Exception:
@@ -1503,9 +1496,16 @@ class SourcesRegistryService:
         ).all()
         counts = {str(s): (int(rel or 0), int(tit or 0)) for s, rel, tit in rows}
         for rec in sources_session.exec(select(ExternalSourceRecord)).all():
-            if rec.source_key == "eztv":
-                continue
             rel_cnt, tit_cnt = counts.get(rec.source_key, (0, 0))
+            if rec.source_key == "eztv" and rel_cnt == 0:
+                from src.backend.models.db import CatalogRelease, CatalogShow
+
+                rel_cnt = int(
+                    sources_session.exec(select(func.count(CatalogRelease.id))).one() or 0
+                )
+                tit_cnt = int(
+                    sources_session.exec(select(func.count(CatalogShow.imdb_id))).one() or 0
+                )
             rec.total_releases = rel_cnt
             rec.total_titles = tit_cnt
             sources_session.add(rec)

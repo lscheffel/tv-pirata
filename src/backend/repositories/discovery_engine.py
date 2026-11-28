@@ -209,9 +209,7 @@ class DiscoveryEngineRepository:
         q_tokens = meaningful_tokens or raw_tokens
         if row.imdb_id and row.imdb_id.lower() == raw_query.strip().lower():
             return 2500.0
-        credit_blob = " ".join(
-            filter(None, [row.directors, row.creators, row.cast_members])
-        )
+        credit_blob = " ".join(filter(None, [row.directors, row.creators, row.cast_members]))
         return cls.score_title_pair_relevance(
             q_norm=q_norm,
             q_core=q_core,
@@ -435,9 +433,7 @@ class DiscoveryEngineRepository:
         rating = float(row.rating_score or 0.0)
         votes = int(row.rating_votes or 0)
         default_status = (
-            "Returning Series"
-            if row.title_type == "tvSeries" and not row.end_year
-            else "Released"
+            "Returning Series" if row.title_type == "tvSeries" and not row.end_year else "Released"
         )
         display_title = row.title_ptbr or row.primary_title
         orig_title = (
@@ -624,16 +620,13 @@ class DiscoveryEngineRepository:
         ) -> list[dict[str, Any]]:
             if scale != 1.0:
                 scaled = {
-                    k: (max(1, int(round(v * scale))) if v > 0 else 0)
-                    for k, v in counts.items()
+                    k: (max(1, int(round(v * scale))) if v > 0 else 0) for k, v in counts.items()
                 }
             else:
                 scaled = counts
             items = [{"key": k, "count": v} for k, v in scaled.items()]
             if sort_desc:
-                order_idx = (
-                    {k: i for i, k in enumerate(fixed_order)} if fixed_order else {}
-                )
+                order_idx = {k: i for i, k in enumerate(fixed_order)} if fixed_order else {}
                 items.sort(key=lambda x: (-x["count"], order_idx.get(x["key"], 999), x["key"]))
             return items
 
@@ -769,6 +762,7 @@ class DiscoveryEngineRepository:
             return out
 
         if not base_filters:
+
             def _compute_global() -> dict[str, list[dict[str, Any]]]:
                 current_total = int(
                     session.exec(select(func.count(IMDbCatalogShow.imdb_id))).one() or 0
@@ -1094,21 +1088,15 @@ class DiscoveryEngineRepository:
             id_list = list(ids)
             if len(id_list) <= 900:
                 return col(IMDbCatalogShow.imdb_id).in_(id_list)
-            subq = select(literal_column("value")).select_from(
-                func.json_each(json.dumps(id_list))
-            )
+            subq = select(literal_column("value")).select_from(func.json_each(json.dumps(id_list)))
             return col(IMDbCatalogShow.imdb_id).in_(subq)
 
         if data_sources:
             for src_key in [s.lower() for s in cls._parse_csv(data_sources)]:
                 if src_key == "eztv":
-                    eztv_imdbs = [
-                        k for k, srcs in media_sources_by_imdb.items() if "eztv" in srcs
-                    ]
+                    eztv_imdbs = [k for k, srcs in media_sources_by_imdb.items() if "eztv" in srcs]
                     if eztv_imdbs:
-                        filters.append(
-                            (col(IMDbCatalogShow.has_eztv) == 1) | _imdb_in(eztv_imdbs)
-                        )
+                        filters.append((col(IMDbCatalogShow.has_eztv) == 1) | _imdb_in(eztv_imdbs))
                     else:
                         filters.append(col(IMDbCatalogShow.has_eztv) == 1)
                 elif src_key in ("media", "has_media"):
@@ -1169,9 +1157,7 @@ class DiscoveryEngineRepository:
 
         if only_with_p2p:
             if active_p2p_imdbs:
-                filters.append(
-                    (col(IMDbCatalogShow.has_eztv) == 1) | _imdb_in(active_p2p_imdbs)
-                )
+                filters.append((col(IMDbCatalogShow.has_eztv) == 1) | _imdb_in(active_p2p_imdbs))
             else:
                 filters.append(col(IMDbCatalogShow.has_eztv) == 1)
 
@@ -1375,9 +1361,7 @@ class DiscoveryEngineRepository:
             else (row.original_title or row.primary_title)
         )
         default_status = (
-            "Returning Series"
-            if row.title_type == "tvSeries" and not row.end_year
-            else "Released"
+            "Returning Series" if row.title_type == "tvSeries" and not row.end_year else "Released"
         )
         return UnifiedShow(
             id=cls._derive_imdb_num(row),
@@ -1436,9 +1420,7 @@ class DiscoveryEngineRepository:
         eztv_by_imdb, _ = cls.build_eztv_lookup_index(eztv_session)
         media_sources_by_imdb = cls._build_sources_media_index(eztv_session)
         return [
-            cls._imdb_row_to_unified(
-                r, eztv_by_imdb, media_sources_by_imdb=media_sources_by_imdb
-            )
+            cls._imdb_row_to_unified(r, eztv_by_imdb, media_sources_by_imdb=media_sources_by_imdb)
             for r in candidates[:limit]
         ]
 
@@ -1469,9 +1451,7 @@ class DiscoveryEngineRepository:
         eztv_by_imdb, _ = cls.build_eztv_lookup_index(eztv_session)
         media_sources_by_imdb = cls._build_sources_media_index(eztv_session)
         return [
-            cls._imdb_row_to_unified(
-                r, eztv_by_imdb, media_sources_by_imdb=media_sources_by_imdb
-            )
+            cls._imdb_row_to_unified(r, eztv_by_imdb, media_sources_by_imdb=media_sources_by_imdb)
             for r in rows
         ]
 
@@ -1662,9 +1642,7 @@ class DiscoveryEngineRepository:
             ]
             all_credits = list(session.exec(select(WorkCredit)).all())
             all_people = {
-                p.id: p
-                for p in session.exec(select(PersonRecord)).all()
-                if p.id is not None
+                p.id: p for p in session.exec(select(PersonRecord)).all() if p.id is not None
             }
             credits_by_work: dict[int, list[dict[str, Any]]] = {}
             for cr in all_credits:

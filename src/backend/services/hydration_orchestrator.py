@@ -464,9 +464,10 @@ class HydrationOrchestratorService:
             if inst_meta > 0.0:
                 meta_rate_per_min = inst_meta
 
-        total_active_rate = sum(
-            v for k, v in state.ema_rates.items() if k != "metadata" and v > 0.0
-        ) + meta_rate_per_min
+        total_active_rate = (
+            sum(v for k, v in state.ema_rates.items() if k != "metadata" and v > 0.0)
+            + meta_rate_per_min
+        )
         if win_dur > 0.0 and (win_yts + win_meta) > 0:
             state.rate_per_minute = round(
                 max(total_active_rate, ((win_yts + win_meta) / win_dur) * 60.0), 1
@@ -745,9 +746,7 @@ class HydrationOrchestratorService:
                 run_mode or state.run_mode or "novidades"
             )
             eff_meta_mode: Literal["pending", "missing_synopsis_ptbr"] = (
-                metadata_mode
-                if metadata_mode != "pending"
-                else state.metadata_mode
+                metadata_mode if metadata_mode != "pending" else state.metadata_mode
             )
             eff_meta_batch = (
                 max(meta_batch, 150) if eff_target in ("tmdb", "tvmaze") else meta_batch
@@ -924,9 +923,7 @@ class HydrationOrchestratorService:
                     client=http_client,
                 )
 
-            async def _run_sidecar_http(
-                sk: str, plan: dict[str, Any], http_client: Any
-            ) -> Any:
+            async def _run_sidecar_http(sk: str, plan: dict[str, Any], http_client: Any) -> Any:
                 sc: PillarSourceCursor = plan["cursor"]
                 if plan["mode"] == "recent":
                     return await plan["adapter"].fetch_recent_candidates(
@@ -950,6 +947,7 @@ class HydrationOrchestratorService:
                 for sk, plan in sidecar_plans.items():
                     fanout_tasks[f"sidecar:{sk}"] = _run_sidecar_http(sk, plan, shared_client)
                 if run_metadata and meta_candidates:
+
                     def _on_meta_prog(_st: str, label: str) -> None:
                         prefix = f"{eff_target.upper()}" if eff_target else "Metadados"
                         mode_lbl = (
@@ -1219,14 +1217,18 @@ class HydrationOrchestratorService:
                 ez_inst = sources_session.get(ExternalSourceRecord, "eztv")
                 if ez_inst and ez_inst.enabled:
                     try:
-                        ez_res = await EZTVIndexerService().sync_pages(
+                        ez_res = await EZTVIndexerService().sync_pages_until_watermark(
                             session=sources_session,
-                            start_page=1,
-                            max_pages=eff_sidecar_pages,
-                            enrich_metadata=False,
+                            mainstream_session=mainstream_session,
+                            max_pages=25,
+                            stop_on_known_pages=2,
+                            request_delay=0.35
+                            if not os.environ.get("PYTEST_CURRENT_TEST")
+                            else 0.0,
                         )
                         ez_new = int(ez_res.get("torrents_indexed") or 0)
                         ez_aff = ez_res.get("affected_imdb_ids") or []
+                        ez_pages = int(ez_res.get("pages_processed") or 1)
                         novidades_added += ez_new
                         novidades_verified += len(ez_aff)
                         ez_inst.status = "ready"
@@ -1234,6 +1236,12 @@ class HydrationOrchestratorService:
                         ez_inst.last_sync_at = _utc_now()
                         sources_session.add(ez_inst)
                         sources_session.commit()
+
+                        ez_cur = state.sources.get("eztv") or PillarSourceCursor(source_key="eztv")
+                        ez_cur.last_run_at = _utc_iso()
+                        ez_cur.last_error = None
+                        ez_cur.mode = "DELTA"
+                        state.sources["eztv"] = ez_cur
 
                         # Refresh missing episode summaries via TVMaze for affected series
                         if ez_aff and not os.environ.get("PYTEST_CURRENT_TEST"):
@@ -1288,7 +1296,7 @@ class HydrationOrchestratorService:
 
                         self._record_event(
                             "eztv",
-                            f"Novidades ({eff_sidecar_pages} págs)",
+                            f"Novidades ({ez_pages} págs)",
                             "ok" if ez_new else "skipped",
                             f"EZTV: +{ez_new} episódios novos ({len(ez_aff)} séries)",
                         )
@@ -1300,6 +1308,53 @@ class HydrationOrchestratorService:
                             "error",
                             f"EZTV: {str(exc)[:80]}",
                         )
+
+            if (
+                run_sources
+                and eff_run_mode == "varredura"
+                and "eztv" in state.sweep_enabled_sources
+            ):
+                ez_cur = state.sources.get("eztv") or PillarSourceCursor(source_key="eztv")
+                if not ez_cur.bootstrap_completed:
+                    ez_sw = await EZTVIndexerService().sync_library_shows_via_eztv(
+                        sources_session=sources_session,
+                        mainstream_session=mainstream_session,
+                        offset=ez_cur.catalog_sweep_offset,
+                        limit=12,
+                    )
+                    ez_cur.catalog_sweep_offset = int(ez_sw.get("next_offset") or 0)
+                    ez_cur.last_run_at = _utc_iso()
+                    if ez_sw.get("exhausted"):
+                        ez_cur.bootstrap_completed = True
+                        ez_cur.catalog_sweep_offset = 0
+                        ez_cur.mode = "DELTA"
+                    state.sources["eztv"] = ez_cur
+                    self._record_event(
+                        "eztv",
+                        f"Biblioteca @{ez_cur.catalog_sweep_offset}",
+                        "ok" if ez_sw.get("releases_indexed") else "skipped",
+                        (
+                            f"EZTV Biblioteca: {ez_sw.get('titles_scanned', 0)} séries "
+                            f"(+{ez_sw.get('releases_indexed', 0)})"
+                        ),
+                    )
+                    step_notes.append(f"EZTV bib.(+{ez_sw.get('releases_indexed', 0)})")
+
+            if run_sources and eff_run_mode == "novidades" and not eff_target:
+                try:
+                    imdb_auto = await imdb_sync_service.check_and_trigger_auto_sync(
+                        mainstream_session
+                    )
+                    if imdb_auto.get("triggered"):
+                        self._record_event(
+                            "imdb",
+                            "Auto-Sync",
+                            "ok",
+                            "IMDb: nova revisão detectada, download iniciado em 2º plano.",
+                        )
+                        step_notes.append("IMDb auto-sync")
+                except Exception as exc:
+                    logger.debug("IMDb auto-sync check skipped: %s", exc)
 
             if run_sources:
                 SourcesRegistryService._recompute_source_counters(sources_session)

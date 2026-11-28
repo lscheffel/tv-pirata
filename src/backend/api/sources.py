@@ -90,9 +90,7 @@ async def get_source_releases(
     include_live: bool = Query(
         True, description="Consultar adaptadores quando cache local estiver vazio ou expirado"
     ),
-    live: Optional[str] = Query(
-        None, description="Modo Lazy-Cache: auto, cache ou force"
-    ),
+    live: Optional[str] = Query(None, description="Modo Lazy-Cache: auto, cache ou force"),
     q_override: Optional[str] = Query(
         None, description="Termo manual de busca para refinar resultados na fonte"
     ),

@@ -114,9 +114,7 @@ class FederatedCatalogService:
         return {
             "seeded_works": seeded_works,
             "bridged_local_works": bridged,
-            "total_catalog_works": int(
-                session.exec(select(func.count(MediaWork.id))).one() or 0
-            ),
+            "total_catalog_works": int(session.exec(select(func.count(MediaWork.id))).one() or 0),
         }
 
     def sync_from_local_ecosystem(self, session: Session) -> int:
@@ -242,9 +240,7 @@ class FederatedCatalogService:
     def get_mainstream_stats(self, session: Session) -> dict[str, int]:
         """Return canonical catalog statistics from data/mainstream.db."""
         try:
-            total_titles = int(
-                session.exec(select(func.count(IMDbCatalogShow.imdb_id))).one() or 0
-            )
+            total_titles = int(session.exec(select(func.count(IMDbCatalogShow.imdb_id))).one() or 0)
         except Exception:
             total_titles = 0
 
@@ -262,9 +258,7 @@ class FederatedCatalogService:
             )
             eztv_badged_titles = int(
                 session.exec(
-                    select(func.count(IMDbCatalogShow.imdb_id)).where(
-                        IMDbCatalogShow.has_eztv == 1
-                    )
+                    select(func.count(IMDbCatalogShow.imdb_id)).where(IMDbCatalogShow.has_eztv == 1)
                 ).one()
                 or 0
             )
@@ -295,9 +289,7 @@ class FederatedCatalogService:
         titles_hydrated = 0
 
         try:
-            imdb_count = int(
-                session.exec(select(func.count(IMDbCatalogShow.imdb_id))).one() or 0
-            )
+            imdb_count = int(session.exec(select(func.count(IMDbCatalogShow.imdb_id))).one() or 0)
         except Exception:
             imdb_count = 0
 

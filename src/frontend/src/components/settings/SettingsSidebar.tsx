@@ -8,7 +8,7 @@ import {
   X,
 } from "lucide-react";
 
-export type SettingsCategoryId = "catalog" | "sources" | "explore" | "advanced";
+export type SettingsCategoryId = "catalog" | "sources" | "discover_feed" | "explore" | "advanced";
 
 export interface SettingsCategoryItem {
   id: SettingsCategoryId;
@@ -56,8 +56,23 @@ export const SETTINGS_CATEGORIES: SettingsCategoryItem[] = [
     ],
   },
   {
+    id: "discover_feed",
+    label: "Vitrine & Listas",
+    description: "10 listas inteligentes, variância, Hero e atalhos",
+    keywords: [
+      "vitrine",
+      "lista",
+      "inteligente",
+      "variancia",
+      "hero",
+      "roleta",
+      "atalho",
+      "descobrir",
+    ],
+  },
+  {
     id: "explore",
-    label: "Experiência no Explorar",
+    label: "Experiência no Catálogo",
     description: "Selos de streaming, mídia e filtros",
     keywords: [
       "explorar",
@@ -109,6 +124,7 @@ interface SettingsSidebarProps {
 const ICONS: Record<SettingsCategoryId, React.ReactNode> = {
   catalog: <Sparkles className="w-4 h-4 shrink-0" />,
   sources: <Globe className="w-4 h-4 shrink-0" />,
+  discover_feed: <Compass className="w-4 h-4 shrink-0" />,
   explore: <Compass className="w-4 h-4 shrink-0" />,
   advanced: <Wrench className="w-4 h-4 shrink-0" />,
 };

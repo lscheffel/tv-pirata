@@ -802,9 +802,7 @@ class CascadingMetadataEnricher:
             }
             for s in candidates
         }
-        collected: dict[str, list[tuple[str, dict[str, Any]]]] = {
-            s.imdb_id: [] for s in candidates
-        }
+        collected: dict[str, list[tuple[str, dict[str, Any]]]] = {s.imdb_id: [] for s in candidates}
 
         def _mark_filled(snap: dict[str, Any], payload: dict[str, Any]) -> None:
             if payload.get("poster_url"):

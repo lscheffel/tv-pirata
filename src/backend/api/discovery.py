@@ -64,9 +64,7 @@ def _catalog_item_to_unified(
     )
 
 
-def _mark_eztv_availability(
-    shows: list[UnifiedShow], eztv_session: Session
-) -> list[UnifiedShow]:
+def _mark_eztv_availability(shows: list[UnifiedShow], eztv_session: Session) -> list[UnifiedShow]:
     """Annotate online discovery shows with multi-source media availability from sources.db."""
     if not shows:
         return shows

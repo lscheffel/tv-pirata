@@ -2,6 +2,7 @@ import React from "react";
 import {
   Search,
   Compass,
+  Filter,
   Database,
   Bookmark,
   Layers,
@@ -9,7 +10,7 @@ import {
   X,
 } from "lucide-react";
 
-export type AppTabId = "explore" | "sources" | "library" | "collections" | "config";
+export type AppTabId = "discover" | "catalog" | "sources" | "library" | "collections" | "config";
 
 interface NavbarProps {
   activeTab: AppTabId;
@@ -49,7 +50,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           type="button"
           onClick={() => {
-            onTabChange("explore");
+            onTabChange("discover");
             onSearchChange("");
           }}
           className="flex items-center gap-2 cursor-pointer group shrink-0 min-h-[44px] pr-1"
@@ -62,32 +63,45 @@ export const Navbar: React.FC<NavbarProps> = ({
           </span>
         </button>
 
-        {/* Primary Desktop Tabs (4 main sections) */}
+        {/* Primary Desktop Tabs (5 main sections) */}
         <nav aria-label="Navegação Principal" className="hidden lg:flex items-center gap-1">
           <button
             type="button"
-            onClick={() => onTabChange("explore")}
-            className={`flex items-center gap-1.5 min-h-[44px] px-3.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
-              activeTab === "explore"
+            onClick={() => onTabChange("discover")}
+            className={`flex items-center gap-1.5 min-h-[44px] px-3 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+              activeTab === "discover"
                 ? "bg-white/15 text-white shadow-inner"
                 : "text-slate-300 hover:text-white hover:bg-white/5"
             }`}
           >
             <Compass className="w-4 h-4 text-brand-red" />
-            Explorar
+            Descobrir
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onTabChange("catalog")}
+            className={`flex items-center gap-1.5 min-h-[44px] px-3 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+              activeTab === "catalog"
+                ? "bg-white/15 text-white shadow-inner"
+                : "text-slate-300 hover:text-white hover:bg-white/5"
+            }`}
+          >
+            <Filter className="w-4 h-4 text-amber-400" />
+            Catálogo
           </button>
 
           <button
             type="button"
             onClick={() => onTabChange("sources")}
-            className={`flex items-center gap-1.5 min-h-[44px] px-3.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 min-h-[44px] px-3 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
               activeTab === "sources"
                 ? "bg-white/15 text-white shadow-inner"
                 : "text-slate-300 hover:text-white hover:bg-white/5"
             }`}
           >
             <Database className="w-4 h-4 text-emerald-400" />
-            Fontes de Dados
+            Fontes
           </button>
 
           <button
@@ -135,8 +149,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               value={searchQuery}
               onChange={(e) => {
                 onSearchChange(e.target.value);
-                if (e.target.value.trim() && activeTab !== "explore") {
-                  onTabChange("explore");
+                if (e.target.value.trim() && activeTab !== "catalog") {
+                  onTabChange("catalog");
                 }
               }}
               placeholder="Buscar título (PT/EN)..."
@@ -183,13 +197,24 @@ export const Navbar: React.FC<NavbarProps> = ({
       >
         <button
           type="button"
-          onClick={() => onTabChange("explore")}
+          onClick={() => onTabChange("discover")}
           className={`flex items-center gap-1.5 min-h-[44px] px-3 text-xs font-bold whitespace-nowrap ${
-            activeTab === "explore" ? "text-brand-red border-b-2 border-brand-red" : "text-slate-300"
+            activeTab === "discover" ? "text-brand-red border-b-2 border-brand-red" : "text-slate-300"
           }`}
         >
           <Compass className="w-3.5 h-3.5" />
-          Explorar
+          Descobrir
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onTabChange("catalog")}
+          className={`flex items-center gap-1.5 min-h-[44px] px-3 text-xs font-bold whitespace-nowrap ${
+            activeTab === "catalog" ? "text-amber-400 border-b-2 border-amber-400" : "text-slate-300"
+          }`}
+        >
+          <Filter className="w-3.5 h-3.5" />
+          Catálogo
         </button>
 
         <button
@@ -202,7 +227,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           }`}
         >
           <Database className="w-3.5 h-3.5" />
-          Fontes de Dados
+          Fontes
         </button>
 
         <button

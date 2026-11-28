@@ -82,16 +82,15 @@ class UniqueWebSourceAdapter(BaseSourceAdapter):
         mainstream_session: Optional[Session] = None,
     ) -> AdapterSearchOutcome:
         cfg = self._parse_cfg(instance)
-        query_str = (
-            query_ctx.custom_query
-            or query_ctx.original_title
-            or query_ctx.title
-        ).strip()
+        query_str = (query_ctx.custom_query or query_ctx.original_title or query_ctx.title).strip()
         safe_api_url = validate_safe_url(cfg.base_url, ("http", "https"))
-        manual_url = validate_safe_url(
-            cfg.browser_search_url.replace("{query}", quote_plus(query_str)),
-            ("http", "https"),
-        ) or safe_api_url
+        manual_url = (
+            validate_safe_url(
+                cfg.browser_search_url.replace("{query}", quote_plus(query_str)),
+                ("http", "https"),
+            )
+            or safe_api_url
+        )
 
         if not safe_api_url:
             return AdapterSearchOutcome(

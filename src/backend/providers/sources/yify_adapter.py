@@ -618,9 +618,7 @@ class YIFYSourceAdapter(BaseSourceAdapter):
         )
         cands = fetched["candidates"]
         meta = dict(fetched["meta"])
-        indexed, updated = self.persist_sync_candidates(
-            sources_session, instance.source_key, cands
-        )
+        indexed, updated = self.persist_sync_candidates(sources_session, instance.source_key, cands)
         meta["releases_indexed"] = indexed
         meta["releases_updated"] = updated
         return meta
@@ -635,12 +633,7 @@ class YIFYSourceAdapter(BaseSourceAdapter):
         cfg = self._parse_cfg(instance)
         endpoints = self._candidate_endpoints(cfg)
         norm_imdb = EntityResolutionService.normalize_imdb_id(query_ctx.imdb_id)
-        q_term = (
-            query_ctx.custom_query
-            or norm_imdb
-            or query_ctx.original_title
-            or query_ctx.title
-        )
+        q_term = query_ctx.custom_query or norm_imdb or query_ctx.original_title or query_ctx.title
         last_error_msg: Optional[str] = None
 
         async with httpx.AsyncClient(timeout=cfg.timeout_seconds) as client:

@@ -394,9 +394,7 @@ _FOLDED_GENRE_LOOKUP: dict[str, tuple[str, ...]] = {
 for _canon_g in ALL_CANONICAL_GENRES:
     _FOLDED_GENRE_LOOKUP.setdefault(_fold_key(_canon_g), (_canon_g,))
 
-_FOLDED_PROVIDER_LOOKUP: dict[str, str] = {
-    _fold_key(k): v for k, v in _PROVIDER_ALIAS_MAP.items()
-}
+_FOLDED_PROVIDER_LOOKUP: dict[str, str] = {_fold_key(k): v for k, v in _PROVIDER_ALIAS_MAP.items()}
 for _canon_p in ALL_CANONICAL_PROVIDERS:
     _FOLDED_PROVIDER_LOOKUP.setdefault(_fold_key(_canon_p), _canon_p)
 
@@ -476,9 +474,7 @@ def expand_provider_aliases(raw_provider: str) -> list[str]:
     clean = raw_provider.strip()
     if not clean:
         return []
-    mapped = _PROVIDER_ALIAS_MAP.get(clean.lower()) or _FOLDED_PROVIDER_LOOKUP.get(
-        _fold_key(clean)
-    )
+    mapped = _PROVIDER_ALIAS_MAP.get(clean.lower()) or _FOLDED_PROVIDER_LOOKUP.get(_fold_key(clean))
     if not mapped:
         return [clean]
     aliases: dict[str, None] = {mapped: None, clean: None}
@@ -516,7 +512,7 @@ def extract_tmdb_watch_providers(full_data: dict) -> list[str]:
         for p in normalize_provider_tokens(name, keep_unknown=False):
             found[p] = None
 
-    wp_results = ((full_data.get("watch/providers") or {}).get("results") or {})
+    wp_results = (full_data.get("watch/providers") or {}).get("results") or {}
     for region in ("BR", "US"):
         reg_node = wp_results.get(region) or {}
         for bucket in ("flatrate", "free", "ads"):

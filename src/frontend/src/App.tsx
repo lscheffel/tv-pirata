@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CatalogSection, CatalogShow, UnifiedShow } from "./types";
+import { CatalogSection, CatalogShow, FilterSnapshot, UnifiedShow } from "./types";
 import { api } from "./services/api";
 import { PreferencesProvider } from "./context/PreferencesContext";
 import { useToast } from "./context/ToastContext";
 import { AppTabId, Navbar } from "./components/Navbar";
-import { ExplorerView } from "./components/ExplorerView";
+import { DiscoverView } from "./components/DiscoverView";
+import { CatalogView, INITIAL_FILTERS } from "./components/CatalogView";
 import { SourcesView } from "./components/SourcesView";
 import { LibraryView } from "./components/LibraryView";
 import { CollectionsView } from "./components/CollectionsView";
@@ -14,14 +15,15 @@ import { TorrentModal } from "./components/TorrentModal";
 
 function AppShell() {
   const { showToast } = useToast();
-  const [activeTab, setActiveTab] = useState<AppTabId>("explore");
+  const [activeTab, setActiveTab] = useState<AppTabId>("discover");
   const [searchQuery, setSearchQuery] = useState("");
+  const [catalogFilters, setCatalogFilters] = useState<FilterSnapshot>(INITIAL_FILTERS);
   const [systemHealth, setSystemHealth] = useState<"healthy" | "syncing" | "degraded">("healthy");
   const [refreshSignal, setRefreshSignal] = useState<number>(0);
 
   const [trendingShows, setTrendingShows] = useState<UnifiedShow[]>([]);
   const [curatedSections, setCuratedSections] = useState<CatalogSection[]>([]);
-  const [loadingDiscovery, setLoadingDiscovery] = useState(true);
+  const [_loadingDiscovery, setLoadingDiscovery] = useState(true);
 
   const [selectedDetailShow, setSelectedDetailShow] = useState<UnifiedShow | null>(null);
   const [selectedTorrentShow, setSelectedTorrentShow] = useState<UnifiedShow | null>(null);
@@ -138,13 +140,24 @@ function AppShell() {
     return null;
   }, [trendingShows, curatedSections, catalogToUnified]);
 
+  const openCatalogWithFilters = useCallback(
+    (patch: Partial<FilterSnapshot>, label?: string) => {
+      setSearchQuery("");
+      setCatalogFilters({ ...INITIAL_FILTERS, ...patch });
+      setActiveTab("catalog");
+      if (label) {
+        showToast(`Catálogo filtrado: ${label}`, "info");
+      }
+    },
+    [showToast]
+  );
+
   return (
     <div className="min-h-screen bg-canvas text-slate-100 flex flex-col font-sans">
       <Navbar
         activeTab={activeTab}
         onTabChange={(tab) => {
           setActiveTab(tab);
-          if (tab !== "explore") setSearchQuery("");
         }}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -153,20 +166,27 @@ function AppShell() {
       />
 
       <main className="flex-1 pb-20">
-        {activeTab === "explore" ? (
-          <ExplorerView
-            heroShow={heroShow}
-            trendingShows={trendingShows}
-            curatedSections={curatedSections}
-            loadingDiscovery={loadingDiscovery}
+        {activeTab === "discover" ? (
+          <DiscoverView
+            fallbackHero={heroShow}
+            onOpenDetails={setSelectedDetailShow}
+            onOpenTorrents={setSelectedTorrentShow}
+            onSaveToLibrary={handleSaveToLibrary}
+            onOpenCatalogWithFilters={openCatalogWithFilters}
+            onNavigateTab={setActiveTab}
+            savedShowIds={savedShowIds}
+            refreshSignal={refreshSignal}
+          />
+        ) : activeTab === "catalog" ? (
+          <CatalogView
+            filters={catalogFilters}
+            onFiltersChange={setCatalogFilters}
             globalSearchQuery={searchQuery}
             onGlobalSearchChange={setSearchQuery}
-            onOpenDetails={setSelectedDetailShow}
             onOpenTorrents={setSelectedTorrentShow}
             onSaveToLibrary={handleSaveToLibrary}
             onNavigateTab={setActiveTab}
             savedShowIds={savedShowIds}
-            catalogToUnified={catalogToUnified}
             refreshSignal={refreshSignal}
           />
         ) : activeTab === "sources" ? (

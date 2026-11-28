@@ -312,9 +312,7 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
             "magnet" if magnet else ("torrent" if tor_url else "link")
         )
         w_type = (
-            "tvSeries"
-            if season > 0
-            else ((query_ctx.work_type if query_ctx else None) or "movie")
+            "tvSeries" if season > 0 else ((query_ctx.work_type if query_ctx else None) or "movie")
         )
         return NormalizedReleaseCandidate(
             external_id=f"{site}:{digest}",
@@ -385,14 +383,12 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
             start = max(0, match.start() - 1400)
             ctx = html_text[start : match.start()]
             seed_m = re.search(
-                r'fa-arrow-up[^>]*></i>\s*<span[^>]*>([\d,]+)</span>', ctx, re.IGNORECASE
+                r"fa-arrow-up[^>]*></i>\s*<span[^>]*>([\d,]+)</span>", ctx, re.IGNORECASE
             )
             leech_m = re.search(
-                r'fa-arrow-down[^>]*></i>\s*<span[^>]*>([\d,]+)</span>', ctx, re.IGNORECASE
+                r"fa-arrow-down[^>]*></i>\s*<span[^>]*>([\d,]+)</span>", ctx, re.IGNORECASE
             )
-            size_m = re.search(
-                r'([\d.,]+\s*(?:GB|MB|TB|KB))', ctx, re.IGNORECASE
-            )
+            size_m = re.search(r"([\d.,]+\s*(?:GB|MB|TB|KB))", ctx, re.IGNORECASE)
             raw_seeds = int((seed_m.group(1).replace(",", "") if seed_m else "10") or 10)
             if raw_seeds > 1_000_000:
                 raw_seeds = 45
@@ -485,9 +481,7 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
                     "leechers": 3,
                     "size": enc_len,
                     "torrent": (
-                        enc_url
-                        if enc_url.endswith(".torrent") or ".torrent?" in enc_url
-                        else None
+                        enc_url if enc_url.endswith(".torrent") or ".torrent?" in enc_url else None
                     ),
                     "url": link if link.startswith("http") else None,
                 }
@@ -618,9 +612,7 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
         page_budget = max(1, min(int(pages), 10))
         hosts = [cfg.base_url, *cfg.mirrors]
         valid_hosts = [
-            u.rstrip("/")
-            for u in (validate_safe_url(h, ("http", "https")) for h in hosts)
-            if u
+            u.rstrip("/") for u in (validate_safe_url(h, ("http", "https")) for h in hosts) if u
         ] or ["http://127.0.0.1:8009"]
 
         headers: dict[str, str] = {}
@@ -717,19 +709,13 @@ class TorrentApiPySourceAdapter(BaseSourceAdapter):
         client: Optional[httpx.AsyncClient] = None,
     ) -> AdapterSearchOutcome:
         cfg = self._parse_cfg(instance)
-        query_str = (
-            query_ctx.custom_query
-            or query_ctx.original_title
-            or query_ctx.title
-        ).strip()
+        query_str = (query_ctx.custom_query or query_ctx.original_title or query_ctx.title).strip()
         if not query_str:
             return AdapterSearchOutcome(status="ok", releases=[])
 
         hosts = [cfg.base_url, *cfg.mirrors]
         valid_hosts = [
-            u.rstrip("/")
-            for u in (validate_safe_url(h, ("http", "https")) for h in hosts)
-            if u
+            u.rstrip("/") for u in (validate_safe_url(h, ("http", "https")) for h in hosts) if u
         ] or ["http://127.0.0.1:8009"]
 
         headers: dict[str, str] = {}

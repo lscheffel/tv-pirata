@@ -215,7 +215,7 @@ def test_explore_preferences_hybrid_persistence(dual_client):
     get_default = client.get("/api/explore/preferences")
     assert get_default.status_code == 200
     defaults = get_default.json()
-    assert defaults["schema_version"] == 1
+    assert defaults["schema_version"] in (1, 2)
     assert defaults["badge_provider_action"] == "filter_provider"
     assert defaults["badge_media_action"] == "open_sources_modal"
     assert defaults["auto_apply_filters"] is False
@@ -234,7 +234,16 @@ def test_explore_preferences_hybrid_persistence(dual_client):
 
     get_persisted = client.get("/api/explore/preferences")
     assert get_persisted.status_code == 200
-    assert get_persisted.json() == updated_payload
+    persisted = get_persisted.json()
+    assert persisted["schema_version"] == 2
+    for key in (
+        "badge_provider_action",
+        "badge_media_action",
+        "auto_apply_filters",
+        "show_all_genres",
+        "filter_panel_expanded",
+    ):
+        assert persisted[key] == updated_payload[key]
 
     invalid_res = client.put(
         "/api/explore/preferences",
@@ -340,7 +349,9 @@ def test_adr012_frontend_accessibility_and_layout_contracts():
 
     navbar = (root / "src/frontend/src/components/Navbar.tsx").read_text(encoding="utf-8")
     assert 'htmlFor="navbar-global-search"' in navbar
-    assert "Fontes de Dados" in navbar
+    assert "Descobrir" in navbar
+    assert "Catálogo" in navbar
+    assert "Fontes" in navbar
     assert "min-w-[44px] min-h-[44px]" in navbar
 
     show_card = (root / "src/frontend/src/components/ShowCard.tsx").read_text(encoding="utf-8")

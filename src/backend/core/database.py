@@ -34,6 +34,7 @@ def _configure_sqlite_pragmas(dbapi_connection: object, _connection_record: obje
     finally:
         cur.close()
 
+
 # Default SQLite Dual-SSOT database paths (ADR-011)
 DEFAULT_MAINSTREAM_DB_PATH = Path("data/mainstream.db")
 DEFAULT_DB_PATH = DEFAULT_MAINSTREAM_DB_PATH
@@ -290,9 +291,7 @@ def init_eztv_db(target_engine=None) -> None:
             ]
             for c_name, c_type in es_additive:
                 if c_name not in es_cols:
-                    conn.execute(
-                        text(f"ALTER TABLE external_sources ADD COLUMN {c_name} {c_type}")
-                    )
+                    conn.execute(text(f"ALTER TABLE external_sources ADD COLUMN {c_name} {c_type}"))
             conn.execute(
                 text(
                     """

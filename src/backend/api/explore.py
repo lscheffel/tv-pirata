@@ -15,6 +15,7 @@ from src.backend.repositories.preferences import (
     ExplorePreferencesRepository,
     UserExplorePreferences,
 )
+from src.backend.services.discovery_feed import DiscoveryFeedService, RouletteScope
 from src.backend.services.federated_catalog import FederatedCatalogService
 from src.backend.services.hydration_orchestrator import (
     HydrationPipelineStatus,
@@ -226,9 +227,7 @@ def get_mainstream_stats(
 
 @router.post("/update-mainstream")
 async def update_mainstream_database(
-    mode: str = Query(
-        "delta", description="Modo de atualização: delta, hydrate ou badges"
-    ),
+    mode: str = Query("delta", description="Modo de atualização: delta, hydrate ou badges"),
     limit: int = Query(25, ge=1, le=200, description="Lote de títulos para hidratação"),
     session: Session = Depends(get_session),
     eztv_session: Session = Depends(get_eztv_session),
@@ -261,6 +260,48 @@ def update_explore_preferences(
 ) -> UserExplorePreferences:
     """Validate and persist UI/interaction preferences into data/mainstream.db sync_state."""
     return ExplorePreferencesRepository.save_preferences(session, prefs)
+
+
+@router.get("/feed")
+def get_discovery_feed(
+    session_seed: str = Query("default", description="Semente rotativa de sessão"),
+    roulette_scope: RouletteScope = Query(
+        "all", description="Escopo: all, movie, tv_show, with_media"
+    ),
+    roulette_spin: int = Query(0, ge=0, description="Contador de giros da roleta"),
+    session: Session = Depends(get_session),
+    eztv_session: Session = Depends(get_eztv_session),
+) -> dict[str, Any]:
+    """Read-only organic showcase feed (Hero Pool, Roulette, 10x100 Unique Smart Lists)."""
+    return DiscoveryFeedService.get_feed(
+        session,
+        eztv_session,
+        session_seed=session_seed,
+        roulette_scope=roulette_scope,
+        roulette_spin=roulette_spin,
+    )
+
+
+class ImpressionsPayload(BaseModel):
+    """Payload for recording exposed titles into discovery_impressions_v1."""
+
+    imdb_ids: list[str]
+    surface: str = "hero"
+
+
+@router.post("/impressions")
+def record_discovery_impressions(
+    payload: ImpressionsPayload,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Persist exposed titles into sync_state ring-buffer (decoupled from GET /feed)."""
+    prefs = ExplorePreferencesRepository.get_preferences(session)
+    return DiscoveryFeedService.record_impressions(
+        session,
+        payload.imdb_ids,
+        surface=payload.surface,
+        ttl_hours=prefs.impression_ttl_hours,
+    )
 
 
 @router.get("/hydration/status", response_model=HydrationPipelineStatus)
@@ -410,4 +451,3 @@ async def trigger_imdb_fts_reindex(
 ) -> IMDbSyncJobStatus:
     """Trigger cooperative asynchronous FTS5 index rebuild on shows_fts."""
     return await imdb_sync_service.start_reindex_fts(session)
-

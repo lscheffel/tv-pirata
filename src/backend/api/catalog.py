@@ -82,9 +82,7 @@ def list_catalog_shows(
     search: Optional[str] = Query(None, description="Filtrar por título ou IMDB ID"),
     genre: Optional[str] = Query(None, description="Filtrar por gênero"),
     min_seeds: int = Query(0, ge=0, description="Mínimo de seeds ativas"),
-    sort_by: str = Query(
-        "seeds", description="Ordenação: seeds, date, torrents, rating, name"
-    ),
+    sort_by: str = Query("seeds", description="Ordenação: seeds, date, torrents, rating, name"),
     page: int = Query(1, ge=1, description="Número da página"),
     page_size: int = Query(20, ge=1, le=100, description="Tamanho da página"),
     eztv_session: Session = Depends(get_eztv_session),

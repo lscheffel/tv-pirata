@@ -571,18 +571,14 @@ def test_adr019_yify_mirror_strategy_series_filter_and_jit_self_heal(plugin_clie
                     "imdb_code": "tt0413550",
                     "title": "CMT Top 20 Countdown",
                     "year": 2001,
-                    "torrents": [
-                        {"quality": "720p", "seeds": 10, "peers": 2, "hash": "A" * 40}
-                    ],
+                    "torrents": [{"quality": "720p", "seeds": 10, "peers": 2, "hash": "A" * 40}],
                 },
                 {
                     "id": 9002,
                     "imdb_code": "tt1160419",
                     "title": "Dune",
                     "year": 2021,
-                    "torrents": [
-                        {"quality": "1080p", "seeds": 50, "peers": 10, "hash": "B" * 40}
-                    ],
+                    "torrents": [{"quality": "1080p", "seeds": 50, "peers": 10, "hash": "B" * 40}],
                 },
             ]
         )

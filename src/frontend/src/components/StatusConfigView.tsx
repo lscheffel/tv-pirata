@@ -10,6 +10,7 @@ import { api } from "../services/api";
 import { SettingsCategoryId, SettingsSidebar } from "./settings/SettingsSidebar";
 import { CatalogUpdatePanel } from "./settings/CatalogUpdatePanel";
 import { SourcesProvidersPanel } from "./settings/SourcesProvidersPanel";
+import { DiscoveryFeedPanel } from "./settings/DiscoveryFeedPanel";
 import { ExplorePrefsPanel } from "./settings/ExplorePrefsPanel";
 import { AdvancedMaintenancePanel } from "./settings/AdvancedMaintenancePanel";
 
@@ -110,6 +111,8 @@ return (
               onHealthChange={onHealthChange}
             />
           )}
+
+                    {activeCategory === "discover_feed" && <DiscoveryFeedPanel />}
 
                     {activeCategory === "explore" && <ExplorePrefsPanel />}
 
