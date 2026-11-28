@@ -418,6 +418,7 @@ export type MediaBadgeAction = "open_sources_modal" | "filter_has_media" | "open
 export type SmartListSort = "balanced" | "rating" | "popularity" | "newest" | "p2p_recent";
 export type RouletteScope = "all" | "movie" | "tv_show" | "with_media";
 export type ForeignTitlesMode = "off" | "lite" | "all";
+export type MoodFilterMode = "all" | "no_drama" | "darkside" | "riseup";
 
 export interface FilterSnapshot {
   selectedTypes: string[];
@@ -470,6 +471,7 @@ export interface UserExplorePreferences {
   impression_ttl_hours: number;
   foreign_titles_mode: ForeignTitlesMode;
   parental_control_enabled: boolean;
+  mood_mode: MoodFilterMode;
   smart_lists: SmartListConfig[];
   hidden_builtin_shortcuts: string[];
   custom_shortcuts: CustomShortcutConfig[];

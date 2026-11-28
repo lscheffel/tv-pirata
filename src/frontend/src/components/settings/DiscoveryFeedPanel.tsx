@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useExplorePreferences } from "../../context/PreferencesContext";
 import { useToast } from "../../context/ToastContext";
-import { ForeignTitlesMode, SmartListConfig, SmartListSort } from "../../types";
+import { ForeignTitlesMode, MoodFilterMode, SmartListConfig, SmartListSort } from "../../types";
 
 const SORT_LABELS: Array<{ key: SmartListSort; label: string }> = [
   { key: "balanced", label: "Equilibrada (Score)" },
@@ -87,8 +87,8 @@ export const DiscoveryFeedPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* Global Content Policy: Foreign Titles & Parental Control */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Global Content Policy: Foreign Titles, Mood & Parental Control */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="p-4 rounded-2xl bg-surface-elevated border border-white/10 space-y-2.5">
           <div className="flex items-center gap-2 text-xs font-bold text-white">
             <Globe className="w-4 h-4 text-sky-400" />
@@ -118,6 +118,39 @@ export const DiscoveryFeedPanel: React.FC = () => {
           </div>
           <p className="text-[11px] text-slate-400">
             Afeta globalmente a Vitrine Descobrir e o Catálogo (padrão: apenas EN-US e PT-BR).
+          </p>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-surface-elevated border border-white/10 space-y-2.5">
+          <div className="flex items-center gap-2 text-xs font-bold text-white">
+            <Sparkles className="w-4 h-4 text-purple-400" />
+            <span>Mood da Vitrine &amp; Catálogo</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                { key: "all", label: "Todos" },
+                { key: "no_drama", label: "No Drama" },
+                { key: "darkside", label: "Darkside" },
+                { key: "riseup", label: "Riseup" },
+              ] as Array<{ key: MoodFilterMode; label: string }>
+            ).map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => updatePreferences({ mood_mode: opt.key })}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border cursor-pointer transition-colors ${
+                  preferences.mood_mode === opt.key
+                    ? "bg-purple-500/25 text-purple-100 border-purple-400/60"
+                    : "bg-canvas text-slate-300 border-white/10 hover:text-white"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-slate-400">
+            No Drama oculta Drama/Romance puros; Darkside foca Suspense/Sci-Fi/Crime; Riseup foca Comédia/Ação/Aventura.
           </p>
         </div>
 

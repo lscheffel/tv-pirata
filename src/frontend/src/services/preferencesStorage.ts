@@ -2,6 +2,7 @@ import {
   CustomShortcutConfig,
   ForeignTitlesMode,
   MediaBadgeAction,
+  MoodFilterMode,
   ProviderBadgeAction,
   SmartListConfig,
   SmartListSort,
@@ -42,6 +43,7 @@ export const DEFAULT_EXPLORE_PREFERENCES: UserExplorePreferences = {
   impression_ttl_hours: 48,
   foreign_titles_mode: "off",
   parental_control_enabled: true,
+  mood_mode: "all",
   smart_lists: DEFAULT_SMART_LISTS_V2,
   hidden_builtin_shortcuts: [],
   custom_shortcuts: [],
@@ -61,6 +63,7 @@ const VALID_MEDIA_ACTIONS: MediaBadgeAction[] = [
 
 const VALID_SORTS: SmartListSort[] = ["balanced", "rating", "popularity", "newest", "p2p_recent"];
 const VALID_FOREIGN_MODES: ForeignTitlesMode[] = ["off", "lite", "all"];
+const VALID_MOOD_MODES: MoodFilterMode[] = ["all", "no_drama", "darkside", "riseup"];
 
 export function sanitizePreferences(raw: unknown): UserExplorePreferences {
   if (!raw || typeof raw !== "object") {
@@ -168,6 +171,9 @@ export function sanitizePreferences(raw: unknown): UserExplorePreferences {
       typeof obj.parental_control_enabled === "boolean"
         ? obj.parental_control_enabled
         : DEFAULT_EXPLORE_PREFERENCES.parental_control_enabled,
+    mood_mode: VALID_MOOD_MODES.includes(obj.mood_mode as MoodFilterMode)
+      ? (obj.mood_mode as MoodFilterMode)
+      : DEFAULT_EXPLORE_PREFERENCES.mood_mode,
     smart_lists: smartLists,
     hidden_builtin_shortcuts: Array.isArray(obj.hidden_builtin_shortcuts)
       ? obj.hidden_builtin_shortcuts.map(String)

@@ -26,6 +26,7 @@ from src.backend.core.canonical_taxonomy import (
 )
 from src.backend.core.content_filters import (
     build_foreign_sql_clause,
+    build_mood_sql_clause,
     build_parental_sql_clause,
 )
 from src.backend.models.catalog_domain import (
@@ -884,6 +885,9 @@ class DiscoveryEngineRepository:
         p_clause = build_parental_sql_clause(prefs.parental_control_enabled)
         if p_clause is not None:
             filters.append(p_clause)
+        m_clause = build_mood_sql_clause(prefs.mood_mode)
+        if m_clause is not None:
+            filters.append(m_clause)
 
         active_p2p_imdbs = cls._active_p2p_imdb_set(eztv_session)
         media_sources_by_imdb = cls._build_sources_media_index(eztv_session)

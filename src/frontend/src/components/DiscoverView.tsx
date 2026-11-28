@@ -7,11 +7,13 @@ import {
   Shuffle,
   SlidersHorizontal,
   Sparkles,
+  Zap,
 } from "lucide-react";
 import {
   DiscoveryFeedResponse,
   FilterSnapshot,
   ForeignTitlesMode,
+  MoodFilterMode,
   RouletteScope,
   UnifiedShow,
 } from "../types";
@@ -115,12 +117,14 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
         v: preferences.discovery_variance_pct,
         f: preferences.foreign_titles_mode,
         p: preferences.parental_control_enabled,
+        m: preferences.mood_mode,
         l: preferences.smart_lists.map((s) => `${s.id}:${s.enabled}:${s.order}:${s.limit}:${s.sort_by}:${s.only_with_media}:${s.variance_override ?? ""}`),
       }),
     [
       preferences.discovery_variance_pct,
       preferences.foreign_titles_mode,
       preferences.parental_control_enabled,
+      preferences.mood_mode,
       preferences.smart_lists,
     ]
   );
@@ -249,6 +253,34 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold border cursor-pointer transition-colors ${
                   preferences.foreign_titles_mode === opt.key
                     ? "bg-sky-500/25 text-sky-100 border-sky-400/60"
+                    : "bg-canvas text-slate-300 border-white/10 hover:text-white"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-slate-300">
+              <Zap className="w-3.5 h-3.5 text-purple-400" />
+              Mood:
+            </span>
+            {(
+              [
+                { key: "all", label: "Todos" },
+                { key: "no_drama", label: "No Drama" },
+                { key: "darkside", label: "Darkside" },
+                { key: "riseup", label: "Riseup" },
+              ] as Array<{ key: MoodFilterMode; label: string }>
+            ).map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => updatePreferences({ mood_mode: opt.key })}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold border cursor-pointer transition-colors ${
+                  preferences.mood_mode === opt.key
+                    ? "bg-purple-500/25 text-purple-100 border-purple-400/60"
                     : "bg-canvas text-slate-300 border-white/10 hover:text-white"
                 }`}
               >

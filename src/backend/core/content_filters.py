@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from sqlalchemy import and_, not_, or_
+from sqlalchemy import and_, func, not_, or_
 from sqlmodel import col
 
 from src.backend.models.catalog_domain import IMDbCatalogShow
 
 ForeignTitlesMode = Literal["off", "lite", "all"]
+MoodFilterMode = Literal["all", "no_drama", "darkside", "riseup"]
 
 _OFF_LANG_PREFIXES: tuple[str, ...] = (
     "English",
@@ -105,3 +106,69 @@ def build_parental_sql_clause(enabled: bool) -> Any:
         )
     )
     return and_(not_anim_type, not_blocked_genres, not_blocked_genres_ptbr)
+
+
+_NO_DRAMA_EXACT: tuple[str, ...] = (
+    "drama",
+    "romance",
+    "drama, romance",
+    "romance, drama",
+    "drama,romance",
+    "romance,drama",
+)
+
+_DARKSIDE_TOKENS: tuple[str, ...] = (
+    "Thriller",
+    "Suspense",
+    "Sci-Fi",
+    "Science Fiction",
+    "Ficção Científica",
+    "Crime",
+    "Mystery",
+    "Mistério",
+    "Horror",
+    "Terror",
+    "Film-Noir",
+)
+
+_RISEUP_TOKENS: tuple[str, ...] = (
+    "Comedy",
+    "Comédia",
+    "Adventure",
+    "Aventura",
+    "Action",
+    "Ação",
+    "Family",
+    "Família",
+    "Fantasy",
+    "Fantasia",
+    "Music",
+    "Musical",
+    "Música",
+    "Sport",
+    "Esporte",
+)
+
+
+def build_mood_sql_clause(mode: MoodFilterMode) -> Any:
+    """Build SQLAlchemy WHERE clause for Mood filter (no_drama, darkside, riseup)."""
+    if mode == "all":
+        return None
+    if mode == "no_drama":
+        return and_(
+            or_(
+                col(IMDbCatalogShow.genres).is_(None),
+                not_(func.lower(func.trim(col(IMDbCatalogShow.genres))).in_(_NO_DRAMA_EXACT)),
+            ),
+            or_(
+                col(IMDbCatalogShow.genres_ptbr).is_(None),
+                not_(
+                    func.lower(func.trim(col(IMDbCatalogShow.genres_ptbr))).in_(_NO_DRAMA_EXACT)
+                ),
+            ),
+        )
+    tokens = _DARKSIDE_TOKENS if mode == "darkside" else _RISEUP_TOKENS
+    return or_(
+        *(col(IMDbCatalogShow.genres).contains(tok) for tok in tokens),
+        *(col(IMDbCatalogShow.genres_ptbr).contains(tok) for tok in tokens),
+    )

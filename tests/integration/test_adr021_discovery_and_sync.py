@@ -344,3 +344,75 @@ def test_global_foreign_titles_and_parental_control(adr021_client: TestClient, a
     assert "French Film" in titles_all
     assert "Spanish Hit" in titles_all
     assert "Kids Cartoon" in titles_all
+
+
+def test_mood_filter_no_drama_darkside_riseup(adr021_client: TestClient, adr021_engines):
+    ms_engine, _ = adr021_engines
+    with Session(ms_engine) as ms:
+        ms.add(
+            IMDbCatalogShow(
+                imdb_id="tt9910001",
+                imdb_num=9910001,
+                title_type="movie",
+                primary_title="Pure Soap",
+                start_year=2025,
+                genres="Drama, Romance",
+                languages="English",
+                rating_score=8.5,
+                rating_votes=9000,
+                poster_url="https://img.example.com/soap.jpg",
+            )
+        )
+        ms.add(
+            IMDbCatalogShow(
+                imdb_id="tt9910002",
+                imdb_num=9910002,
+                title_type="movie",
+                primary_title="Dark Detective",
+                start_year=2025,
+                genres="Crime, Thriller, Drama",
+                languages="English",
+                rating_score=8.5,
+                rating_votes=9000,
+                poster_url="https://img.example.com/dark.jpg",
+            )
+        )
+        ms.add(
+            IMDbCatalogShow(
+                imdb_id="tt9910003",
+                imdb_num=9910003,
+                title_type="movie",
+                primary_title="Sunny Comedy",
+                start_year=2025,
+                genres="Comedy, Adventure",
+                languages="English",
+                rating_score=8.5,
+                rating_votes=9000,
+                poster_url="https://img.example.com/sun.jpg",
+            )
+        )
+        ms.commit()
+
+    # No Drama: excludes Pure Soap (Drama, Romance), keeps Dark Detective and Sunny Comedy
+    adr021_client.put("/api/explore/preferences", json={"mood_mode": "no_drama"})
+    nd_res = adr021_client.get("/api/explore/works?page_size=100").json()
+    nd_titles = {w["title"] for w in nd_res["items"]}
+    assert "Pure Soap" not in nd_titles
+    assert "Dark Detective" in nd_titles
+    assert "Sunny Comedy" in nd_titles
+
+    # Darkside: keeps Dark Detective, excludes Pure Soap and Sunny Comedy
+    adr021_client.put("/api/explore/preferences", json={"mood_mode": "darkside"})
+    ds_res = adr021_client.get("/api/explore/works?page_size=100").json()
+    ds_titles = {w["title"] for w in ds_res["items"]}
+    assert "Dark Detective" in ds_titles
+    assert "Pure Soap" not in ds_titles
+    assert "Sunny Comedy" not in ds_titles
+
+    # Riseup: keeps Sunny Comedy, excludes Pure Soap and Dark Detective
+    adr021_client.put("/api/explore/preferences", json={"mood_mode": "riseup"})
+    ru_res = adr021_client.get("/api/explore/works?page_size=100").json()
+    ru_titles = {w["title"] for w in ru_res["items"]}
+    assert "Sunny Comedy" in ru_titles
+    assert "Pure Soap" not in ru_titles
+    assert "Dark Detective" not in ru_titles

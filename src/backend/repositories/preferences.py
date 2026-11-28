@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlmodel import Session
 
-from src.backend.core.content_filters import ForeignTitlesMode
+from src.backend.core.content_filters import ForeignTitlesMode, MoodFilterMode
 
 PREFERENCES_SYNC_KEY = "user_explore_preferences_v1"
 
@@ -174,6 +174,7 @@ class UserExplorePreferences(BaseModel):
     impression_ttl_hours: int = Field(default=48, ge=12, le=168)
     foreign_titles_mode: ForeignTitlesMode = "off"
     parental_control_enabled: bool = True
+    mood_mode: MoodFilterMode = "all"
     smart_lists: list[SmartListConfig] = Field(default_factory=default_smart_lists_v2)
     hidden_builtin_shortcuts: list[str] = Field(default_factory=list)
     custom_shortcuts: list[CustomShortcutConfig] = Field(default_factory=list)

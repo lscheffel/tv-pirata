@@ -15,7 +15,9 @@ from src.backend.core.cache import discovery_cache
 from src.backend.core.canonical_taxonomy import expand_genre_synonyms, normalize_genre_tokens
 from src.backend.core.content_filters import (
     ForeignTitlesMode,
+    MoodFilterMode,
     build_foreign_sql_clause,
+    build_mood_sql_clause,
     build_parental_sql_clause,
 )
 from src.backend.models.catalog_domain import IMDbCatalogShow
@@ -268,6 +270,7 @@ class DiscoveryFeedService:
         only_with_media: bool = False,
         foreign_titles_mode: ForeignTitlesMode = "off",
         parental_control_enabled: bool = False,
+        mood_mode: MoodFilterMode = "all",
         pool_limit: int = 260,
     ) -> tuple[list[IMDbCatalogShow], dict[str, Any], str]:
         """Fetch pre-filtered quality pool + CatalogView FilterSnapshot for a category."""
@@ -278,6 +281,9 @@ class DiscoveryFeedService:
         p_clause = build_parental_sql_clause(parental_control_enabled)
         if p_clause is not None:
             stmt = stmt.where(p_clause)
+        m_clause = build_mood_sql_clause(mood_mode)
+        if m_clause is not None:
+            stmt = stmt.where(m_clause)
         catalog_filter: dict[str, Any] = {}
         display_title_override = ""
 
@@ -434,7 +440,7 @@ class DiscoveryFeedService:
         anchor_key = profile.get("anchor_imdb_id") or ""
         cache_key = (
             f"feed_bucket:{category}:{pool_limit}:{foreign_titles_mode}"
-            f":{int(parental_control_enabled)}:{top_key}:{anchor_key}"
+            f":{int(parental_control_enabled)}:{mood_mode}:{top_key}:{anchor_key}"
         )
         rows = discovery_cache.get_or_set(
             scope,
@@ -480,6 +486,7 @@ class DiscoveryFeedService:
         completed_ids: set[str] = profile["completed_imdb_ids"]
         f_clause = build_foreign_sql_clause(prefs.foreign_titles_mode)
         p_clause = build_parental_sql_clause(prefs.parental_control_enabled)
+        m_clause = build_mood_sql_clause(prefs.mood_mode)
 
         # 1. Hero Pool (12–15 rotated candidates with backdrop + rating >= 7.0 + recency)
         hero_stmt = select(IMDbCatalogShow).where(
@@ -492,6 +499,8 @@ class DiscoveryFeedService:
             hero_stmt = hero_stmt.where(f_clause)
         if p_clause is not None:
             hero_stmt = hero_stmt.where(p_clause)
+        if m_clause is not None:
+            hero_stmt = hero_stmt.where(m_clause)
         hero_candidates = list(
             session.exec(
                 hero_stmt.order_by(col(IMDbCatalogShow.rating_votes).desc()).limit(120)
@@ -538,6 +547,8 @@ class DiscoveryFeedService:
             r_stmt = r_stmt.where(f_clause)
         if p_clause is not None:
             r_stmt = r_stmt.where(p_clause)
+        if m_clause is not None:
+            r_stmt = r_stmt.where(m_clause)
         if roulette_scope == "movie":
             r_stmt = r_stmt.where(col(IMDbCatalogShow.title_type) == "movie")
         elif roulette_scope == "tv_show":
@@ -606,6 +617,7 @@ class DiscoveryFeedService:
                 only_with_media=sl.only_with_media,
                 foreign_titles_mode=prefs.foreign_titles_mode,
                 parental_control_enabled=prefs.parental_control_enabled,
+                mood_mode=prefs.mood_mode,
                 pool_limit=260,
             )
             list_pools.append((sl, pool_rows, cat_filter, title_ovr))
