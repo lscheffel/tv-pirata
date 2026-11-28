@@ -309,12 +309,12 @@ def test_global_foreign_titles_and_parental_control(adr021_client: TestClient, a
         )
         ms.commit()
 
-    # Default: foreign_titles_mode='off', parental_control_enabled=False
+    # Default: foreign_titles_mode='off', parental_control_enabled=True
     w_off = adr021_client.get("/api/explore/works?page_size=100").json()["items"]
     titles_off = {w["title"] for w in w_off}
     assert "French Film" not in titles_off
     assert "Spanish Hit" not in titles_off
-    assert "Kids Cartoon" in titles_off
+    assert "Kids Cartoon" not in titles_off
 
     # Lite + Parental Control enabled
     adr021_client.put(

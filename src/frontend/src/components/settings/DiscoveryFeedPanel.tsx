@@ -138,8 +138,8 @@ export const DiscoveryFeedPanel: React.FC = () => {
           </div>
           <p className="text-[11px] text-slate-300">
             {preferences.parental_control_enabled
-              ? "Ativo: animações, desenhos, animes e conteúdos infantis estão ocultos em todo o app."
-              : "Desativado por padrão: exibe animações, animes e conteúdos infantis normalmente."}
+              ? "Ativo por padrão: animações, desenhos, animes e conteúdos infantis estão ocultos em todo o app."
+              : "Desativado: exibe animações, animes e conteúdos infantis normalmente."}
           </p>
         </div>
       </div>

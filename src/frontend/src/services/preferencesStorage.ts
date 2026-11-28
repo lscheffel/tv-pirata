@@ -41,7 +41,7 @@ export const DEFAULT_EXPLORE_PREFERENCES: UserExplorePreferences = {
   hero_interval_sec: 12,
   impression_ttl_hours: 48,
   foreign_titles_mode: "off",
-  parental_control_enabled: false,
+  parental_control_enabled: true,
   smart_lists: DEFAULT_SMART_LISTS_V2,
   hidden_builtin_shortcuts: [],
   custom_shortcuts: [],
