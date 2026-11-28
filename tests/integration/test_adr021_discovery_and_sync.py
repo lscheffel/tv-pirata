@@ -161,6 +161,13 @@ def test_discovery_feed_deduplication_and_impressions(adr021_client: TestClient)
     assert imp_res.status_code == 200
     assert imp_res.json()["recorded"] == 1
 
+    # Second GET on a fresh Session must hit cache without DetachedInstanceError
+    r2 = adr021_client.get(
+        "/api/explore/feed?session_seed=seedB&roulette_scope=movie&roulette_spin=1"
+    )
+    assert r2.status_code == 200
+    assert len(r2.json()["smart_lists"]) == 10
+
 
 @pytest.mark.asyncio
 async def test_eztv_watermark_dual_write_and_counters(adr021_engines):

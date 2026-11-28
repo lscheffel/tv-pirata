@@ -424,7 +424,10 @@ class DiscoveryFeedService:
             scope,
             cache_key,
             (len(media_imdb_set) if category == "p2p_fresh" else 0),
-            lambda: list(session.exec(stmt.limit(pool_limit)).all()),
+            lambda: [
+                IMDbCatalogShow.model_validate(r.model_dump())
+                for r in session.exec(stmt.limit(pool_limit)).all()
+            ],
         )
         if only_with_media:
             rows = [r for r in rows if r.has_eztv or r.imdb_id in media_imdb_set]
